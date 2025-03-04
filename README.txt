@@ -150,3 +150,18 @@ field timestamp files (creating new ones if necessary) and then the metadata
 file's "last timestamp" value is updated.  Likewise, when deleting data from
 the front of a series, the "first timestamp" value will be incremented and
 then any timestamp files that no longer contain live data will be deleted.
+
+
+TODO: This description is wrong.  It was encoding the field types inside the
+series, however the field type is part of the schema for the measurement - all
+the different series under xtalx_data will have the same set of and types of
+fields, and this is described in the schema.txt file directly in the
+measurement directory and not attached to the field directory names.
+
+
+Common tsdbcli commands
+=======================
+create database pt-1
+create measurement pt-1/xtalx_data with fields pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
+write series pt-1/xtalx_data/XTI-10-1000000
+

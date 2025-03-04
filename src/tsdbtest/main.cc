@@ -1,0 +1,384 @@
+// Copyright (c) 2025 by Terry Greeniaus.
+// All rights reserved.
+#include <version.h>
+#include <hdr/kmath.h>
+#include <hdr/types.h>
+#include <strutil/strutil.h>
+#include <libtsdb/tsdb.h>
+
+#include <algorithm>
+#include <random>
+#include <stdio.h>
+#include <stdlib.h>
+
+constexpr const char* databases[] =
+{
+    "test1",
+    "test2",
+    "test3",
+};
+
+constexpr const char* measurements[] =
+{
+    "measurement1",
+    "measurement2",
+    "measurement3",
+};
+
+std::vector<tsdb::field> fields =
+{
+    {"field_bool",tsdb::FT_BOOL},
+    {"field_u32_1",tsdb::FT_U32},
+    {"field_u32_2",tsdb::FT_U32},
+    {"field_u64",tsdb::FT_U64},
+    {"field_f32",tsdb::FT_F32},
+    {"field_f64",tsdb::FT_F64},
+};
+
+struct data_point
+{
+    uint64_t    time_ns;
+
+    bool        field_bool;
+    uint32_t    field_u32_1;
+    uint32_t    field_u32_2;
+    uint64_t    field_u64;
+    float       field_f32;
+    double      field_f64;
+
+    bool        field_bool_is_null;
+    bool        field_u32_1_is_null;
+    bool        field_u32_2_is_null;
+    bool        field_u64_is_null;
+    bool        field_f32_is_null;
+    bool        field_f64_is_null;
+};
+bool operator<(const data_point& lhs, uint64_t time_ns)
+{
+    return lhs.time_ns < time_ns;
+}
+bool operator<(uint64_t time_ns, const data_point& rhs)
+{
+    return time_ns < rhs.time_ns;
+}
+
+struct series_state
+{
+    futil::path             path;
+    std::vector<data_point> points;
+};
+
+static void
+push_bitmap(std::vector<uint64_t>& data, const bool* is_null, size_t npoints)
+{
+    for (size_t i=0; i<npoints; ++i)
+    {
+        if (i % 64 == 0)
+            data.push_back(0xFFFFFFFFFFFFFFFFULL);
+        if (*is_null)
+            data.back() &= ~(1ULL << (i % 64));
+        is_null += sizeof(data_point);
+    }
+}
+
+static void
+push_bool(std::vector<uint64_t>& data, const bool* v, size_t npoints)
+{
+    for (size_t i=0; i<npoints; ++i)
+    {
+        if (i % 8 == 0)
+            data.push_back(0);
+        if (*v)
+            data.back() |= ((uint64_t)*v) << (8*(i % 8));
+        v += sizeof(data_point);
+    }
+}
+
+template<typename T>
+static void
+push_32(std::vector<uint64_t>& data, const T* v, size_t npoints)
+{
+    KASSERT(sizeof(T) == 4);
+    for (size_t i=0; i<npoints; ++i)
+    {
+        if (i % 2 == 0)
+            data.push_back(0);
+        data.back() |= ((uint64_t)*(const uint32_t*)v) << (32*(i % 2));
+        v += sizeof(data_point)/4;
+    }
+}
+
+template<typename T>
+static void
+push_64(std::vector<uint64_t>& data, const T* v, size_t npoints)
+{
+    KASSERT(sizeof(T) == 8);
+    for (size_t i=0; i<npoints; ++i)
+    {
+        data.push_back(*(const uint64_t*)v);
+        v += sizeof(data_point)/8;
+    }
+}
+
+static void
+write_series(series_state& ss, size_t offset, size_t npoints)
+{
+    // Compute the expected length.
+    size_t expected_len = npoints*8; // Timestamps
+    for (auto& f : fields)
+    {
+        const auto* fti = &tsdb::ftinfos[f.type];
+        expected_len   += ceil_div<size_t>(npoints,64)*8; // Bitmap
+        expected_len   += ceil_div<size_t>(npoints*fti->nbytes,8)*8; // Data
+    }
+
+    // Create the data vector.
+    std::vector<uint64_t> data;
+    data.reserve(expected_len/8);
+
+    // Push the timestamps.
+    auto* p0 = &ss.points[offset];
+    for (size_t i=0; i<npoints; ++i)
+        data.push_back(p0[i].time_ns);
+
+    // Push each field, first the bitmap then the data.
+    push_bitmap(data,&p0->field_bool_is_null,npoints);
+    push_bool(data,&p0->field_bool,npoints);
+    push_bitmap(data,&p0->field_u32_1_is_null,npoints);
+    push_32(data,&p0->field_u32_1,npoints);
+    push_bitmap(data,&p0->field_u32_2_is_null,npoints);
+    push_32(data,&p0->field_u32_2,npoints);
+    push_bitmap(data,&p0->field_u64_is_null,npoints);
+    push_64(data,&p0->field_u64,npoints);
+    push_bitmap(data,&p0->field_f32_is_null,npoints);
+    push_32(data,&p0->field_f32,npoints);
+    push_bitmap(data,&p0->field_f64_is_null,npoints);
+    push_64(data,&p0->field_f64,npoints);
+    kassert(data.size()*8 == expected_len);
+
+    // Write the series to disk.
+    tsdb::write_series(ss.path,npoints,expected_len,&data[0]);
+}
+
+int
+main(int argc, const char* argv[])
+{
+    // Create a temporary directory for our database.
+    char tmp[] = "/tmp/tsdbtest.XXXXXX";
+    mkdtemp(tmp);
+    chdir(tmp);
+
+    // Initialize the database directory.
+    printf("Initializing test databases in %s...\n",tmp);
+    tsdb::init();
+
+    // Create some test databases.
+    for (const auto* db : databases)
+    {
+        tsdb::create_database(db);
+        for (const auto* m : measurements)
+            tsdb::create_measurement(futil::path(db,m),fields);
+    }
+
+    std::vector<std::string> field_names;
+    for (auto& f : fields)
+        field_names.push_back(f.name);
+
+    // Create 10 random series.
+    printf("Generating random points...\n");
+    srand(2);
+    std::vector<series_state> states;
+    uint64_t time_ns = rand();
+    for (size_t i=0; i<10; ++i)
+    {
+        const auto* db = databases[rand() % NELEMS(databases)];
+        const auto* m  = measurements[rand() % NELEMS(measurements)];
+        std::string s  = "series_" + std::to_string(i);
+        states.emplace_back(series_state{futil::path(db,m,s)});
+
+        auto& ss = states.back();
+        size_t nelems = rand() % 1000000;
+        ss.points.reserve(nelems);
+        for (size_t j=0; j<nelems; ++j)
+        {
+            ss.points.emplace_back(data_point{
+                time_ns,
+                (bool)(rand() % 2),
+                (uint32_t)rand(),
+                (uint32_t)rand(),
+                ((uint64_t)rand() << 32) | rand(),
+                (float)rand() / RAND_MAX,
+                (double)rand() / RAND_MAX,
+                rand() < (RAND_MAX / 1000),
+                rand() < (RAND_MAX / 1000),
+                rand() < (RAND_MAX / 1000),
+                rand() < (RAND_MAX / 1000),
+                rand() < (RAND_MAX / 1000),
+                rand() < (RAND_MAX / 1000),
+            });
+            time_ns += (rand() % 1000) + 1;
+        }
+    }
+
+    // Populate all of the series.
+    for (auto& ss : states)
+    {
+        printf("Populating series %s...\n",ss.path.c_str());
+        if(ss.points.size() >= 4096*1024/8)
+        {
+            // The series is large.  Write two 2M chunks, test a 100% overlap
+            // write crossing the chunks, and finally complete the write but
+            // start at offset 100 to do it.
+            printf("Testing dual-chunk overlap...\n");
+            write_series(ss,0,4096*1024/8);
+            write_series(ss,10,4096*1024/8 - 20);
+            write_series(ss,100,ss.points.size() - 100);
+        }
+        else
+        {
+            // The series is not large, so just write the whole thing.
+            write_series(ss,0,ss.points.size());
+        }
+    }
+
+    std::mt19937_64 mt(std::mt19937_64::default_seed + 1);
+    for (;;)
+    {
+        // Get a random series.
+        size_t ss_index = rand() % states.size();
+        auto& ss = states[ss_index];
+
+        // Get a random range.
+        uint64_t t[2];
+        uint32_t t_type[2];
+        for (size_t i=0; i<NELEMS(t); ++i)
+        {
+            t_type[i] = rand() % 3;
+            if (t_type[i] == 0 && ss.points.front().time_ns == 0)
+                t_type[i] = 1;
+            else if (t_type[i] == 2 && ss.points.back().time_ns == -1)
+                t_type[i] = 1;
+
+            uint64_t t_min;
+            uint64_t t_max;
+            if (t_type[i] == 0)
+            {
+                t_min = 0;
+                t_max = ss.points.front().time_ns - 1;
+            }
+            else if (t_type[i] == 1)
+            {
+                t_min = ss.points.front().time_ns;
+                t_max = ss.points.back().time_ns;
+            }
+            else
+            {
+                t_min = ss.points.back().time_ns + 1;
+                t_max = -1;
+            }
+            t[i] = std::uniform_int_distribution<uint64_t>(t_min,t_max)(mt);
+        }
+        uint64_t t0 = MIN(t[0],t[1]);
+        uint64_t t1 = MAX(t[0],t[1]);
+
+        // Find our expected first point.
+        auto fp = std::lower_bound(ss.points.begin(),ss.points.end(),t0);
+        auto lp = std::upper_bound(ss.points.begin(),ss.points.end(),t1);
+        size_t npoints = lp - fp;
+
+        // Perform the query.
+        tsdb::select_op* op;
+        size_t N;
+        switch (rand() % 3)
+        {
+            case 0:
+                // No limit.
+                printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+                       "EXPECT %zu\n",
+                       ss.path.c_str(),t0,t1,
+                       ss.points.front().time_ns,
+                       ss.points.back().time_ns,
+                       t_type[0],t_type[1],npoints);
+                op = new tsdb::select_op_first(ss.path,field_names,t0,t1,-1);
+            break;
+
+            case 1:
+                // LIMIT N.
+                N = rand() % 1000000;
+                npoints = MIN(N,npoints);
+                printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+                       "LIMIT %zu EXPECT %zu\n",
+                       ss.path.c_str(),t0,t1,
+                       ss.points.front().time_ns,
+                       ss.points.back().time_ns,
+                       t_type[0],t_type[1],N,npoints);
+                op = new tsdb::select_op_first(ss.path,field_names,t0,t1,N);
+            break;
+
+            case 2:
+                // LAST N.
+                N = rand() % 1000000;
+                npoints = MIN(N,npoints);
+                fp = lp - npoints;
+                printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+                       "LAST %zu EXPECT %zu\n",
+                       ss.path.c_str(),t0,t1,
+                       ss.points.front().time_ns,
+                       ss.points.back().time_ns,
+                       t_type[0],t_type[1],N,npoints);
+                op = new tsdb::select_op_last(ss.path,field_names,t0,t1,N);
+            break;
+        }
+
+        // Validate.
+        size_t total_points = 0;
+        for (;;)
+        {
+            printf("CHUNK %zu\n",op->npoints);
+            total_points += op->npoints;
+            kassert(total_points <= npoints);
+            for (size_t i=0; i<op->npoints; ++i)
+            {
+                data_point p =
+                {
+                    op->timestamp_data[i],
+                    op->get_field<bool,0>(i),
+                    op->get_field<uint32_t,1>(i),
+                    op->get_field<uint32_t,2>(i),
+                    op->get_field<uint64_t,3>(i),
+                    op->get_field<float,4>(i),
+                    op->get_field<double,5>(i),
+                    op->is_field_null(0,i),
+                    op->is_field_null(1,i),
+                    op->is_field_null(2,i),
+                    op->is_field_null(3,i),
+                    op->is_field_null(4,i),
+                    op->is_field_null(5,i),
+                };
+                kassert(p.time_ns             == fp->time_ns);
+                kassert(p.field_bool          == fp->field_bool);
+                kassert(p.field_u32_1         == fp->field_u32_1);
+                kassert(p.field_u32_2         == fp->field_u32_2);
+                kassert(p.field_u64           == fp->field_u64);
+                kassert(p.field_f32           == fp->field_f32);
+                kassert(p.field_f64           == fp->field_f64);
+                kassert(p.field_bool_is_null  == fp->field_bool_is_null);
+                kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
+                kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
+                kassert(p.field_u64_is_null   == fp->field_u64_is_null);
+                kassert(p.field_f32_is_null   == fp->field_f32_is_null);
+                kassert(p.field_f64_is_null   == fp->field_f64_is_null);
+                ++fp;
+            }
+
+            if (op->is_last)
+                break;
+
+            op->advance();
+        }
+        kassert(total_points == npoints);
+
+        delete op;
+    }
+}
+
