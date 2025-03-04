@@ -14,5 +14,6 @@
 /build/
 /bin/
 /tests/
+/databases/
 tags
 .DS_Store
