@@ -1,0 +1,718 @@
+// Copyright (c) 2025 by Terry Greeniaus.
+// All rights reserved.
+#include <version.h>
+#include <hdr/kmath.h>
+#include <strutil/strutil.h>
+#include <libtsdb/tsdb.h>
+
+#include <algorithm>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define MAX_PRINT_RESULTS   12
+KASSERT(MAX_PRINT_RESULTS % 2 == 0);
+
+// Common commands:
+//  create measurement pt-1/xtalx_data with fields pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
+//  write series pt-1/xtalx_data/XTI-10-1000000
+
+static uint32_t u32 = 500000;
+static uint64_t u64 = 0x0000000100000000ULL;
+static float f32    = 12345.67;
+static double f64   = 12345678.9;
+
+enum command_token
+{
+    // Keywords.
+    CT_STR_INIT,
+    CT_STR_CREATE,
+    CT_STR_DATABASE,
+    CT_STR_MEASUREMENT,
+    CT_STR_WRITE,
+    CT_STR_SERIES,
+    CT_STR_WITH,
+    CT_STR_FIELDS,
+    CT_STR_SELECT,
+    CT_STR_FROM,
+    CT_STR_WHERE,
+    CT_STR_TIME_NS,
+    CT_STR_LIMIT,
+    CT_STR_LAST,
+    CT_STR_DELETE,
+
+    // Other types.
+    CT_DATABASE_SPECIFIER,      // <database>
+    CT_MEASUREMENT_SPECIFIER,   // <database>/<measurement>
+    CT_SERIES_SPECIFIER,        // <database>/<measurement>/<series>
+    CT_TYPED_FIELDS,            // <f1>/<type1>,<f2>/<type2>,...
+    CT_UINT64,                  // <uint64_t>
+    CT_FIELD_SPECIFIER,         // <f1>,<f2>,...
+    CT_COMPARISON,              // <, <=, ==, >=, >
+    CT_COMPARISON_LEFT,         // <, <=
+    CT_COMPARISON_RIGHT,        // >=, >
+};
+
+constexpr const char* const keyword_strings[] =
+{
+    [CT_STR_INIT]           = "init",
+    [CT_STR_CREATE]         = "create",
+    [CT_STR_DATABASE]       = "database",
+    [CT_STR_MEASUREMENT]    = "measurement",
+    [CT_STR_WRITE]          = "write",
+    [CT_STR_SERIES]         = "series",
+    [CT_STR_WITH]           = "with",
+    [CT_STR_FIELDS]         = "fields",
+    [CT_STR_SELECT]         = "select",
+    [CT_STR_FROM]           = "from",
+    [CT_STR_WHERE]          = "where",
+    [CT_STR_TIME_NS]        = "time_ns",
+    [CT_STR_LIMIT]          = "limit",
+    [CT_STR_LAST]           = "last",
+    [CT_STR_DELETE]         = "delete",
+};
+
+struct command_syntax
+{
+    void (* const handler)(const std::vector<std::string>& cmd);
+    const std::vector<command_token> tokens;
+
+    bool parse(const std::vector<std::string>& cmd) const
+    {
+        if (cmd.size() != tokens.size())
+            return false;
+        for (size_t i=0; i<tokens.size(); ++i)
+        {
+            switch (tokens[i])
+            {
+                case CT_STR_INIT:
+                case CT_STR_CREATE:
+                case CT_STR_DATABASE:
+                case CT_STR_MEASUREMENT:
+                case CT_STR_WRITE:
+                case CT_STR_SERIES:
+                case CT_STR_WITH:
+                case CT_STR_FIELDS:
+                case CT_STR_SELECT:
+                case CT_STR_FROM:
+                case CT_STR_WHERE:
+                case CT_STR_TIME_NS:
+                case CT_STR_LIMIT:
+                case CT_STR_LAST:
+                case CT_STR_DELETE:
+                    if (strcasecmp(cmd[i].c_str(),keyword_strings[tokens[i]]))
+                        return false;
+                break;
+
+                case CT_DATABASE_SPECIFIER:
+                    if (std::count(cmd[i].begin(),cmd[i].end(),'/') != 0)
+                        return false;
+                break;
+
+                case CT_MEASUREMENT_SPECIFIER:
+                    if (std::count(cmd[i].begin(),cmd[i].end(),'/') != 1)
+                        return false;
+                break;
+
+                case CT_SERIES_SPECIFIER:
+                    if (std::count(cmd[i].begin(),cmd[i].end(),'/') != 2)
+                        return false;
+                break;
+
+                case CT_TYPED_FIELDS:
+                case CT_FIELD_SPECIFIER:
+                break;
+
+                case CT_UINT64:
+                    try
+                    {
+                        std::stoul(cmd[i]);
+                    }
+                    catch (const std::exception&)
+                    {
+                        return false;
+                    }
+                break;
+
+                case CT_COMPARISON:
+                    if (cmd[i] != "<" && cmd[i] != "<=" && cmd[i] != "==" &&
+                        cmd[i] != ">=" && cmd[i] != ">")
+                    {
+                        return false;
+                    }
+                break;
+
+                case CT_COMPARISON_LEFT:
+                    if (cmd[i] != "<" && cmd[i] != "<=")
+                        return false;
+                break;
+
+                case CT_COMPARISON_RIGHT:
+                    if (cmd[i] != ">=" && cmd[i] != ">")
+                        return false;
+                break;
+            }
+        }
+        return true;
+    }
+};
+
+static void handle_select_series_one_op(
+    const std::vector<std::string>& cmd);
+static void handle_select_series_one_op_limit(
+    const std::vector<std::string>& cmd);
+static void handle_select_series_two_op(
+    const std::vector<std::string>& cmd);
+static void handle_select_series_two_op_limit(
+    const std::vector<std::string>& cmd);
+static void handle_select_series_one_op_last(
+    const std::vector<std::string>& cmd);
+static void handle_select_series_two_op_last(
+    const std::vector<std::string>& cmd);
+static void handle_delete_from_series(const std::vector<std::string>& cmd);
+static void handle_write_series(const std::vector<std::string>& cmd);
+static void handle_create_measurement(const std::vector<std::string>& cmd);
+static void handle_create_database(const std::vector<std::string>& cmd);
+static void handle_init(const std::vector<std::string>& cmd);
+
+static const command_syntax commands[] =
+{
+    {
+        handle_init,
+        {CT_STR_INIT},
+    },
+    {
+        handle_create_database,
+        {CT_STR_CREATE, CT_STR_DATABASE, CT_DATABASE_SPECIFIER},
+    },
+    {
+        handle_create_measurement,
+        {CT_STR_CREATE, CT_STR_MEASUREMENT, CT_MEASUREMENT_SPECIFIER,
+         CT_STR_WITH, CT_STR_FIELDS, CT_TYPED_FIELDS},
+    },
+    {
+        handle_write_series,
+        {CT_STR_WRITE, CT_STR_SERIES, CT_SERIES_SPECIFIER, CT_UINT64},
+    },
+    {
+        handle_select_series_one_op,
+        {CT_STR_SELECT, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
+         CT_STR_WHERE, CT_STR_TIME_NS, CT_COMPARISON, CT_UINT64},
+    },
+    {
+        handle_select_series_one_op_limit,
+        {CT_STR_SELECT, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
+         CT_STR_WHERE, CT_STR_TIME_NS, CT_COMPARISON, CT_UINT64, CT_STR_LIMIT,
+         CT_UINT64},
+    },
+    {
+        handle_select_series_two_op,
+        {CT_STR_SELECT, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
+         CT_STR_WHERE, CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS,
+         CT_COMPARISON_LEFT, CT_UINT64},
+    },
+    {
+        handle_select_series_two_op_limit,
+        {CT_STR_SELECT, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
+         CT_STR_WHERE, CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS,
+         CT_COMPARISON_LEFT, CT_UINT64, CT_STR_LIMIT, CT_UINT64},
+    },
+    {
+        handle_select_series_one_op_last,
+        {CT_STR_SELECT, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
+         CT_STR_WHERE, CT_STR_TIME_NS, CT_COMPARISON, CT_UINT64, CT_STR_LAST,
+         CT_UINT64},
+    },
+    {
+        handle_select_series_two_op_last,
+        {CT_STR_SELECT, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
+         CT_STR_WHERE, CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS,
+         CT_COMPARISON_LEFT, CT_UINT64, CT_STR_LAST, CT_UINT64},
+    },
+    {
+        handle_delete_from_series,
+        {CT_STR_DELETE, CT_STR_FROM, CT_SERIES_SPECIFIER, CT_STR_WHERE,
+         CT_STR_TIME_NS, CT_COMPARISON_LEFT, CT_UINT64},
+    },
+};
+
+static void
+print_op_points(const tsdb::select_op& op, size_t index, size_t n)
+{
+    for (size_t i=index; i<index + n; ++i)
+    {
+        printf("%20llu ",op.timestamp_data[i]);
+        for (size_t j=0; j<op.fields.size(); ++j)
+        {
+            if (op.is_field_null(j,i))
+            {
+                printf("%20s ","null");
+                continue;
+            }
+
+            const auto* p = op.field_data[j];
+            switch (op.fields[j].type)
+            {
+                case tsdb::FT_BOOL:
+                    printf("%20s ",((const uint8_t*)p)[i] ? "true" : "false");
+                break;
+
+                case tsdb::FT_U32:
+                    printf("%20u ",((const uint32_t*)p)[i]);
+                break;
+
+                case tsdb::FT_U64:
+                    printf("%20llu ",((const uint64_t*)p)[i]);
+                break;
+
+                case tsdb::FT_F32:
+                    printf("%20f ",((const float*)p)[i]);
+                break;
+
+                case tsdb::FT_F64:
+                    printf("%20f ",((const double*)p)[i]);
+                break;
+            }
+        }
+        printf("\n");
+    }
+}
+
+static void
+_handle_select_series(tsdb::select_op& op) try
+{
+    if (!op.npoints)
+        return;
+
+    printf("%20s ","time_ns");
+    for (const auto& f : op.fields)
+        printf("%20s ",f.name.c_str());
+    printf("\n");
+
+    for (;;)
+    {
+        for (size_t i=0; i<op.fields.size() + 1; ++i)
+            printf("-------------------- ");
+        printf("\n");
+        if (op.npoints <= MAX_PRINT_RESULTS)
+            print_op_points(op,0,op.npoints);
+        else
+        {
+            print_op_points(op,0,MAX_PRINT_RESULTS/2);
+            printf("... [%zu points omitted] ...\n",
+                   op.npoints-MAX_PRINT_RESULTS);
+            print_op_points(op,op.npoints-MAX_PRINT_RESULTS/2,
+                            MAX_PRINT_RESULTS/2);
+        }
+        if (op.is_last)
+            break;
+
+        op.advance();
+    }
+}
+catch (const futil::errno_exception& e)
+{
+    printf("Error fetching points: %s\n",e.c_str());
+}
+
+static void
+_handle_select_series_limit(const std::string& series,
+    const std::string& field_specifier, uint64_t t0, uint64_t t1,
+    uint64_t N)
+{
+    tsdb::select_op_first op(series,str::split(field_specifier,","),t0,t1,N);
+    _handle_select_series(op);
+}
+
+static void
+_handle_select_series_one_op(const std::vector<std::string>& cmd, uint64_t N)
+{
+    // Handles a command such as:
+    //
+    //  select a,b,c from <series> where time_ns <= T
+    uint64_t t0 = 0;
+    uint64_t t1 = 0xFFFFFFFFFFFFFFFF;
+    uint64_t T = std::stoul(cmd[7]);
+    if (cmd[6] == ">")
+        t0 = T + 1;
+    else if (cmd[6] == ">=")
+        t0 = T;
+    else if (cmd[6] == "==")
+        t0 = t1 = T;
+    else if (cmd[6] == "<=")
+        t1 = T;
+    else
+        t1 = T - 1;
+
+    _handle_select_series_limit(cmd[3],cmd[1],t0,t1,N);
+}
+
+static void
+handle_select_series_one_op(const std::vector<std::string>& cmd)
+{
+    _handle_select_series_one_op(cmd,0xFFFFFFFFFFFFFFFF);
+}
+
+static void
+handle_select_series_one_op_limit(const std::vector<std::string>& cmd)
+{
+    _handle_select_series_one_op(cmd,std::stoul(cmd[9]));
+}
+
+static void
+_handle_select_series_two_op(const std::vector<std::string>& cmd, uint64_t N)
+{
+    // Handles a command such as:
+    //
+    //  select a,b,c from <series> where T0 <= time_ns <= T1
+    uint64_t t0 = 0;
+    uint64_t t1 = 0xFFFFFFFFFFFFFFFF;
+    uint64_t T0 = std::stoul(cmd[5]);
+    uint64_t T1 = std::stoul(cmd[9]);
+    if (cmd[6] == "<")
+        t0 = T0 + 1;
+    else
+        t0 = T0;
+    if (cmd[8] == "<")
+        t1 = T1 - 1;
+    else
+        t1 = T1;
+
+    _handle_select_series_limit(cmd[3],cmd[1],t0,t1,N);
+}
+
+static void
+handle_select_series_two_op(const std::vector<std::string>& cmd)
+{
+    _handle_select_series_two_op(cmd,0xFFFFFFFFFFFFFFFF);
+}
+
+static void
+handle_select_series_two_op_limit(const std::vector<std::string>& cmd)
+{
+    _handle_select_series_two_op(cmd,std::stoul(cmd[11]));
+}
+
+static void
+_handle_select_series_last(const std::string& series,
+    const std::string& field_specifier, uint64_t t0, uint64_t t1,
+    uint64_t N)
+{
+    tsdb::select_op_last op(series,str::split(field_specifier,","),t0,t1,N);
+    _handle_select_series(op);
+}
+
+static void
+handle_select_series_one_op_last(const std::vector<std::string>& cmd)
+{
+    // Handles a command such as:
+    //
+    //  select a,b,c from <series> where time_ns <= T last N
+    uint64_t t0 = 0;
+    uint64_t t1 = 0xFFFFFFFFFFFFFFFF;
+    uint64_t T = std::stoul(cmd[7]);
+    size_t N = std::stoul(cmd[9]);
+    if (cmd[6] == ">")
+        t0 = T + 1;
+    else if (cmd[6] == ">=")
+        t0 = T;
+    else if (cmd[6] == "==")
+        t0 = t1 = T;
+    else if (cmd[6] == "<=")
+        t1 = T;
+    else
+        t1 = T - 1;
+
+    _handle_select_series_last(cmd[3],cmd[1],t0,t1,N);
+}
+
+static void
+handle_select_series_two_op_last(const std::vector<std::string>& cmd)
+{
+    // Handles a command such as:
+    //
+    //  select a,b,c from <series> where T0 <= time_ns <= T1 last N
+    uint64_t t0 = 0;
+    uint64_t t1 = 0xFFFFFFFFFFFFFFFF;
+    uint64_t T0 = std::stoul(cmd[5]);
+    uint64_t T1 = std::stoul(cmd[9]);
+    size_t N = std::stoul(cmd[11]);
+    if (cmd[6] == "<")
+        t0 = T0 + 1;
+    else
+        t0 = T0;
+    if (cmd[8] == "<")
+        t1 = T1 - 1;
+    else
+        t1 = T1;
+
+    _handle_select_series_last(cmd[3],cmd[1],t0,t1,N);
+}
+
+static void
+handle_delete_from_series(const std::vector<std::string>& cmd)
+{
+    // Handles a command such as:
+    //
+    //  delete from <series> where time_ns <= T
+    uint64_t t = std::stoul(cmd[6]);
+    if (cmd[5] == "<")
+    {
+        if (t == 0)
+            return;
+        --t;
+    }
+
+    tsdb::delete_points(cmd[2],t);
+}
+
+static void
+handle_write_series(const std::vector<std::string>& v)
+{
+    // Handles a command such as:
+    //
+    //  write series pt-1/xtalx_data/XTI-10-1000000 N
+    uint32_t n = std::stoul(v[3]);
+
+    std::vector<tsdb::field> fields;
+    try
+    {
+        tsdb::parse_schema_for_series(v[2],fields);
+    }
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error parsing schema: %s\n",e.c_str());
+        return;
+    }
+
+    // Generate points.
+    uint64_t t0 = 1;
+    try
+    {
+        t0 = tsdb::get_time_last(v[2]) + 1;
+    }
+    catch (const futil::errno_exception& e)
+    {
+        if (e.errnov != ENOENT)
+            throw;
+    }
+    if (t0 == 1)
+        t0 = 1741235979144457000;
+    std::vector<uint64_t> data_points;
+    for (size_t i=0; i<n; ++i)
+        data_points.push_back(t0++);
+    for (const auto& field : fields)
+    {
+        // Generate a bitmap with some random null values.  We nullify one
+        // value out of every 64.
+        for (size_t i=0; i<ceil_div(n,64U); ++i)
+        {
+            uint64_t v = 0xFFFFFFFFFFFFFFFFULL;
+            v ^= (1ULL << (random() % 64));
+            data_points.push_back(v);
+        }
+
+        // Put in values.
+        switch (field.type)
+        {
+            case tsdb::FT_BOOL:
+                for (size_t i=0; i<ceil_div(n,8U); ++i)
+                    data_points.push_back(0x0101010101010101ULL);
+            break;
+
+            case tsdb::FT_U32:
+                for (size_t i=0; i<ceil_div(n,2U); ++i)
+                {
+                    data_points.push_back((((uint64_t)u32 + 0ULL) <<  0) |
+                                          (((uint64_t)u32 + 1ULL) << 32));
+                    u32 += 2;
+                }
+            break;
+
+            case tsdb::FT_U64:
+                for (size_t i=0; i<n; ++i)
+                    data_points.push_back(u64++);
+            break;
+
+            case tsdb::FT_F32:
+                for (size_t i=0; i<ceil_div(n,2U); ++i)
+                {
+                    union
+                    {
+                        float       f[2];
+                        uint64_t    v;
+                    } u = {{f32, f32 + 0.1f}};
+                    f32 += 0.2;
+                    data_points.push_back(u.v);
+                }
+            break;
+
+            case tsdb::FT_F64:
+                for (size_t i=0; i<n; ++i)
+                {
+                    union
+                    {
+                        double      f;
+                        uint64_t    v;
+                    } u = {f64};
+                    f64 += 0.01;
+                    data_points.push_back(u.v);
+                }
+            break;
+        }
+    }
+
+#if 0
+    try
+#endif
+    {
+        tsdb::write_series(v[2],n,data_points.size()*sizeof(uint64_t),
+                           &data_points[0]);
+    }
+#if 0
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error: %s\n",e.c_str());
+    }
+#endif
+}
+
+static void
+handle_create_measurement(const std::vector<std::string>& v)
+{
+    // Handles a command such as:
+    //
+    //  create measurement pt-1/xtalx_data with fields \
+    //      pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
+    std::vector<tsdb::field> fields;
+    auto field_specifiers = str::split(v[5],",");
+    for (const auto& fs : field_specifiers)
+    {
+        auto field_specifier = str::split(fs,"/");
+        if (field_specifier.size() != 2 || field_specifier[0].empty() ||
+            field_specifier[1].empty())
+        {
+            printf("Invalid field specifier: %s\n",fs.c_str());
+            return;
+        }
+
+        tsdb::field f;
+        f.name = field_specifier[0];
+        if (field_specifier[1] == "bool")
+            f.type = tsdb::FT_BOOL;
+        else if (field_specifier[1] == "u32")
+            f.type = tsdb::FT_U32;
+        else if (field_specifier[1] == "u64")
+            f.type = tsdb::FT_U64;
+        else if (field_specifier[1] == "f32")
+            f.type = tsdb::FT_F32;
+        else if (field_specifier[1] == "f64")
+            f.type = tsdb::FT_F64;
+        else
+        {
+            printf("Unrecognized field type '%s'.\n",
+                   field_specifier[1].c_str());
+            return;
+        }
+
+        fields.push_back(f);
+    }
+
+    try
+    {
+        tsdb::create_measurement(v[2].c_str(),fields);
+    }
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error: %s\n",e.c_str());
+    }
+}
+
+static void
+handle_create_database(const std::vector<std::string>& cmd)
+{
+    kassert(cmd.size() == 3);
+    printf("Creating database \"%s\"...\n",cmd[2].c_str());
+    try
+    {
+        tsdb::create_database(cmd[2].c_str());
+    }
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error: %s\n",e.c_str());
+    }
+}
+
+static void
+handle_init(const std::vector<std::string>&)
+{
+    printf("Initializing TSDB directories...\n");
+    try
+    {
+        tsdb::init();
+    }
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error: %s\n",e.c_str());
+    }
+}
+
+int
+main(int argc, const char* argv[])
+{
+    std::string cmd;
+
+    printf("%s\n",GIT_VERSION);
+    for (;;)
+    {
+        printf("tsdbcli> ");
+
+        bool invalid = false;
+        cmd.clear();
+        for (;;)
+        {
+            int c = getchar();
+            if (c == EOF)
+                return 0;
+            if (c == '\n')
+                break;
+            if (!isprint(c))
+                invalid = true;
+
+            cmd += c;
+        }
+
+        if (invalid)
+        {
+            printf("Invalid characters\n");
+            continue;
+        }
+
+        auto v = str::split(cmd);
+#if 0
+        if (cmd == "init")
+            tsdb_init();
+        else if (cmd.starts_with("create database "))
+            handle_create_database(v);
+        else if (cmd.starts_with("create measurement "))
+            tsdb_create_measurement(cmd);
+        else if (cmd.starts_with("write series "))
+            tsdb_write_series(cmd);
+        else
+            printf("Syntax error\n");
+#else
+        bool handled = false;
+        for (const auto& c : commands)
+        {
+            if (c.parse(v))
+            {
+                handled = true;
+                c.handler(v);
+                break;
+            }
+        }
+
+        if (!handled)
+            printf("Syntax error.\n");
+#endif
+    }
+}
