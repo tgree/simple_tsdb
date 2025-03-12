@@ -565,7 +565,7 @@ handle_write_series(const std::vector<std::string>& v)
     try
 #endif
     {
-        tsdb::write_series(v[2],n,data_points.size()*sizeof(uint64_t),
+        tsdb::write_series(v[2],n,0,data_points.size()*sizeof(uint64_t),
                            &data_points[0]);
     }
 #if 0

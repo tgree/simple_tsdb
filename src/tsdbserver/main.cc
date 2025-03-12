@@ -19,6 +19,7 @@ enum command_token : uint32_t
     CT_SELECT_POINTS_LIMIT  = 0x7446C560,
     CT_SELECT_POINTS_LAST   = 0x76CF2220,
     CT_DELETE_POINTS        = 0xD9082F2C,
+    CT_GET_SCHEMA           = 0x87E5A959,
 };
 
 enum data_token : uint32_t
@@ -28,12 +29,15 @@ enum data_token : uint32_t
     DT_SERIES           = 0x4E873749,   // <series>
     DT_TYPED_FIELDS     = 0x02AC7330,   // <f1>/<type1>,<f2>/<type2>,...
     DT_FIELD_LIST       = 0xBB62ACC3,   // <f1>,<f2>,...
-    DT_CHUNK_POINTS     = 0xE4E8518F,   // <len> (uint32_t), then point data
+    DT_CHUNK            = 0xE4E8518F,   // <chunk header>, then data
     DT_TIME_FIRST       = 0x55BA37B4,   // <t0> (uint64_t)
     DT_TIME_LAST        = 0xC4EE45BA,   // <t1> (uint64_t)
     DT_NLIMIT           = 0xEEF2BB02,   // LIMIT <N> (uint64_t)
     DT_NLAST            = 0xD74F10A3,   // LAST <N> (uint64_t)
     DT_END              = 0x4E29ADCC,   // end of command
+    DT_STATUS_CODE      = 0x8C8C07D9,   // <errno> (uint32_t)
+    DT_FIELD_TYPE       = 0x7DB40C2A,   // <type> (uint32_t)
+    DT_FIELD_NAME       = 0x5C0D45C1,   // <name>
 };
 
 struct parsed_data_token
@@ -50,28 +54,54 @@ struct parsed_data_token
 struct chunk_header
 {
     uint32_t    npoints;
+    uint32_t    bitmap_offset;
+    uint32_t    data_len;
     uint8_t     data[];
+};
+
+struct auto_buf
+{
+    void* const data;
+
+    operator void*() const
+    {
+        return data;
+    }
+
+    auto_buf(size_t len):
+        data(malloc(len))
+    {
+        if (!data)
+            throw futil::errno_exception(ENOMEM);
+    }
+    ~auto_buf()
+    {
+        free(data);
+    }
 };
 
 struct command_syntax
 {
-    void (* const handler)(const std::vector<parsed_data_token>& tokens);
+    void (* const handler)(tcp::socket4& s,
+                           const std::vector<parsed_data_token>& tokens);
     const command_token cmd_token;
     const std::vector<data_token> data_tokens;
 };
 
 static void handle_create_database(
-    const std::vector<parsed_data_token>& tokens);
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_create_measurement(
-    const std::vector<parsed_data_token>& tokens);
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+static void handle_get_schema(
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_write_points(
-    const std::vector<parsed_data_token>& tokens);
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_delete_points(
-    const std::vector<parsed_data_token>& tokens);
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_limit(
-    const std::vector<parsed_data_token>& tokens);
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_last(
-    const std::vector<parsed_data_token>& tokens);
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 
 static const command_syntax commands[] =
 {
@@ -86,9 +116,14 @@ static const command_syntax commands[] =
         {DT_DATABASE, DT_MEASUREMENT, DT_TYPED_FIELDS, DT_END},
     },
     {
+        handle_get_schema,
+        CT_GET_SCHEMA,
+        {DT_DATABASE, DT_MEASUREMENT, DT_END},
+    },
+    {
         handle_write_points,
         CT_WRITE_POINTS,
-        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_CHUNK_POINTS},
+        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES},
     },
     {
         handle_delete_points,
@@ -110,7 +145,8 @@ static const command_syntax commands[] =
 };
 
 static void
-handle_create_database(const std::vector<parsed_data_token>& tokens)
+handle_create_database(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
 {
     // TODO: Use string_view.
     std::string database(tokens[0].data,tokens[0].len);
@@ -119,7 +155,8 @@ handle_create_database(const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-handle_create_measurement(const std::vector<parsed_data_token>& tokens)
+handle_create_measurement(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
     std::string measurement(tokens[1].data,tokens[1].len);
@@ -160,21 +197,58 @@ handle_create_measurement(const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-handle_write_points(const std::vector<parsed_data_token>& tokens)
+handle_get_schema(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
+{
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    futil::path measurement_path(database,measurement);
+    futil::path schema_path("databases",measurement_path,"schema.txt");
+
+    printf("GET SCHEMA FOR %s\n",measurement_path.c_str());
+    std::vector<tsdb::field> fields;
+    tsdb::parse_schema(schema_path,fields);
+    for (const auto& f : fields)
+    {
+        uint32_t ft[3] = {DT_FIELD_TYPE, f.type, DT_FIELD_NAME};
+        s.send_all(&ft,sizeof(ft));
+        uint16_t len = f.name.size();
+        s.send_all(&len,sizeof(len));
+        s.send_all(f.name.c_str(),len);
+    }
+    uint32_t dt = DT_END;
+    s.send_all(&dt,sizeof(dt));
+}
+
+static void
+handle_write_points(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
     std::string measurement(tokens[1].data,tokens[1].len);
     std::string series(tokens[2].data,tokens[2].len);
     futil::path path(database,measurement,series);
-    auto* chunk = (const chunk_header*)tokens[3].data;
-    uint32_t chunk_len = tokens[3].len - sizeof(chunk_header);
 
-    printf("WRITE %u POINTS TO %s\n",chunk->npoints,path.c_str());
-    tsdb::write_series(path,chunk->npoints,chunk_len,chunk->data);
+    for (;;)
+    {
+        uint32_t dt = s.pop<uint32_t>();
+        if (dt == DT_END)
+            return;
+        if (dt != DT_CHUNK)
+            throw futil::errno_exception(EINVAL);
+
+        chunk_header ch = s.pop<chunk_header>();
+        auto_buf data(ch.data_len);
+        s.recv_all(data,ch.data_len);
+
+        printf("WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
+        tsdb::write_series(path,ch.npoints,ch.bitmap_offset,ch.data_len,data);
+    }
 }
 
 static void
-handle_delete_points(const std::vector<parsed_data_token>& tokens)
+handle_delete_points(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
     std::string measurement(tokens[1].data,tokens[1].len);
@@ -213,7 +287,8 @@ _handle_select_points(tsdb::select_op& op)
 }
 
 static void
-handle_select_points_limit(const std::vector<parsed_data_token>& tokens)
+handle_select_points_limit(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
     std::string measurement(tokens[1].data,tokens[1].len);
@@ -231,7 +306,8 @@ handle_select_points_limit(const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-handle_select_points_last(const std::vector<parsed_data_token>& tokens)
+handle_select_points_last(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
     std::string measurement(tokens[1].data,tokens[1].len);
@@ -288,7 +364,7 @@ parse_cmd(tcp::socket4& s, const command_syntax& cs)
                     s.recv_all((char*)pdt.data,pdt.len);
                 break;
 
-                case DT_CHUNK_POINTS:
+                case DT_CHUNK:
                     throw futil::errno_exception(ENOTSUP);
                     tokens.push_back(pdt);
                 break;
@@ -304,10 +380,20 @@ parse_cmd(tcp::socket4& s, const command_syntax& cs)
                 case DT_END:
                     tokens.push_back(pdt);
                 break;
+
+                default:
+                    throw futil::errno_exception(EINVAL);
+                break;
             }
         }
 
-        cs.handler(tokens);
+        // TODO: We need real tsdb exceptions to know what type of error code
+        // to send back.
+        cs.handler(s,tokens);
+        
+        printf("Sending status...\n");
+        uint32_t status[2] = {DT_STATUS_CODE, 0};
+        s.send_all(&status,sizeof(status));
     }
     catch (...)
     {
@@ -347,6 +433,10 @@ parse_cmd(tcp::socket4& s)
     {
         printf("Error: %s\n",e.c_str());
     }
+    catch (...)
+    {
+        printf("Random exception!\n");
+    }
 }
 
 static void
@@ -366,6 +456,9 @@ request_handler(tcp::socket4&& s)
 int
 main(int argc, const char* argv[])
 {
+    if (argc == 2)
+        futil::chdir(argv[1]);
+
     printf("%s\n",GIT_VERSION);
 
     tcp::addr4 sa(4000,INADDR_LOOPBACK);

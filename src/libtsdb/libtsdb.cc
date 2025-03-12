@@ -546,8 +546,8 @@ tsdb::select_op_last::select_op_last(const futil::path& series,
 }
 
 void
-tsdb::write_series(const futil::path& series, size_t npoints, size_t data_len,
-    const void* data)
+tsdb::write_series(const futil::path& series, size_t npoints,
+    size_t bitmap_offset, size_t data_len, const void* data)
 {
     // Predicates when writing a series:
     //  1. If the series/time_last file exists then the series is fully
@@ -588,7 +588,7 @@ tsdb::write_series(const futil::path& series, size_t npoints, size_t data_len,
     for (auto& f : fields)
     {
         const auto* fti     = &ftinfos[f.type];
-        size_t bitmap_words = ceil_div<size_t>(npoints,64);
+        size_t bitmap_words = ceil_div<size_t>(npoints + bitmap_offset,64);
         size_t data_words   = ceil_div<size_t>(npoints*fti->nbytes,8);
 
         field_bitmap_ptrs.push_back((const uint64_t*)data_ptr);
@@ -777,8 +777,9 @@ tsdb::write_series(const futil::path& series, size_t npoints, size_t data_len,
             {
                 for (size_t j=0; j<op.npoints; ++j)
                 {
-                    bool new_bitmap = get_bitmap_bit(field_bitmap_ptrs[i],
-                                                     n_overlap_points + j);
+                    bool new_bitmap = get_bitmap_bit(
+                        field_bitmap_ptrs[i],
+                        bitmap_offset + n_overlap_points + j);
                     if (new_bitmap != op.get_bitmap_bit(i,j))
                     {
                         printf("Overwrite mismatch in bitmap %s.\n",
@@ -968,7 +969,7 @@ tsdb::write_series(const futil::path& series, size_t npoints, size_t data_len,
     // field sizes.
     size_t rem_points = npoints;
     uint64_t last_written_timestamp = 0;
-    size_t src_bitmap_offset = n_overlap_points;
+    size_t src_bitmap_offset = bitmap_offset + n_overlap_points;
     while (rem_points)
     {
         // If we have overflowed the timestamp file, or we have an empty index,

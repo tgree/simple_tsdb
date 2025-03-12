@@ -211,8 +211,8 @@ namespace tsdb
     //      9 f64 temp_hz values
     //
     //      Total: 360 bytes
-    void write_series(const futil::path& path, size_t npoints, size_t data_len,
-                      const void* data);
+    void write_series(const futil::path& path, size_t npoints,
+                      size_t bitmap_offset, size_t data_len, const void* data);
 
     // Creates a new measurement in the TSDB instance rooted at the current
     // working directory.  The path argument should have the form:

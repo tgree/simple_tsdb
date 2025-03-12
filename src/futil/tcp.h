@@ -54,6 +54,30 @@ namespace tcp
         const tcp::addr4 local_addr;
         const tcp::addr4 remote_addr;
 
+        ssize_t send(const void* buffer, size_t len, int flags = 0)
+        {
+            for (;;)
+            {
+                ssize_t slen = ::send(fd,buffer,len,flags);
+                if (slen != -1)
+                    return slen;
+                if (errno != EINTR)
+                    throw futil::errno_exception(errno);
+            }
+        }
+
+        void send_all(const void* buffer, size_t len)
+        {
+            const char* p = (const char*)buffer;
+            while (len)
+            {
+                ssize_t slen = send(p,len);
+                kassert(slen != 0);
+                p   += slen;
+                len -= slen;
+            }
+        }
+
         ssize_t recv(void* buffer, size_t len, int flags = 0)
         {
             for (;;)
@@ -68,7 +92,7 @@ namespace tcp
 
         void recv_all(void* buffer, size_t len)
         {
-            char* p = (char*) buffer;
+            char* p = (char*)buffer;
             while (len)
             {
                 ssize_t rlen = recv(p,len);

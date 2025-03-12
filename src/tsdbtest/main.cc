@@ -157,7 +157,7 @@ write_series(series_state& ss, size_t offset, size_t npoints)
     kassert(data.size()*8 == expected_len);
 
     // Write the series to disk.
-    tsdb::write_series(ss.path,npoints,expected_len,&data[0]);
+    tsdb::write_series(ss.path,npoints,0,expected_len,&data[0]);
 }
 
 int
@@ -165,8 +165,8 @@ main(int argc, const char* argv[])
 {
     // Create a temporary directory for our database.
     char tmp[] = "/tmp/tsdbtest.XXXXXX";
-    mkdtemp(tmp);
-    chdir(tmp);
+    futil::mkdtemp(tmp);
+    futil::chdir(tmp);
 
     // Initialize the database directory.
     printf("Initializing test databases in %s...\n",tmp);
