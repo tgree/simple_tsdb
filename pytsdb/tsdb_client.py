@@ -65,7 +65,7 @@ class Field:
         data   = [p[self.name] for p in points]
         for i, v in enumerate(data):
             if v is None:
-                data[v] = 0
+                data[i] = 0
                 bitmap[i // 64] ^= (1 << i % 64)
 
         bitmap = struct.pack('<%uQ' % len(bitmap), *bitmap)
