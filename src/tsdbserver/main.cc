@@ -3,9 +3,11 @@
 #include <version.h>
 #include <hdr/kmath.h>
 #include <strutil/strutil.h>
+#include <futil/tcp.h>
 #include <libtsdb/tsdb.h>
 
 #include <algorithm>
+#include <thread>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -37,16 +39,11 @@ enum data_token : uint32_t
 struct parsed_data_token
 {
     data_token type;
-
-    // Contents differ depending on token type.
+    const char* data;
     union
     {
-        struct
-        {
-            size_t      len;
-            const char* data;
-        } buf;
-        uint64_t u64;
+        size_t      len;
+        uint64_t    u64;
     };
 };
 
@@ -116,18 +113,18 @@ static void
 handle_create_database(const std::vector<parsed_data_token>& tokens)
 {
     // TODO: Use string_view.
-    std::string database(tokens[0].buf.data,tokens[0].buf.len);
-    printf("CREATE DATA %s\n",database.c_str());
+    std::string database(tokens[0].data,tokens[0].len);
+    printf("CREATE DATABASE %s\n",database.c_str());
     tsdb::create_database(database.c_str());
 }
 
 static void
 handle_create_measurement(const std::vector<parsed_data_token>& tokens)
 {
-    std::string database(tokens[0].buf.data,tokens[0].buf.len);
-    std::string measurement(tokens[1].buf.data,tokens[1].buf.len);
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
     futil::path path(database,measurement);
-    std::string typed_fields(tokens[2].buf.data,tokens[2].buf.len);
+    std::string typed_fields(tokens[2].data,tokens[2].len);
 
     std::vector<tsdb::field> fields;
     auto field_specifiers = str::split(typed_fields,",");
@@ -165,12 +162,12 @@ handle_create_measurement(const std::vector<parsed_data_token>& tokens)
 static void
 handle_write_points(const std::vector<parsed_data_token>& tokens)
 {
-    std::string database(tokens[0].buf.data,tokens[0].buf.len);
-    std::string measurement(tokens[1].buf.data,tokens[1].buf.len);
-    std::string series(tokens[2].buf.data,tokens[2].buf.len);
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
     futil::path path(database,measurement,series);
-    auto* chunk = (const chunk_header*)tokens[3].buf.data;
-    uint32_t chunk_len = tokens[3].buf.len - sizeof(chunk_header);
+    auto* chunk = (const chunk_header*)tokens[3].data;
+    uint32_t chunk_len = tokens[3].len - sizeof(chunk_header);
 
     printf("WRITE %u POINTS TO %s\n",chunk->npoints,path.c_str());
     tsdb::write_series(path,chunk->npoints,chunk_len,chunk->data);
@@ -179,9 +176,9 @@ handle_write_points(const std::vector<parsed_data_token>& tokens)
 static void
 handle_delete_points(const std::vector<parsed_data_token>& tokens)
 {
-    std::string database(tokens[0].buf.data,tokens[0].buf.len);
-    std::string measurement(tokens[1].buf.data,tokens[1].buf.len);
-    std::string series(tokens[2].buf.data,tokens[2].buf.len);
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
     futil::path path(database,measurement,series);
     uint64_t t = tokens[3].u64;
 
@@ -218,11 +215,11 @@ _handle_select_points(tsdb::select_op& op)
 static void
 handle_select_points_limit(const std::vector<parsed_data_token>& tokens)
 {
-    std::string database(tokens[0].buf.data,tokens[0].buf.len);
-    std::string measurement(tokens[1].buf.data,tokens[1].buf.len);
-    std::string series(tokens[2].buf.data,tokens[2].buf.len);
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
     futil::path path(database,measurement,series);
-    std::string field_list(tokens[3].buf.data,tokens[3].buf.len);
+    std::string field_list(tokens[3].data,tokens[3].len);
     uint64_t t0 = tokens[4].u64;
     uint64_t t1 = tokens[5].u64;
     uint64_t N = tokens[6].u64;
@@ -236,11 +233,11 @@ handle_select_points_limit(const std::vector<parsed_data_token>& tokens)
 static void
 handle_select_points_last(const std::vector<parsed_data_token>& tokens)
 {
-    std::string database(tokens[0].buf.data,tokens[0].buf.len);
-    std::string measurement(tokens[1].buf.data,tokens[1].buf.len);
-    std::string series(tokens[2].buf.data,tokens[2].buf.len);
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
     futil::path path(database,measurement,series);
-    std::string field_list(tokens[3].buf.data,tokens[3].buf.len);
+    std::string field_list(tokens[3].data,tokens[3].len);
     uint64_t t0 = tokens[4].u64;
     uint64_t t1 = tokens[5].u64;
     uint64_t N = tokens[6].u64;
@@ -251,24 +248,133 @@ handle_select_points_last(const std::vector<parsed_data_token>& tokens)
     _handle_select_points(op);
 }
 
+static void
+parse_cmd(tcp::socket4& s, const command_syntax& cs)
+{
+    printf("Got command 0x%08X.\n",cs.cmd_token);
+
+    std::vector<parsed_data_token> tokens;
+    try
+    {
+        for (auto dt : cs.data_tokens)
+        {
+            uint32_t v = s.pop<uint32_t>();
+            if (v != dt)
+            {
+                printf("Expected 0x%08X got 0x%08X\n",dt,v);
+                throw futil::errno_exception(EINVAL);
+            }
+            printf("Got token 0x%08X.\n",dt);
+
+            parsed_data_token pdt;
+            pdt.type = dt;
+            pdt.data = NULL;
+            switch (dt)
+            {
+                case DT_DATABASE:
+                case DT_MEASUREMENT:
+                case DT_SERIES:
+                case DT_TYPED_FIELDS:
+                case DT_FIELD_LIST:
+                    pdt.len = s.pop<uint16_t>();
+                    if (pdt.len >= 1024)
+                    {
+                        printf("String length %zu too long.\n",pdt.len);
+                        throw futil::errno_exception(EINVAL);
+                    }
+                    pdt.data = (char*)malloc(pdt.len);
+                    tokens.push_back(pdt);
+
+                    s.recv_all((char*)pdt.data,pdt.len);
+                break;
+
+                case DT_CHUNK_POINTS:
+                    throw futil::errno_exception(ENOTSUP);
+                    tokens.push_back(pdt);
+                break;
+
+                case DT_TIME_FIRST:
+                case DT_TIME_LAST:
+                case DT_NLIMIT:
+                case DT_NLAST:
+                    pdt.u64 = s.pop<uint64_t>();
+                    tokens.push_back(pdt);
+                break;
+
+                case DT_END:
+                    tokens.push_back(pdt);
+                break;
+            }
+        }
+
+        cs.handler(tokens);
+    }
+    catch (...)
+    {
+        for (const auto& t : tokens)
+            free((void*)t.data);
+        throw;
+    }
+
+    for (const auto& t : tokens)
+        free((void*)t.data);
+}
+
+static void
+parse_cmd(tcp::socket4& s)
+{
+    // 0. Set receive timeout to something very short.
+    // 1. Pop command token.
+    // 2. If not in commands[], close socket.
+    // 3. Pop data tokens as defined in commands[].
+    // 4. Call handler.
+    try
+    {
+        uint32_t ct = s.pop<uint32_t>();
+
+        for (auto& cmd : commands)
+        {
+            if (cmd.cmd_token == ct)
+            {
+                parse_cmd(s,cmd);
+                return;
+            }
+        }
+
+        printf("No such command 0x%08X.\n",ct);
+    }
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error: %s\n",e.c_str());
+    }
+}
+
+static void
+request_handler(tcp::socket4&& s)
+{
+    printf("Accepted local %s remote %s.\n",
+           s.local_addr.to_string().c_str(),
+           s.remote_addr.to_string().c_str());
+
+    parse_cmd(s);
+
+    printf("Closing local %s remote %s.\n",
+           s.local_addr.to_string().c_str(),
+           s.remote_addr.to_string().c_str());
+}
+
 int
 main(int argc, const char* argv[])
 {
     printf("%s\n",GIT_VERSION);
+
+    tcp::addr4 sa(4000,INADDR_LOOPBACK);
+    tcp::server_socket4 ss(sa);
+    ss.listen(4);
+    printf("Listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        // 1. Pop command token.
-        // 2. If not in commands[], close socket.
-        // 3. Pop data tokens as defined in commands[].
-        // 4. Call handler.
-        //
-        // try
-        // {
-        //      doIt();
-        // }
-        // catch (const futil::errno_exception& e)
-        // {
-        //     printf("Error: %s\n",e.c_str());
-        // }
+        std::thread t(request_handler,ss.accept());
+        t.detach();
     }
 }
