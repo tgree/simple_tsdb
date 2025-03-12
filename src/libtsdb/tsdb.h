@@ -9,6 +9,272 @@
 
 namespace tsdb
 {
+    enum status_code
+    {
+        INIT_IO_ERROR                   = -1,
+        CREATE_DATABASE_IO_ERROR        = -2,
+        CREATE_MEASUREMENT_IO_ERROR     = -3,
+        INVALID_MEASUREMENT             = -4,
+        INVALID_SERIES                  = -5,
+        CORRUPT_SCHEMA_FILE             = -6,
+        NO_SUCH_FIELD                   = -7,
+        END_OF_SELECT                   = -8,
+        INCORRECT_WRITE_CHUNK_LEN       = -9,
+        OUT_OF_ORDER_TIMESTAMPS         = -10,
+        TIMESTAMP_OVERWRITE_MISMATCH    = -11,
+        FIELD_OVERWRITE_MISMATCH        = -12,
+        BITMAP_OVERWRITE_MISMATCH       = -13,
+        TAIL_FILE_TOO_BIG               = -14,
+        TAIL_FILE_INVALID_SIZE          = -15,
+        INVALID_TIME_LAST               = -16,
+    };
+
+    struct exception : public std::exception
+    {
+        const status_code sc;
+
+        exception(status_code sc):sc(sc) {}
+    };
+
+    struct errno_exception : public exception
+    {
+        const int errnov;
+
+        errno_exception(status_code sc, int errnov):
+            exception(sc),
+            errnov(errnov)
+        {
+        }
+    };
+
+    struct init_io_error_exception : public errno_exception
+    {
+        init_io_error_exception(int errnov):
+            errno_exception(INIT_IO_ERROR,errnov)
+        {
+        }
+    };
+
+    struct create_database_io_error_exception : public errno_exception
+    {
+        virtual const char* what() const noexcept
+        {
+            return "I/O error creating database.";
+        }
+
+        create_database_io_error_exception(int errnov):
+            errno_exception(CREATE_DATABASE_IO_ERROR,errnov)
+        {
+        }
+    };
+
+    struct create_measurement_io_error_exception : public errno_exception
+    {
+        virtual const char* what() const noexcept
+        {
+            return "I/O error creating measurement.";
+        }
+
+        create_measurement_io_error_exception(int errnov):
+            errno_exception(CREATE_MEASUREMENT_IO_ERROR,errnov)
+        {
+        }
+    };
+
+    struct invalid_measurement_exception : public exception
+    {
+        // The specified path is not in <database>/<measurement> form.
+        virtual const char* what() const noexcept
+        {
+            return "Invalid measurement path.";
+        }
+
+        invalid_measurement_exception():exception(INVALID_MEASUREMENT) {}
+    };
+
+    struct invalid_series_exception : public exception
+    {
+        // The specified path is not in <database>/<measurement>/<series> form.
+        virtual const char* what() const noexcept
+        {
+            return "Invalid series path.";
+        }
+
+        invalid_series_exception():exception(INVALID_SERIES) {}
+    };
+
+    struct corrupt_schema_file_exception : public exception
+    {
+        // The schema.txt file being parsed was malformed.
+        virtual const char* what() const noexcept
+        {
+            return "Invalid schema file.";
+        }
+
+        corrupt_schema_file_exception():exception(CORRUPT_SCHEMA_FILE) {}
+    };
+
+    struct no_such_field_exception : public exception
+    {
+        // The specified field was not part of a measurement's schema.
+        virtual const char* what() const noexcept
+        {
+            return "No such field.";
+        }
+
+        no_such_field_exception():exception(NO_SUCH_FIELD) {}
+    };
+
+    struct end_of_select_exception : public exception
+    {
+        // Tried to advance() past the end of a select_op result.
+        virtual const char* what() const noexcept
+        {
+            return "End of select_op.";
+        }
+
+        end_of_select_exception():exception(END_OF_SELECT) {}
+    };
+
+    struct incorrect_write_chunk_len_exception : public exception
+    {
+        const size_t expected_len;
+        const size_t chunk_len;
+
+        // The length of the data buffer passed in to write_series() was
+        // incorrect for the specified number of points and the measurement's
+        // schema.
+        virtual const char* what() const noexcept
+        {
+            return "Incorrect chunk length.";
+        }
+
+        incorrect_write_chunk_len_exception(size_t expected_len,
+                                            size_t chunk_len):
+            exception(INCORRECT_WRITE_CHUNK_LEN),
+            expected_len(expected_len),
+            chunk_len(chunk_len)
+        {
+        }
+    };
+
+    struct out_of_order_timestamps_exception : public exception
+    {
+        // The timestamps passed to write_series() were not in strictly-
+        // increasing order.
+        virtual const char* what() const noexcept
+        {
+            return "Out of order timestamps.";
+        }
+
+        out_of_order_timestamps_exception():exception(OUT_OF_ORDER_TIMESTAMPS) {}
+    };
+
+    struct timestamp_overwrite_mismatch_exception : public exception
+    {
+        // When overwriting the tail of a series, the new timestamps didn't
+        // match the old timestamps.
+        virtual const char* what() const noexcept
+        {
+            return "Timestamp overwrite mismatch.";
+        }
+
+        timestamp_overwrite_mismatch_exception():
+            exception(TIMESTAMP_OVERWRITE_MISMATCH)
+        {
+        }
+    };
+
+    struct field_overwrite_mismatch_exception : public exception
+    {
+        // When overwriting the tail of a series, the new field contents didn't
+        // match the old field contents for a given timestamp.
+        virtual const char* what() const noexcept
+        {
+            return "Field overwrite mistmatch.";
+        }
+
+        field_overwrite_mismatch_exception():
+            exception(FIELD_OVERWRITE_MISMATCH)
+        {
+        }
+    };
+
+    struct bitmap_overwrite_mismatch_exception : public exception
+    {
+        // When overwriting the tail of a series, the new bitmap contents didn't
+        // match the old bitmap contents for a given timestamp.
+        virtual const char* what() const noexcept
+        {
+            return "Bitmap overwrite mistmatch.";
+        }
+
+        bitmap_overwrite_mismatch_exception():
+            exception(BITMAP_OVERWRITE_MISMATCH)
+        {
+        }
+    };
+
+    struct corrupt_series_exception : public exception
+    {
+        corrupt_series_exception(status_code sc):exception(sc) {}
+    };
+
+    struct tail_file_too_big_exception : public corrupt_series_exception
+    {
+        const off_t size;
+
+        // A tail file in the timestamp index is larger than 2M.
+        virtual const char* what() const noexcept
+        {
+            return "Tail file too large.";
+        }
+
+        tail_file_too_big_exception(const off_t size):
+            corrupt_series_exception(TAIL_FILE_TOO_BIG),
+            size(size)
+        {
+        }
+    };
+
+    struct tail_file_invalid_size_exception : public corrupt_series_exception
+    {
+        const off_t size;
+
+        // A tail file in the timestamp index is not a multiple of 64-bits.
+        virtual const char* what() const noexcept
+        {
+            return "Tail file has invalid length.";
+        }
+
+        tail_file_invalid_size_exception(const off_t size):
+            corrupt_series_exception(TAIL_FILE_INVALID_SIZE),
+            size(size)
+        {
+        }
+    };
+
+    struct invalid_time_last_exception : public corrupt_series_exception
+    {
+        const uint64_t tail_time_ns;
+        const uint64_t time_last_ns;
+
+        // The time_last file should always have a timestamp that matches a
+        // timestamp in a timestamp file.  Specifically, the last valid entry in
+        // the timestamp tail file should be the same value as time_last.
+        virtual const char* what() const noexcept
+        {
+            return "Tail file last timestamp not same as time_last timestamp.";
+        }
+
+        invalid_time_last_exception(uint64_t tail_time_ns, uint64_t time_last_ns):
+            corrupt_series_exception(INVALID_TIME_LAST),
+            tail_time_ns(tail_time_ns),
+            time_last_ns(time_last_ns)
+        {
+        }
+    };
+
     enum field_type
     {
         FT_BOOL = 0,

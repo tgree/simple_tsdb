@@ -9,11 +9,11 @@ futil::path
 tsdb::series_to_measurement(const futil::path& series)
 {
     if (series.empty() || series[0] == '/')
-        throw futil::errno_exception(EINVAL);
+        throw tsdb::invalid_series_exception();
 
     auto parts = series.decompose();
     if (parts.size() != 3)
-        throw futil::errno_exception(EINVAL);
+        throw tsdb::invalid_series_exception();
 
     return futil::path(parts[0],parts[1]);
 }
@@ -30,7 +30,7 @@ tsdb::parse_schema(const futil::path& path, std::vector<field>& _fields)
     for (const auto& l : lines)
     {
         if (l.size() < 3 || !str::isprint(l) || l[1] != '/')
-            throw futil::errno_exception(EINVAL);
+            throw tsdb::corrupt_schema_file_exception();
 
         field f;
         f.name = std::string(l,2);
@@ -43,7 +43,7 @@ tsdb::parse_schema(const futil::path& path, std::vector<field>& _fields)
             case '4':   f.type = FT_F64;    break;
 
             default:
-                throw futil::errno_exception(EINVAL);
+                throw tsdb::corrupt_schema_file_exception();
         }
         fields.push_back(f);
     }
@@ -283,7 +283,7 @@ tsdb::select_op::select_op(const futil::path& series,
             }
         }
         if (!found)
-            throw futil::errno_exception(ENOENT);
+            throw tsdb::no_such_field_exception();
     }
 }
 
@@ -293,7 +293,7 @@ tsdb::select_op::_advance(bool is_first)
     if (!is_first)
     {
         if (is_last)
-            throw futil::errno_exception(EFAULT);
+            throw tsdb::end_of_select_exception();
         ++index_slot;
     }
 
@@ -601,7 +601,7 @@ tsdb::write_series(const futil::path& series, size_t npoints,
     {
         printf("Expected %zu bytes of data, got %zu bytes.\n",
                expected_len,data_len);
-        throw futil::errno_exception(EINVAL);
+        throw tsdb::incorrect_write_chunk_len_exception(expected_len,data_len);
     }
 
     // Find the first and last time stamps and ensure that the timestamps are
@@ -612,7 +612,7 @@ tsdb::write_series(const futil::path& series, size_t npoints,
     for (size_t i=1; i<npoints; ++i)
     {
         if (time_data[i] <= time_data[i-1])
-            throw futil::errno_exception(EINVAL);
+            throw tsdb::out_of_order_timestamps_exception();
     }
 
     // Paths of interest.
@@ -754,7 +754,7 @@ tsdb::write_series(const futil::path& series, size_t npoints,
             if (memcmp(time_data,op.timestamp_data,op.npoints*8))
             {
                 printf("Overwrite mismatch in timestamps.\n");
-                throw futil::errno_exception(EINVAL);
+                throw tsdb::timestamp_overwrite_mismatch_exception();
             }
             time_data += op.npoints;
 
@@ -767,7 +767,7 @@ tsdb::write_series(const futil::path& series, size_t npoints,
                 {
                     printf("Overwrite mismatch in field %s.\n",
                            fields[i].name.c_str());
-                    throw futil::errno_exception(EINVAL);
+                    throw tsdb::field_overwrite_mismatch_exception();
                 }
                 field_data_ptrs[i] += len;
             }
@@ -784,7 +784,7 @@ tsdb::write_series(const futil::path& series, size_t npoints,
                     {
                         printf("Overwrite mismatch in bitmap %s.\n",
                                fields[i].name.c_str());
-                        throw futil::errno_exception(EINVAL);
+                        throw tsdb::bitmap_overwrite_mismatch_exception();
                     }
                 }
             }
@@ -849,9 +849,9 @@ tsdb::write_series(const futil::path& series, size_t npoints,
         // Validate the file size.
         pos = tail_fd.lseek(0,SEEK_END);
         if (pos > 2*1024*1024)
-            throw futil::errno_exception(EFBIG);
+            throw tsdb::tail_file_too_big_exception(pos);
         if (pos % sizeof(uint64_t))
-            throw futil::errno_exception(EINVAL);
+            throw tsdb::tail_file_invalid_size_exception(pos);
 
         // For a non-empty timestamp file, try to find the time_last entry so
         // we can append.
@@ -896,7 +896,10 @@ tsdb::write_series(const futil::path& series, size_t npoints,
             // the time_last file is larger than the value we found in the
             // index, the series is corrupt.
             if (tail_fd_last_entry < time_last_stored)
-                throw futil::errno_exception(EINVAL);
+            {
+                throw tsdb::invalid_time_last_exception(tail_fd_last_entry,
+                                                        time_last_stored);
+            }
 
             // There are extra timestamp entries compared to the value stored
             // in the time_last file.  This means a write_points operation was
@@ -928,7 +931,10 @@ tsdb::write_series(const futil::path& series, size_t npoints,
 
                 // If we don't have a match, the series is corrupt.
                 if (*iter != time_last_stored)
-                    throw futil::errno_exception(EINVAL);
+                {
+                    throw tsdb::invalid_time_last_exception(*iter,
+                                                            time_last_stored);
+                }
 
                 // We have found the time_last value in the timestamp file!
                 // Truncate the file as a convenience for future self and exit
@@ -1095,10 +1101,10 @@ tsdb::write_series(const futil::path& series, size_t npoints,
 
 void
 tsdb::create_measurement(const futil::path& path,
-    const std::vector<field>& fields)
+    const std::vector<field>& fields) try
 {
     if (path.empty() || path[0] == '/' || path.count_components() != 2)
-        throw futil::errno_exception(EINVAL);
+        throw tsdb::invalid_measurement_exception();
 
     futil::path dir_path("databases",path);
     futil::mkdir(dir_path,0770);
@@ -1109,7 +1115,7 @@ tsdb::create_measurement(const futil::path& path,
     {
         fd.open(create_series_path,O_WRONLY | O_CREAT | O_EXCL,0660);
     }
-    catch (const futil::exception&)
+    catch (...)
     {
         rmdir(dir_path);
         throw;
@@ -1121,7 +1127,7 @@ tsdb::create_measurement(const futil::path& path,
     {
         fd.open(schema_path,O_WRONLY | O_CREAT | O_EXCL | O_EXLOCK,0440);
     }
-    catch (const futil::exception&)
+    catch (...)
     {
         ::unlink(create_series_path);
         rmdir(dir_path);
@@ -1136,7 +1142,7 @@ tsdb::create_measurement(const futil::path& path,
             fd.write_all((line._path + "\n").c_str(),line.size() + 1);
         }
     }
-    catch (const futil::exception&)
+    catch (...)
     {
         ::unlink(create_series_path);
         ::unlink(schema_path);
@@ -1144,15 +1150,27 @@ tsdb::create_measurement(const futil::path& path,
         throw;
     }
 }
-
-void
-tsdb::create_database(const char* name)
+catch (const futil::errno_exception& e)
 {
-    futil::mkdir(futil::path("databases",name),0770);
+    throw tsdb::create_measurement_io_error_exception(e.errnov);
 }
 
 void
-tsdb::init()
+tsdb::create_database(const char* name) try
+{
+    futil::mkdir(futil::path("databases",name),0770);
+}
+catch (const futil::errno_exception& e)
+{
+    throw tsdb::create_database_io_error_exception(e.errnov);
+}
+
+void
+tsdb::init() try
 {
     futil::mkdir("databases",0770);
+}
+catch (const futil::errno_exception& e)
+{
+    throw tsdb::init_io_error_exception(e.errnov);
 }
