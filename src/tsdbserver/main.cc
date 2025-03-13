@@ -39,6 +39,7 @@ enum data_token : uint32_t
     DT_STATUS_CODE      = 0x8C8C07D9,   // <errno> (uint32_t)
     DT_FIELD_TYPE       = 0x7DB40C2A,   // <type> (uint32_t)
     DT_FIELD_NAME       = 0x5C0D45C1,   // <name>
+    DT_READY_FOR_CHUNK  = 0x6000531C,   // <max_data_len> (uint32_t)
 };
 
 struct parsed_data_token
@@ -237,6 +238,9 @@ handle_write_points(tcp::socket4& s,
 
     for (;;)
     {
+        uint32_t tokens[2] = {DT_READY_FOR_CHUNK,10*1024*1024};
+        s.send_all(tokens,sizeof(tokens));
+
         uint32_t dt = s.pop<uint32_t>();
         if (dt == DT_END)
         {
@@ -247,6 +251,9 @@ handle_write_points(tcp::socket4& s,
             throw futil::errno_exception(EINVAL);
 
         chunk_header ch = s.pop<chunk_header>();
+        if (ch.data_len > 10*1024*1024)
+            throw futil::errno_exception(ENOMEM);
+
         auto_buf data(ch.data_len);
         s.recv_all(data,ch.data_len);
 

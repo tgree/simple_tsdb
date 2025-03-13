@@ -2,6 +2,9 @@
 # All rights reserved.
 import socket
 import struct
+import math
+
+import numpy as np
 
 
 # Command tokens.
@@ -28,7 +31,7 @@ DT_END                  = 0x4E29ADCC
 DT_STATUS_CODE          = 0x8C8C07D9
 DT_FIELD_TYPE           = 0x7DB40C2A
 DT_FIELD_NAME           = 0x5C0D45C1
-DT_AWAITING_CHUNK       = 0x24CFD041
+DT_READY_FOR_CHUNK      = 0x6000531C
 
 # Status codes.
 SC_INIT_IO_ERROR                = -1
@@ -63,26 +66,38 @@ class ConnectionClosedException(Exception):
     pass
 
 
+class ProtocolException(Exception):
+    pass
+
+
 class FieldType:
-    def __init__(self, name, identifier, size, struct_key):
+    def __init__(self, name, identifier, size, struct_key, np_type):
         self.name       = name
         self.identifier = identifier
         self.size       = size
         self.struct_key = struct_key
+        self.np_type    = np_type
 
 
 # Field types
 FIELD_TYPES = {
-    0 : FieldType('bool', 0, 1, 'B'),
-    1 : FieldType('u32',  1, 4, 'I'),
-    2 : FieldType('u64',  2, 8, 'Q'),
-    3 : FieldType('f32',  3, 4, 'f'),
-    4 : FieldType('f64',  4, 8, 'd'),
+    1 : FieldType('bool', 0, 1, 'B', np.ubyte),
+    2 : FieldType('u32',  1, 4, 'I', np.uint32),
+    3 : FieldType('u64',  2, 8, 'Q', np.uint64),
+    4 : FieldType('f32',  3, 4, 'f', np.float32),
+    5 : FieldType('f64',  4, 8, 'd', np.float64),
 }
 
 
 def ceil_div(n, d):
     return (n + d - 1) // d
+
+
+def round_up(v, K):
+    '''
+    Rounds up to the nearest multiple of K.
+    '''
+    return math.ceil(v / K) * K
 
 
 class Field:
@@ -94,19 +109,89 @@ class Field:
         return '<%s %s>' % (self.field_type.name, self.name)
 
     def pack(self, points):
+        '''
+        A list of N points is packed as follows:
+        
+            uint64_t    bitmap[ceil(N/4)]
+            point_type  point[N]
+            uint8_t     padding[]
+
+        The padding aligns the total length to a multiple of 8 bytes.
+        '''
         bitmap = [0xFFFFFFFFFFFFFFFF] * ceil_div(len(points), 64)
-        data   = [p[self.name] for p in points]
-        for i, v in enumerate(data):
+        values = [p[self.name] for p in points]
+        for i, v in enumerate(values):
             if v is None:
-                data[i] = 0
+                values[i] = 0
                 bitmap[i // 64] ^= (1 << i % 64)
 
-        bitmap = struct.pack('<%uQ' % len(bitmap), *bitmap)
-        data = struct.pack('<%u%c' % (len(points), self.field_type.struct_key),
-                           *data)
-        if len(data) % 8:
-            data += bytes(8 - (len(data) % 8))
-        return bitmap + data
+        bitmap = np.array(bitmap, dtype=np.uint64)
+        values = np.array(values, dtype=self.field_type.np_type)
+        nbytes = len(points) * self.field_type.size
+        if nbytes % 8:
+            pad = bytes(8 - (nbytes % 8))
+        else:
+            pad = b''
+        return b'' + bitmap.data + values.data + pad
+
+
+class Schema:
+    def __init__(self, fields):
+        self.fields = fields
+
+    def __repr__(self):
+        return repr(self.fields)
+
+    def pack_points(self, points, index, n):
+        timestamps = [points[i]['time_ns'] for i in range(index, index + n)]
+        timestamps = np.array(timestamps, dtype=np.uint64)
+        data = b''
+        for f in self.fields:
+            data += f.pack(points)
+
+        return b'' + timestamps.data + data
+
+    def data_len_for_npoints(self, N):
+        M = len(self.fields)
+        S = sum(round_up(N * f.field_type.size, 8) for f in self.fields)
+        return 8 * N + math.ceil(N / 64) * 8 * M + S
+
+    def max_points_for_data_len(self, data_len):
+        '''
+        Suppose we have M fields.  We would like to calculate the maximum
+        number of points, N, that could be packed into a buffer length of
+        data_len bytes.
+        
+        We have the following function:
+
+            len(N) = 8*N +                      # Timestamps
+                     ceil(N/64)*8*M +           # Bitmaps
+                     round_up_8(N*f1.size) +    # Data 1
+                     round_up_8(N*f2.size) +    # Data 2
+                     ...
+                     round_up_8(N*fM.size)      # Data M
+
+        If we require N to be a multiple of 64, that simplifies to:
+
+            len(N) = 8*N +
+                     N/8*M +
+                     N*f1.size +
+                     N*f2.size +
+                     ...
+                     N*fM.size
+                   = N*(8 + f1.size + f2.size + ... + fM.size) + (N/8)*M
+
+        We want len(N) < data_len:
+
+            N*(8 + sum(f[i].size) + M/8) < data_len
+            N < data_len / (8 + sum(f[i].size) + M/8)
+
+        Select the multiple of 64 less than that number.
+        '''
+        M = len(self.fields)
+        S = sum(f.field_type.size for f in self.fields)
+        N = int((data_len / (8 + S + M/8)) / 64) * 64
+        return N
 
 
 class TSDBClient:
@@ -182,7 +267,7 @@ class TSDBClient:
                 sc = self._recv_i32()
                 if sc != 0:
                     raise StatusException(sc)
-                return fields
+                return Schema(fields)
 
             assert dt == DT_FIELD_TYPE
             data = self._recvall(10)
@@ -193,6 +278,10 @@ class TSDBClient:
             fields.append(Field(FIELD_TYPES[typ], name.decode()))
 
     def _write_points_begin(self, database, measurement, series):
+        '''
+        Starts a write operation, which grabs a write lock on the series in the
+        database.  Upon success, returns the maximum data length of a chunk.
+        '''
         database = database.encode()
         measurement = measurement.encode()
         series = series.encode()
@@ -205,10 +294,29 @@ class TSDBClient:
                           DT_SERIES, len(series), series)
         self._sendall(cmd)
 
+        dt = self._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self._recv_i32())
+        if dt != DT_READY_FOR_CHUNK:
+            raise ProtocolException()
+        return self._recv_u32()
+
     def _write_points_chunk(self, npoints, bitmap_offset, data):
+        '''
+        Writes a chunk to the series.  Upon success, returns the maximum data
+        length for the next chunk (which will always be the same as the max
+        data length of the first chunk, and so can be safely ignored).
+        '''
         cmd = struct.pack('<IIII', DT_CHUNK, npoints, bitmap_offset, len(data))
         self._sendall(cmd)
         self._sendall(data)
+
+        dt = self._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self._recv_i32())
+        if dt != DT_READY_FOR_CHUNK:
+            raise ProtocolException()
+        return self._recv_u32()
 
     def _write_points_end(self):
         cmd = struct.pack('<I', DT_END)
@@ -216,11 +324,16 @@ class TSDBClient:
 
     def write_points(self, database, measurement, series, schema, points):
         assert points
-        self._write_points_begin(database, measurement, series)
+        max_data_len = self._write_points_begin(database, measurement, series)
 
-        timestamps = [p['time_ns'] for p in points]
-        data = struct.pack('<%uQ' % len(points), *timestamps)
-        for f in schema:
-            data += f.pack(points)
-        self._write_points_chunk(len(points), 0, data)
+        index = 0
+        rem_points = len(points)
+        N = schema.max_points_for_data_len(max_data_len)
+        while rem_points:
+            n = min(rem_points, N)
+            data = schema.pack_points(points, index, n)
+            self._write_points_chunk(len(points), 0, data)
+            index += n
+            rem_points -= n
+
         self._write_points_end()

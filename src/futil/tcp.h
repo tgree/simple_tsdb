@@ -169,6 +169,15 @@ namespace tcp
             bind_addr(bind_addr)
         {
             fd = _socket4();
+
+            int reuse = 1;
+            if (setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse)))
+                throw futil::errno_exception(errno);
+
+            reuse = 1;
+            if (setsockopt(fd,SOL_SOCKET,SO_REUSEPORT,&reuse,sizeof(reuse)))
+                throw futil::errno_exception(errno);
+
             bind(bind_addr);
         }
     };
