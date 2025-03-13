@@ -1018,7 +1018,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
 void
 tsdb::create_measurement(const futil::path& path,
-    const std::vector<field>& fields) try
+    const std::vector<schema_entry>& fields) try
 {
     if (path.empty() || path[0] == '/' || path.count_components() != 2)
         throw tsdb::invalid_measurement_exception();
@@ -1053,12 +1053,8 @@ tsdb::create_measurement(const futil::path& path,
     
     try
     {
-        for (auto& f : fields)
-        {
-            schema_entry se = {f.type};
-            strcpy(se.name,f.name.c_str());
+        for (auto& se : fields)
             fd.write_all(&se,sizeof(se));
-        }
     }
     catch (...)
     {

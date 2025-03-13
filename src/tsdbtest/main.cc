@@ -25,14 +25,14 @@ constexpr const char* measurements[] =
     "measurement3",
 };
 
-std::vector<tsdb::field> fields =
+std::vector<tsdb::schema_entry> fields =
 {
-    {"field_bool",tsdb::FT_BOOL},
-    {"field_u32_1",tsdb::FT_U32},
-    {"field_u32_2",tsdb::FT_U32},
-    {"field_u64",tsdb::FT_U64},
-    {"field_f32",tsdb::FT_F32},
-    {"field_f64",tsdb::FT_F64},
+    {tsdb::FT_BOOL,{},"field_bool"},
+    {tsdb::FT_U32,{},"field_u32_1"},
+    {tsdb::FT_U32,{},"field_u32_2"},
+    {tsdb::FT_U64,{},"field_u64"},
+    {tsdb::FT_F32,{},"field_f32"},
+    {tsdb::FT_F64,{},"field_f64"},
 };
 
 struct data_point

@@ -322,12 +322,6 @@ namespace tsdb
         FT_F64  = 5,
     };
 
-    struct field
-    {
-        std::string name;
-        field_type  type;
-    };
-
     struct field_type_info
     {
         field_type  type;
@@ -595,7 +589,7 @@ namespace tsdb
     // and it creates a new measurement called "measurement_name" in the
     // database "database_name".
     void create_measurement(const futil::path& path,
-                            const std::vector<field>& fields);
+                            const std::vector<schema_entry>& fields);
 
     // Creates a new database in the TSDB instance rooted at the current working
     // directory.

@@ -166,33 +166,33 @@ handle_create_measurement(tcp::socket4& s,
     futil::path path(database,measurement);
     std::string typed_fields(tokens[2].data,tokens[2].len);
 
-    std::vector<tsdb::field> fields;
+    std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(typed_fields,",");
     for (const auto& fs : field_specifiers)
     {
         auto field_specifier = str::split(fs,"/");
         if (field_specifier.size() != 2 || field_specifier[0].empty() ||
-            field_specifier[1].empty())
+            field_specifier[1].empty() || field_specifiers[0].size() >= 124)
         {
             throw futil::errno_exception(EINVAL);
         }
 
-        tsdb::field f;
-        f.name = field_specifier[0];
+        tsdb::schema_entry se{};
+        strcpy(se.name,field_specifier[0].c_str());
         if (field_specifier[1] == "bool")
-            f.type = tsdb::FT_BOOL;
+            se.type = tsdb::FT_BOOL;
         else if (field_specifier[1] == "u32")
-            f.type = tsdb::FT_U32;
+            se.type = tsdb::FT_U32;
         else if (field_specifier[1] == "u64")
-            f.type = tsdb::FT_U64;
+            se.type = tsdb::FT_U64;
         else if (field_specifier[1] == "f32")
-            f.type = tsdb::FT_F32;
+            se.type = tsdb::FT_F32;
         else if (field_specifier[1] == "f64")
-            f.type = tsdb::FT_F64;
+            se.type = tsdb::FT_F64;
         else
             throw futil::errno_exception(EINVAL);
 
-        fields.push_back(f);
+        fields.push_back(se);
     }
 
     printf("CREATE MEASUREMENT %s\n",path.c_str());

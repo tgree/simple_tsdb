@@ -604,7 +604,7 @@ handle_create_measurement(const std::vector<std::string>& v)
     //
     //  create measurement pt-1/xtalx_data with fields \
     //      pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
-    std::vector<tsdb::field> fields;
+    std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(v[5],",");
     for (const auto& fs : field_specifiers)
     {
@@ -615,19 +615,24 @@ handle_create_measurement(const std::vector<std::string>& v)
             printf("Invalid field specifier: %s\n",fs.c_str());
             return;
         }
+        if (field_specifier[0].size() >= 124)
+        {
+            printf("Field name too long: %s\n",fs.c_str());
+            return;
+        }
 
-        tsdb::field f;
-        f.name = field_specifier[0];
+        tsdb::schema_entry se{};
+        strcpy(se.name,field_specifier[0].c_str());
         if (field_specifier[1] == "bool")
-            f.type = tsdb::FT_BOOL;
+            se.type = tsdb::FT_BOOL;
         else if (field_specifier[1] == "u32")
-            f.type = tsdb::FT_U32;
+            se.type = tsdb::FT_U32;
         else if (field_specifier[1] == "u64")
-            f.type = tsdb::FT_U64;
+            se.type = tsdb::FT_U64;
         else if (field_specifier[1] == "f32")
-            f.type = tsdb::FT_F32;
+            se.type = tsdb::FT_F32;
         else if (field_specifier[1] == "f64")
-            f.type = tsdb::FT_F64;
+            se.type = tsdb::FT_F64;
         else
         {
             printf("Unrecognized field type '%s'.\n",
@@ -635,7 +640,7 @@ handle_create_measurement(const std::vector<std::string>& v)
             return;
         }
 
-        fields.push_back(f);
+        fields.push_back(se);
     }
 
     try
