@@ -126,45 +126,57 @@ push_64(std::vector<uint64_t>& data, const T* v, size_t npoints)
 static void
 write_series(series_state& ss, size_t offset, size_t npoints)
 {
-    // Compute the expected length.
-    size_t expected_len = npoints*8; // Timestamps
-    for (auto& f : fields)
-    {
-        const auto* fti = &tsdb::ftinfos[f.type];
-        expected_len   += ceil_div<size_t>(npoints,64)*8; // Bitmap
-        expected_len   += ceil_div<size_t>(npoints*fti->nbytes,8)*8; // Data
-    }
-
-    // Create the data vector.
-    std::vector<uint64_t> data;
-    data.reserve(expected_len/8);
-
-    // Push the timestamps.
-    auto* p0 = &ss.points[offset];
-    for (size_t i=0; i<npoints; ++i)
-        data.push_back(p0[i].time_ns);
-
-    // Push each field, first the bitmap then the data.
-    push_bitmap(data,&p0->field_bool_is_null,npoints);
-    push_bool(data,&p0->field_bool,npoints);
-    push_bitmap(data,&p0->field_u32_1_is_null,npoints);
-    push_32(data,&p0->field_u32_1,npoints);
-    push_bitmap(data,&p0->field_u32_2_is_null,npoints);
-    push_32(data,&p0->field_u32_2,npoints);
-    push_bitmap(data,&p0->field_u64_is_null,npoints);
-    push_64(data,&p0->field_u64,npoints);
-    push_bitmap(data,&p0->field_f32_is_null,npoints);
-    push_32(data,&p0->field_f32,npoints);
-    push_bitmap(data,&p0->field_f64_is_null,npoints);
-    push_64(data,&p0->field_f64,npoints);
-    kassert(data.size()*8 == expected_len);
-
-    // Write the series to disk.
+    // Acquire the write lock.
     futil::path m_path(futil::path(ss.database,ss.measurement));
     futil::path s_path(m_path,ss.series);
     tsdb::measurement m(m_path);
     auto write_lock = tsdb::open_or_create_and_lock_series(m,s_path);
-    tsdb::write_series(write_lock,npoints,0,expected_len,&data[0]);
+
+    while (npoints)
+    {
+        // Figure out how many to write in this op.
+        size_t cpoints = (npoints > 1000 ? npoints - 1000 : npoints);
+
+        // Compute the expected length.
+        size_t expected_len = cpoints*8; // Timestamps
+        for (auto& f : fields)
+        {
+            const auto* fti = &tsdb::ftinfos[f.type];
+            expected_len   += ceil_div<size_t>(cpoints,64)*8; // Bitmap
+            expected_len   += ceil_div<size_t>(cpoints*fti->nbytes,8)*8; // Data
+        }
+
+        // Create the data vector.
+        std::vector<uint64_t> data;
+        data.reserve(expected_len/8);
+
+        // Push the timestamps.
+        auto* p0 = &ss.points[offset];
+        for (size_t i=0; i<cpoints; ++i)
+            data.push_back(p0[i].time_ns);
+
+        // Push each field, first the bitmap then the data.
+        push_bitmap(data,&p0->field_bool_is_null,cpoints);
+        push_bool(data,&p0->field_bool,cpoints);
+        push_bitmap(data,&p0->field_u32_1_is_null,cpoints);
+        push_32(data,&p0->field_u32_1,cpoints);
+        push_bitmap(data,&p0->field_u32_2_is_null,cpoints);
+        push_32(data,&p0->field_u32_2,cpoints);
+        push_bitmap(data,&p0->field_u64_is_null,cpoints);
+        push_64(data,&p0->field_u64,cpoints);
+        push_bitmap(data,&p0->field_f32_is_null,cpoints);
+        push_32(data,&p0->field_f32,cpoints);
+        push_bitmap(data,&p0->field_f64_is_null,cpoints);
+        push_64(data,&p0->field_f64,cpoints);
+        kassert(data.size()*8 == expected_len);
+
+        // Write the series to disk.
+        printf("Writing %zu points to %s...\n",cpoints,ss.dms_path.c_str());
+        tsdb::write_series(write_lock,cpoints,0,expected_len,&data[0]);
+
+        npoints -= cpoints;
+        offset  += cpoints;
+    }
 }
 
 int
@@ -204,7 +216,7 @@ main(int argc, const char* argv[])
         states.emplace_back(series_state{db,m,s,futil::path(db,m,s)});
 
         auto& ss = states.back();
-        size_t nelems = rand() % 1000000;
+        size_t nelems = (rand() % 1000000) + 1;
         ss.points.reserve(nelems);
         for (size_t j=0; j<nelems; ++j)
         {
