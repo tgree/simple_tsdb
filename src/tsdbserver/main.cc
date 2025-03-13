@@ -204,13 +204,10 @@ handle_get_schema(tcp::socket4& s,
     std::string database(tokens[0].data,tokens[0].len);
     std::string measurement(tokens[1].data,tokens[1].len);
     futil::path measurement_path(database,measurement);
-    futil::path schema_path("databases",measurement_path,"schema.txt");
 
     printf("GET SCHEMA FOR %s\n",measurement_path.c_str());
-    std::vector<tsdb::field> fields;
-    futil::file schema_fd(schema_path,O_RDONLY | O_SHLOCK);
-    tsdb::parse_schema(schema_fd,fields);
-    for (const auto& f : fields)
+    tsdb::measurement m(measurement_path);
+    for (const auto& f : m.fields)
     {
         uint32_t ft[3] = {DT_FIELD_TYPE, f.type, DT_FIELD_NAME};
         s.send_all(&ft,sizeof(ft));
@@ -229,6 +226,9 @@ handle_write_points(tcp::socket4& s,
     std::string series(tokens[2].data,tokens[2].len);
     futil::path path(database,measurement,series);
 
+    tsdb::measurement m(futil::path(database,measurement));
+    auto write_lock = tsdb::open_or_create_and_lock_series(m,path);
+
     for (;;)
     {
         uint32_t dt = s.pop<uint32_t>();
@@ -242,7 +242,8 @@ handle_write_points(tcp::socket4& s,
         s.recv_all(data,ch.data_len);
 
         printf("WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
-        tsdb::write_series(path,ch.npoints,ch.bitmap_offset,ch.data_len,data);
+        tsdb::write_series(write_lock,ch.npoints,ch.bitmap_offset,ch.data_len,
+                           data);
     }
 }
 

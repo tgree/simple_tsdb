@@ -569,9 +569,21 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void unlink(const directory& dir, const char* path)
+    {
+        if (::unlinkat(dir.fd,path,0) == -1)
+            throw errno_exception(errno);
+    }
+
     inline void unlink_if_exists(const char* path)
     {
         if (::unlink(path) == -1 && errno != ENOENT)
+            throw errno_exception(errno);
+    }
+
+    inline void unlink_if_exists(const directory& dir, const char* path)
+    {
+        if (::unlinkat(dir.fd,path,0) == -1 && errno != ENOENT)
             throw errno_exception(errno);
     }
 

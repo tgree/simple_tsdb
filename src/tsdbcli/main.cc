@@ -475,34 +475,20 @@ handle_write_series(const std::vector<std::string>& v)
     //  write series pt-1/xtalx_data/XTI-10-1000000 N
     uint32_t n = std::stoul(v[3]);
 
-    std::vector<tsdb::field> fields;
-    try
-    {
-        tsdb::parse_schema_for_series(v[2],fields);
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error parsing schema: %s\n",e.c_str());
-        return;
-    }
+    tsdb::measurement m(futil::path(v[2],".."));
 
     // Generate points.
-    uint64_t t0 = 1;
-    try
-    {
-        t0 = tsdb::get_time_last(v[2]) + 1;
-    }
-    catch (const futil::errno_exception& e)
-    {
-        if (e.errnov != ENOENT)
-            throw;
-    }
+    tsdb::series_write_lock write_lock =
+        tsdb::open_or_create_and_lock_series(m,v[2]);
+
+    uint64_t t0 = write_lock.time_last + 1;
     if (t0 == 1)
         t0 = 1741235979144457000;
+
     std::vector<uint64_t> data_points;
     for (size_t i=0; i<n; ++i)
         data_points.push_back(t0++);
-    for (const auto& field : fields)
+    for (const auto& field : m.fields)
     {
         // Generate a bitmap with some random null values.  We nullify one
         // value out of every 64.
@@ -567,7 +553,7 @@ handle_write_series(const std::vector<std::string>& v)
     try
 #endif
     {
-        tsdb::write_series(v[2],n,0,data_points.size()*sizeof(uint64_t),
+        tsdb::write_series(write_lock,n,0,data_points.size()*sizeof(uint64_t),
                            &data_points[0]);
     }
 #if 0

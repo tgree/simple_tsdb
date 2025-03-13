@@ -64,7 +64,10 @@ bool operator<(uint64_t time_ns, const data_point& rhs)
 
 struct series_state
 {
-    futil::path             path;
+    std::string             database;
+    std::string             measurement;
+    std::string             series;
+    futil::path             dms_path;
     std::vector<data_point> points;
 };
 
@@ -157,7 +160,11 @@ write_series(series_state& ss, size_t offset, size_t npoints)
     kassert(data.size()*8 == expected_len);
 
     // Write the series to disk.
-    tsdb::write_series(ss.path,npoints,0,expected_len,&data[0]);
+    futil::path m_path(futil::path(ss.database,ss.measurement));
+    futil::path s_path(m_path,ss.series);
+    tsdb::measurement m(m_path);
+    auto write_lock = tsdb::open_or_create_and_lock_series(m,s_path);
+    tsdb::write_series(write_lock,npoints,0,expected_len,&data[0]);
 }
 
 int
@@ -194,7 +201,7 @@ main(int argc, const char* argv[])
         const auto* db = databases[rand() % NELEMS(databases)];
         const auto* m  = measurements[rand() % NELEMS(measurements)];
         std::string s  = "series_" + std::to_string(i);
-        states.emplace_back(series_state{futil::path(db,m,s)});
+        states.emplace_back(series_state{db,m,s,futil::path(db,m,s)});
 
         auto& ss = states.back();
         size_t nelems = rand() % 1000000;
@@ -223,7 +230,7 @@ main(int argc, const char* argv[])
     // Populate all of the series.
     for (auto& ss : states)
     {
-        printf("Populating series %s...\n",ss.path.c_str());
+        printf("Populating series %s...\n",ss.dms_path.c_str());
         if(ss.points.size() >= 4096*1024/8)
         {
             // The series is large.  Write two 2M chunks, test a 100% overlap
@@ -287,7 +294,7 @@ main(int argc, const char* argv[])
         size_t npoints = lp - fp;
 
         // Perform the query.
-        tsdb::series_read_lock read_lock(ss.path);
+        tsdb::series_read_lock read_lock(ss.dms_path);
         tsdb::select_op* op;
         size_t N;
         switch (rand() % 3)
@@ -296,7 +303,7 @@ main(int argc, const char* argv[])
                 // No limit.
                 printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
                        "EXPECT %zu\n",
-                       ss.path.c_str(),t0,t1,
+                       ss.dms_path.c_str(),t0,t1,
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],npoints);
@@ -309,7 +316,7 @@ main(int argc, const char* argv[])
                 npoints = MIN(N,npoints);
                 printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
                        "LIMIT %zu EXPECT %zu\n",
-                       ss.path.c_str(),t0,t1,
+                       ss.dms_path.c_str(),t0,t1,
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],N,npoints);
@@ -323,7 +330,7 @@ main(int argc, const char* argv[])
                 fp = lp - npoints;
                 printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
                        "LAST %zu EXPECT %zu\n",
-                       ss.path.c_str(),t0,t1,
+                       ss.dms_path.c_str(),t0,t1,
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],N,npoints);

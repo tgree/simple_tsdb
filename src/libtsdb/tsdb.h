@@ -29,6 +29,7 @@ namespace tsdb
         INVALID_TIME_LAST               = -16,
         NO_SUCH_SERIES                  = -17,
         NO_SUCH_DATABASE                = -18,
+        NO_SUCH_MEASUREMENT             = -19,
     };
 
     struct exception : public std::exception
@@ -92,6 +93,17 @@ namespace tsdb
             errno_exception(CREATE_MEASUREMENT_IO_ERROR,errnov)
         {
         }
+    };
+
+    struct no_such_measurement_exception : public exception
+    {
+        // The specified measurement does not exist.
+        virtual const char* what() const noexcept
+        {
+            return "No such measurement.";
+        }
+
+        no_such_measurement_exception():exception(NO_SUCH_MEASUREMENT) {}
     };
 
     struct invalid_measurement_exception : public exception
@@ -291,7 +303,8 @@ namespace tsdb
             return "Tail file last timestamp not same as time_last timestamp.";
         }
 
-        invalid_time_last_exception(uint64_t tail_time_ns, uint64_t time_last_ns):
+        invalid_time_last_exception(uint64_t tail_time_ns,
+                                    uint64_t time_last_ns):
             corrupt_series_exception(INVALID_TIME_LAST),
             tail_time_ns(tail_time_ns),
             time_last_ns(time_last_ns)
@@ -331,6 +344,16 @@ namespace tsdb
         [tsdb::FT_F64]  = {tsdb::FT_F64,8,'4',"f64"},
     };
 
+    struct measurement
+    {
+        futil::directory    dir;
+        std::string         name;
+        std::vector<field>  fields;
+
+        // Path of the form: <database_name>/<measurement_name>
+        measurement(const futil::path& path);
+    };
+
     struct index_entry
     {
         uint64_t    time_ns;
@@ -366,7 +389,7 @@ namespace tsdb
         futil::path         series_path;
         futil::directory    series_dir;
         futil::file         time_first_fd;
-        const uint64_t      time_first;
+        uint64_t            time_first;
 
         // Obtain the lock using a <database>/<measurement>/<series> path.
         _series_lock(const futil::path& series_path, int oflag) try:
@@ -383,6 +406,7 @@ namespace tsdb
             throw;
         }
 
+#if 0
         // The lock has already been obtained and is being transferred to us.
         _series_lock(futil::file&& time_first_fd,
                      const futil::path& series_path):
@@ -392,33 +416,54 @@ namespace tsdb
             time_first(time_first_fd.read_u64())
         {
         }
+#endif
     };
 
     // Obtains a read lock on a series.
     struct series_read_lock : public _series_lock
     {
         series_read_lock(const futil::path& series_path):
-            _series_lock(series_path,O_SHLOCK)
+            _series_lock(series_path,O_RDONLY | O_SHLOCK)
+        {
+        }
+
+    protected:
+        series_read_lock(const futil::path& series_path, int oflag):
+            _series_lock(series_path,oflag)
         {
         }
     };
+
+    // Obtains a write lock on a series.
+    struct series_write_lock : public series_read_lock
+    {
+        futil::file time_last_fd;
+        uint64_t    time_last;
+
+        // Transfer ownership of an O_EXLOCK exclusive lock fd on time_last to
+        // us.
+        series_write_lock(const futil::path& series_path,
+                          futil::file&& _time_last_fd):
+            series_read_lock(series_path,O_RDWR | O_SHLOCK),
+            time_last_fd(std::move(_time_last_fd)),
+            time_last(time_last_fd.read_u64())
+        {
+        }
 
 #if 0
-    // Obtains a write lock on a series.
-    struct series_write_lock : public _series_lock
-    {
         series_write_lock(const futil::path& series_path):
-            _series_lock(series_path,O_EXLOCK)
+            series_read_lock(series_path),
+            time_last_fd(series_dir,"time_last",O_RDWR | O_EXLOCK),
+            time_last(time_last_fd.read_u64())
         {
         }
-
-        series_write_lock(futil::file&& time_first_fd,
-                          const futil::path& series_path):
-            _series_lock(std::move(time_first_fd),series_path)
-        {
-        }
-    };
 #endif
+    };
+
+    // If the series exists, obtains a write lock on it.  If the series doesn't
+    // exist, atomically create it and return the write lock on it.
+    series_write_lock open_or_create_and_lock_series(const measurement& m,
+                                                     const futil::path& series);
 
     // Class used to get data from a series.
     struct select_op
@@ -499,23 +544,6 @@ namespace tsdb
                        uint64_t t0, uint64_t t1, uint64_t limit);
     };
 
-    // Given a series name of the form:
-    //
-    //      database_name/measurement_name/series_name
-    //
-    // extract the measurement:
-    //
-    //      database_name/measurement_name
-    futil::path series_to_measurement(const futil::path& series);
-
-    // Parses a schema file into a vector of fields.
-    void parse_schema(futil::file& fd, std::vector<field>& fields);
-    void parse_schema_for_series(const futil::path& series,
-                                 std::vector<field>& fields);
-
-    // Returns the timestamp stored in the time_last file.
-    uint64_t get_time_last(const futil::path& series);
-
     // Deletes points from the series, up to and including timestamp t.
     void delete_points(const futil::path& series, uint64_t t);
 
@@ -557,7 +585,7 @@ namespace tsdb
     //      9 f64 temp_hz values
     //
     //      Total: 360 bytes
-    void write_series(const futil::path& path, size_t npoints,
+    void write_series(series_write_lock& write_lock, size_t npoints,
                       size_t bitmap_offset, size_t data_len, const void* data);
 
     // Creates a new measurement in the TSDB instance rooted at the current
