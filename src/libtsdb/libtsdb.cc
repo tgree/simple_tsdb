@@ -149,17 +149,17 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         t0(MAX(_t0,read_lock.time_first)),
         t1(MIN(_t1,time_last)),
         rem_limit(limit),
-        fields(field_names.size()),
+        fields(field_names.size() ?: read_lock.m.fields.size()),
         index_slot(NULL),
         timestamp_mapping(NULL,2048*1024,PROT_NONE,MAP_ANONYMOUS | MAP_PRIVATE,
                           -1,0),
-        field_mappings(field_names.size()),
-        bitmap_mappings(field_names.size()),
+        field_mappings(field_names.size() ?: read_lock.m.fields.size()),
+        bitmap_mappings(field_names.size() ?: read_lock.m.fields.size()),
         is_last(true),
         npoints(0),
         bitmap_offset(0),
         timestamp_data(NULL),
-        field_data(field_names.size())
+        field_data(field_names.size() ?: read_lock.m.fields.size())
 {
     // Validate the time and limit ranges.
     if (read_lock.time_first > time_last)
@@ -187,20 +187,28 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
     // We are sure to keep the fields vector in the same order as the field
     // names that were passed in; this is the order in which we will return
     // the data points.
-    for (const auto& fn : field_names)
+    if (!field_names.empty())
     {
-        bool found = false;
-        for (const auto& sf : read_lock.m.fields)
+        for (const auto& fn : field_names)
         {
-            if (sf.name == fn)
+            bool found = false;
+            for (const auto& sf : read_lock.m.fields)
             {
-                fields.emplace_back(sf);
-                found = true;
-                break;
+                if (sf.name == fn)
+                {
+                    fields.emplace_back(sf);
+                    found = true;
+                    break;
+                }
             }
+            if (!found)
+                throw tsdb::no_such_field_exception();
         }
-        if (!found)
-            throw tsdb::no_such_field_exception();
+    }
+    else
+    {
+        for (const auto& sf : read_lock.m.fields)
+            fields.emplace_back(sf);
     }
 }
 

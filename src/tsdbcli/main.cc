@@ -325,11 +325,13 @@ _handle_select_series_limit(const std::string& series,
         printf("Invalid series: %s\n",series.c_str());
         return;
     }
+    std::vector<std::string> fields;
+    if (field_specifier != "*")
+        fields = str::split(field_specifier,",");
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
-    tsdb::select_op_first op(read_lock,series,str::split(field_specifier,","),
-                             t0,t1,N);
+    tsdb::select_op_first op(read_lock,series,fields,t0,t1,N);
     _handle_select_series(op);
 }
 
@@ -413,11 +415,13 @@ _handle_select_series_last(const std::string& series,
         printf("Invalid series: %s\n",series.c_str());
         return;
     }
+    std::vector<std::string> fields;
+    if (field_specifier != "*")
+        fields = str::split(field_specifier,",");
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
-    tsdb::select_op_last op(read_lock,series,str::split(field_specifier,","),
-                            t0,t1,N);
+    tsdb::select_op_last op(read_lock,series,fields,t0,t1,N);
     _handle_select_series(op);
 }
 
