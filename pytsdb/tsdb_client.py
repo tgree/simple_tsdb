@@ -28,6 +28,39 @@ DT_END                  = 0x4E29ADCC
 DT_STATUS_CODE          = 0x8C8C07D9
 DT_FIELD_TYPE           = 0x7DB40C2A
 DT_FIELD_NAME           = 0x5C0D45C1
+DT_AWAITING_CHUNK       = 0x24CFD041
+
+# Status codes.
+SC_INIT_IO_ERROR                = -1
+SC_CREATE_DATABASE_IO_ERROR     = -2
+SC_CREATE_MEASUREMENT_IO_ERROR  = -3
+SC_INVALID_MEASUREMENT          = -4
+SC_INVALID_SERIES               = -5
+SC_CORRUPT_SCHEMA_FILE          = -6
+SC_NO_SUCH_FIELD                = -7
+SC_END_OF_SELECT                = -8
+SC_INCORRECT_WRITE_CHUNK_LEN    = -9
+SC_OUT_OF_ORDER_TIMESTAMPS      = -10
+SC_TIMESTAMP_OVERWRITE_MISMATCH = -11
+SC_FIELD_OVERWRITE_MISMATCH     = -12
+SC_BITMAP_OVERWRITE_MISMATCH    = -13
+SC_TAIL_FILE_TOO_BIG            = -14
+SC_TAIL_FILE_INVALID_SIZE       = -15
+SC_INVALID_TIME_LAST            = -16
+SC_NO_SUCH_SERIES               = -17
+SC_NO_SUCH_DATABASE             = -18
+
+
+class StatusException(Exception):
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+    def __repr__(self):
+        return 'StatusException(%d)' % self.status_code
+
+
+class ConnectionClosedException(Exception):
+    pass
 
 
 class FieldType:
@@ -79,32 +112,34 @@ class Field:
 class TSDBClient:
     def __init__(self, host='127.0.0.1', port=4000):
         self.addr = (host, port)
-        self.socket = None
+        self.socket = socket.create_connection(self.addr)
 
     def _sendall(self, data):
-        if self.socket is None:
-            self.socket = socket.create_connection(self.addr)
-
         self.socket.sendall(data)
 
     def _recvall(self, size):
         data = b''
         while len(data) != size:
-            data += self.socket.recv(size - len(data))
+            new_data = self.socket.recv(size - len(data))
+            if not new_data:
+                raise ConnectionClosedException()
+            data += new_data
         return data
 
-    def _transact(self, cmd):
-        try:
-            self._sendall(cmd)
-            data = self._recvall(8)
+    def _recv_u32(self):
+        return struct.unpack('<I', self._recvall(4))[0]
 
-            dt, status = struct.unpack('<II', data)
-            assert dt == DT_STATUS_CODE
-            assert status == 0
-        finally:
-            if self.socket is not None:
-                self.socket.close()
-                self.socket = None
+    def _recv_i32(self):
+        return struct.unpack('<i', self._recvall(4))[0]
+
+    def _transact(self, cmd):
+        self._sendall(cmd)
+
+        dt = self._recv_u32()
+        assert dt == DT_STATUS_CODE
+        sc = self._recv_i32()
+        if sc != 0:
+            raise StatusException(sc)
 
     def create_database(self, database):
         database = database.encode()
@@ -142,20 +177,20 @@ class TSDBClient:
         self._sendall(cmd)
         fields = []
         while True:
-            data = self._recvall(4)
-            dt = struct.unpack('<I', data)[0]
-            if dt == DT_END:
-                break
-            assert dt == DT_FIELD_TYPE
+            dt = self._recv_u32()
+            if dt == DT_STATUS_CODE:
+                sc = self._recv_i32()
+                if sc != 0:
+                    raise StatusException(sc)
+                return fields
 
+            assert dt == DT_FIELD_TYPE
             data = self._recvall(10)
             typ, dt_field_name, size = struct.unpack('<IIH', data)
             assert dt_field_name == DT_FIELD_NAME
 
             name = self._recvall(size)
             fields.append(Field(FIELD_TYPES[typ], name.decode()))
-
-        return fields
 
     def _write_points_begin(self, database, measurement, series):
         database = database.encode()

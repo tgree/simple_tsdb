@@ -27,6 +27,8 @@ namespace tsdb
         TAIL_FILE_TOO_BIG               = -14,
         TAIL_FILE_INVALID_SIZE          = -15,
         INVALID_TIME_LAST               = -16,
+        NO_SUCH_SERIES                  = -17,
+        NO_SUCH_DATABASE                = -18,
     };
 
     struct exception : public std::exception
@@ -67,6 +69,17 @@ namespace tsdb
         {
         }
     };
+    
+    struct no_such_database_exception : public exception
+    {
+        // The specified database does not exist.
+        virtual const char* what() const noexcept
+        {
+            return "No such database.";
+        }
+
+        no_such_database_exception():exception(NO_SUCH_DATABASE) {}
+    };
 
     struct create_measurement_io_error_exception : public errno_exception
     {
@@ -101,6 +114,17 @@ namespace tsdb
         }
 
         invalid_series_exception():exception(INVALID_SERIES) {}
+    };
+
+    struct no_such_series_exception : public exception
+    {
+        // The specified series does not exist.
+        virtual const char* what() const noexcept
+        {
+            return "No such series.";
+        }
+
+        no_such_series_exception():exception(NO_SUCH_SERIES) {}
     };
 
     struct corrupt_schema_file_exception : public exception

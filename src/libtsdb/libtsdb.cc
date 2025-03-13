@@ -19,7 +19,7 @@ tsdb::series_to_measurement(const futil::path& series)
 }
 
 void
-tsdb::parse_schema(const futil::path& path, std::vector<field>& _fields)
+tsdb::parse_schema(const futil::path& path, std::vector<field>& _fields) try
 {
     futil::file fd(path,O_RDONLY | O_SHLOCK);
     off_t f_size = fd.lseek(0,SEEK_END);
@@ -48,6 +48,12 @@ tsdb::parse_schema(const futil::path& path, std::vector<field>& _fields)
         fields.push_back(f);
     }
     _fields.swap(fields);
+}
+catch (const futil::errno_exception& e)
+{
+    if (e.errnov == ENOENT)
+        throw tsdb::no_such_series_exception();
+    throw;
 }
 
 void
@@ -1152,6 +1158,8 @@ tsdb::create_measurement(const futil::path& path,
 }
 catch (const futil::errno_exception& e)
 {
+    if (e.errnov == ENOENT)
+        throw tsdb::no_such_database_exception();
     throw tsdb::create_measurement_io_error_exception(e.errnov);
 }
 

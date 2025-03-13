@@ -10,6 +10,7 @@
 #include <thread>
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 
 enum command_token : uint32_t
 {
@@ -216,8 +217,6 @@ handle_get_schema(tcp::socket4& s,
         s.send_all(&len,sizeof(len));
         s.send_all(f.name.c_str(),len);
     }
-    uint32_t dt = DT_END;
-    s.send_all(&dt,sizeof(dt));
 }
 
 static void
@@ -389,10 +388,23 @@ parse_cmd(tcp::socket4& s, const command_syntax& cs)
 
         // TODO: We need real tsdb exceptions to know what type of error code
         // to send back.
-        cs.handler(s,tokens);
+        uint32_t status[2] = {DT_STATUS_CODE, 0};
+        try
+        {
+            cs.handler(s,tokens);
+        }
+        catch (const tsdb::errno_exception& e)
+        {
+            printf("TSDB exception: %s\n",strerror(e.errnov));
+            status[1] = e.sc;
+        }
+        catch (const tsdb::exception& e)
+        {
+            printf("TSDB exception: %s\n",e.what());
+            status[1] = e.sc;
+        }
         
         printf("Sending status...\n");
-        uint32_t status[2] = {DT_STATUS_CODE, 0};
         s.send_all(&status,sizeof(status));
     }
     catch (...)
@@ -416,18 +428,27 @@ parse_cmd(tcp::socket4& s)
     // 4. Call handler.
     try
     {
-        uint32_t ct = s.pop<uint32_t>();
-
-        for (auto& cmd : commands)
+        for (;;)
         {
-            if (cmd.cmd_token == ct)
+            uint32_t ct = s.pop<uint32_t>();
+
+            bool found = false;
+            for (auto& cmd : commands)
             {
-                parse_cmd(s,cmd);
+                if (cmd.cmd_token == ct)
+                {
+                    parse_cmd(s,cmd);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                printf("No such command 0x%08X.\n",ct);
                 return;
             }
         }
-
-        printf("No such command 0x%08X.\n",ct);
     }
     catch (const futil::errno_exception& e)
     {
@@ -460,6 +481,8 @@ main(int argc, const char* argv[])
         futil::chdir(argv[1]);
 
     printf("%s\n",GIT_VERSION);
+
+    signal(SIGPIPE,SIG_IGN);
 
     tcp::addr4 sa(4000,INADDR_LOOPBACK);
     tcp::server_socket4 ss(sa);
