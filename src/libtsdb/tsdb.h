@@ -6,6 +6,7 @@
 #include <futil/futil.h>
 #include <hdr/fixed_vector.h>
 #include <vector>
+#include <span>
 
 namespace tsdb
 {
@@ -312,13 +313,13 @@ namespace tsdb
         }
     };
 
-    enum field_type
+    enum field_type : uint8_t
     {
-        FT_BOOL = 0,
-        FT_U32  = 1,
-        FT_U64  = 2,
-        FT_F32  = 3,
-        FT_F64  = 4,
+        FT_BOOL = 1,
+        FT_U32  = 2,
+        FT_U64  = 3,
+        FT_F32  = 4,
+        FT_F64  = 5,
     };
 
     struct field
@@ -331,24 +332,34 @@ namespace tsdb
     {
         field_type  type;
         uint8_t     nbytes;
-        char        ascii_type;
         char        name[5];
     };
 
     constexpr const field_type_info ftinfos[] =
     {
-        [tsdb::FT_BOOL] = {tsdb::FT_BOOL,1,'0',"bool"},
-        [tsdb::FT_U32]  = {tsdb::FT_U32,4,'1',"u32"},
-        [tsdb::FT_U64]  = {tsdb::FT_U64,8,'2',"u64"},
-        [tsdb::FT_F32]  = {tsdb::FT_F32,4,'3',"f32"},
-        [tsdb::FT_F64]  = {tsdb::FT_F64,8,'4',"f64"},
+        [0]             = {(field_type)0,0,""},
+        [tsdb::FT_BOOL] = {tsdb::FT_BOOL,1,"bool"},
+        [tsdb::FT_U32]  = {tsdb::FT_U32,4,"u32"},
+        [tsdb::FT_U64]  = {tsdb::FT_U64,8,"u64"},
+        [tsdb::FT_F32]  = {tsdb::FT_F32,4,"f32"},
+        [tsdb::FT_F64]  = {tsdb::FT_F64,8,"f64"},
     };
+
+    struct schema_entry
+    {
+        field_type  type;
+        uint8_t     rsrv[3];
+        char        name[124];
+    };
+    KASSERT(sizeof(schema_entry) == 128);
 
     struct measurement
     {
-        futil::directory    dir;
-        std::string         name;
-        std::vector<field>  fields;
+        futil::directory                dir;
+        std::string                     name;
+        futil::file                     schema_fd;
+        futil::mapping                  schema_mapping;
+        std::span<const schema_entry>   fields;
 
         // Path of the form: <database_name>/<measurement_name>
         measurement(const futil::path& path);
@@ -460,10 +471,10 @@ namespace tsdb
         const index_entry*      index_end;
 
         // Query parameters.
-        uint64_t            t0;
-        uint64_t            t1;
-        uint64_t            rem_limit;
-        fixed_vector<field> fields;
+        uint64_t                    t0;
+        uint64_t                    t1;
+        uint64_t                    rem_limit;
+        fixed_vector<schema_entry>  fields;
 
         // Mapping objects to track mmap()-ed files.
         const index_entry*              index_slot;

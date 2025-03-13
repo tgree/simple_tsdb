@@ -7,32 +7,21 @@
 
 tsdb::measurement::measurement(const futil::path& path) try:
     dir(futil::path("databases",path)),
-    name(path)
+    name(path),
+    schema_fd(dir,"schema.txt",O_RDONLY),
+    schema_mapping(0,schema_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
+                   schema_fd.fd,0),
+    fields((const schema_entry*)schema_mapping.addr,
+           (const schema_entry*)schema_mapping.addr +
+           schema_mapping.len / sizeof(schema_entry))
 {
-    futil::file fd(dir,"schema.txt",O_RDONLY);
-    off_t f_size = fd.lseek(0,SEEK_END);
-    auto m = fd.mmap(0,f_size,PROT_READ,MAP_SHARED,0);
-
-    auto lines = str::split((const char*)m.addr);
-    for (const auto& l : lines)
+    for (const auto& f : fields)
     {
-        if (l.size() < 3 || !str::isprint(l) || l[1] != '/')
-            throw tsdb::corrupt_schema_file_exception();
-
-        field f;
-        f.name = std::string(l,2);
-        switch (l[0])
+        if (f.type == 0 || f.type > 5 || f.name[0] == '\0' ||
+            f.name[123] != '\0')
         {
-            case '0':   f.type = FT_BOOL;   break;
-            case '1':   f.type = FT_U32;    break;
-            case '2':   f.type = FT_U64;    break;
-            case '3':   f.type = FT_F32;    break;
-            case '4':   f.type = FT_F64;    break;
-
-            default:
-                throw tsdb::corrupt_schema_file_exception();
+            throw tsdb::corrupt_schema_file_exception();
         }
-        fields.push_back(f);
     }
 }
 catch (const futil::errno_exception& e)
@@ -339,7 +328,7 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
     for (const auto& f : fields)
     {
         const auto* ftinfo = &ftinfos[f.type];
-        printf("%s/%s ",f.name.c_str(),ftinfo->name);
+        printf("%s/%s ",f.name,ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
            read_lock.series_path.c_str(),t0,t1,limit);
@@ -370,7 +359,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     for (const auto& f : fields)
     {
         const auto* ftinfo = &ftinfos[f.type];
-        printf("%s/%s ",f.name.c_str(),ftinfo->name);
+        printf("%s/%s ",f.name,ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LAST %llu\n",
            read_lock.series_path.c_str(),t0,t1,limit);
@@ -455,7 +444,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     for (const auto& f : fields)
     {
         const auto* ftinfo = &ftinfos[f.type];
-        printf("%s/%s ",f.name.c_str(),ftinfo->name);
+        printf("%s/%s ",f.name,ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
            read_lock.series_path.c_str(),t0,t1,rem_limit);
@@ -677,7 +666,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 if (memcmp(field_data_ptrs[i],op.field_data[i],len))
                 {
                     printf("Overwrite mismatch in field %s.\n",
-                           m.fields[i].name.c_str());
+                           m.fields[i].name);
                     throw tsdb::field_overwrite_mismatch_exception();
                 }
                 field_data_ptrs[i] += len;
@@ -694,7 +683,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                     if (new_bitmap != op.get_bitmap_bit(i,j))
                     {
                         printf("Overwrite mismatch in bitmap %s.\n",
-                               m.fields[i].name.c_str());
+                               m.fields[i].name);
                         throw tsdb::bitmap_overwrite_mismatch_exception();
                     }
                 }
@@ -1051,8 +1040,9 @@ tsdb::create_measurement(const futil::path& path,
     {
         for (auto& f : fields)
         {
-            futil::path line(std::to_string(f.type),f.name);
-            fd.write_all((line._path + "\n").c_str(),line.size() + 1);
+            schema_entry se = {f.type};
+            strcpy(se.name,f.name.c_str());
+            fd.write_all(&se,sizeof(se));
         }
     }
     catch (...)

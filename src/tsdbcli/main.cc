@@ -285,7 +285,7 @@ _handle_select_series(tsdb::select_op& op) try
 
     printf("%20s ","time_ns");
     for (const auto& f : op.fields)
-        printf("%20s ",f.name.c_str());
+        printf("%20s ",f.name);
     printf("\n");
 
     for (;;)

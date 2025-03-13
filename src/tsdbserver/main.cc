@@ -211,9 +211,9 @@ handle_get_schema(tcp::socket4& s,
     {
         uint32_t ft[3] = {DT_FIELD_TYPE, f.type, DT_FIELD_NAME};
         s.send_all(&ft,sizeof(ft));
-        uint16_t len = f.name.size();
+        uint16_t len = strlen(f.name);
         s.send_all(&len,sizeof(len));
-        s.send_all(f.name.c_str(),len);
+        s.send_all(f.name,len);
     }
 }
 
