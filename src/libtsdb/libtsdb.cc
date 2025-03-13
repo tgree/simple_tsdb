@@ -613,6 +613,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     // client from deleting from the file.
     futil::file index_fd(write_lock.series_dir,"index",O_RDWR | O_SHLOCK);
 
+    // ********************** Overwrite Handling *************************
+
     // If the timestamps we are appending start before our last stored
     // timestamp, we should validate and discard the overlapping part and then
     // only write the new part.
@@ -719,6 +721,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // Update chunk_first_ns, although we don't use it again.
         chunk_first_ns = time_data[0];
     }
+
+    // ************ Index search and crash recovery truncation  **************
 
     // Open the most recent timestamp file if it exists, and perform validation
     // checking on it if found.
@@ -880,11 +884,12 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         index_fd.flock(LOCK_SH);
     }
 
+    // ************************** Write Points *******************************
+
     // Write points.  The variable pos is the absolute position in the
     // timestamp file; this should be used to calculate the index for other
     // field sizes.
     size_t rem_points = npoints;
-    uint64_t last_written_timestamp = 0;
     size_t src_bitmap_offset = bitmap_offset + n_overlap_points;
     while (rem_points)
     {
@@ -933,9 +938,6 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             // will sit here forever.  We may wish to periodically scan for
             // orphaned files and delete them.
 
-            // Barrier before we update the index file.
-            tail_fd.fcntl(F_BARRIERFSYNC);
-
             // If the series is empty (time_first > lime_last), then we also
             // need to make time_first point at the start of this chunk.
             if (write_lock.time_first > write_lock.time_last)
@@ -943,14 +945,18 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 write_lock.time_first = time_data[0];
                 write_lock.time_first_fd.lseek(0,SEEK_SET);
                 write_lock.time_first_fd.write_all(&write_lock.time_first,8);
-                write_lock.time_first_fd.fcntl(F_BARRIERFSYNC);
+                write_lock.time_first_fd.fsync();
             }
+
+            // Barrier before we update the index file.
+            tail_fd.fcntl(F_BARRIERFSYNC);
 
             // Add the timestamp file to the index.
             index_entry ie;
             ie.time_ns = time_data[0];
             strcpy(ie.timestamp_file,time_data_str.c_str());
             index_fd.write_all(&ie,sizeof(ie));
+            index_fd.fsync();
         }
 
         // Compute how many points we can write.
@@ -964,6 +970,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             size_t nbytes = write_points*fti->nbytes;
             field_fds[i].lseek(timestamp_index*fti->nbytes,SEEK_SET);
             field_fds[i].write_all(field_data_ptrs[i],nbytes);
+            field_fds[i].fsync();
             field_data_ptrs[i] += nbytes;
         }
 
@@ -981,40 +988,27 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 ++bitmap_index;
             }
             m.msync();
+            bitmap_fds[i].fsync();
         }
 
         // Update the timestamp file.
         tail_fd.write_all(time_data,write_points*sizeof(uint64_t));
-        last_written_timestamp = time_data[write_points - 1];
-        time_data             += write_points;
-        rem_points            -= write_points;
-        pos                   += write_points*sizeof(uint64_t);
-        avail_points          -= write_points;
-        src_bitmap_offset     += write_points;
-
-        // Synchronize the points we have written.
-        for (auto& fd : field_fds)
-        {
-            fd.fsync();
-            fd.close();
-        }
-        for (auto& fd : bitmap_fds)
-        {
-            fd.fsync();
-            fd.close();
-        }
         tail_fd.fsync();
-        tail_fd.close();
 
         // Issue a barrier and write the end timestamp.
         write_lock.time_last_fd.fcntl(F_BARRIERFSYNC);
-        if (last_written_timestamp)
-        {
-            write_lock.time_last = last_written_timestamp;
-            write_lock.time_last_fd.lseek(0,SEEK_SET);
-            write_lock.time_last_fd.write_all(&write_lock.time_last,
+        write_lock.time_last = time_data[write_points - 1];
+        write_lock.time_last_fd.lseek(0,SEEK_SET);
+        write_lock.time_last_fd.write_all(&write_lock.time_last,
                                               sizeof(uint64_t));
-        }
+        write_lock.time_last_fd.fsync();
+
+        // Advance to the next set of points.
+        time_data         += write_points;
+        rem_points        -= write_points;
+        pos               += write_points*sizeof(uint64_t);
+        avail_points      -= write_points;
+        src_bitmap_offset += write_points;
     }
 }
 

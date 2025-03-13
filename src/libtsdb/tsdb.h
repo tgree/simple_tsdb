@@ -405,18 +405,6 @@ namespace tsdb
                 throw tsdb::no_such_series_exception();
             throw;
         }
-
-#if 0
-        // The lock has already been obtained and is being transferred to us.
-        _series_lock(futil::file&& time_first_fd,
-                     const futil::path& series_path):
-            series_path(series_path),
-            series_dir(futil::path("databases",series_path)),
-            time_first_fd(std::move(time_first_fd)),
-            time_first(time_first_fd.read_u64())
-        {
-        }
-#endif
     };
 
     // Obtains a read lock on a series.
@@ -449,15 +437,6 @@ namespace tsdb
             time_last(time_last_fd.read_u64())
         {
         }
-
-#if 0
-        series_write_lock(const futil::path& series_path):
-            series_read_lock(series_path),
-            time_last_fd(series_dir,"time_last",O_RDWR | O_EXLOCK),
-            time_last(time_last_fd.read_u64())
-        {
-        }
-#endif
     };
 
     // If the series exists, obtains a write lock on it.  If the series doesn't
