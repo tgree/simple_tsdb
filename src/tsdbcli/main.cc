@@ -604,6 +604,13 @@ handle_create_measurement(const std::vector<std::string>& v)
     //
     //  create measurement pt-1/xtalx_data with fields \
     //      pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
+    auto components = futil::path(v[2]).decompose();
+    if (components.size() != 2)
+    {
+        printf("Invalid measurement path.\n");
+        return;
+    }
+
     std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(v[5],",");
     for (const auto& fs : field_specifiers)
@@ -645,7 +652,8 @@ handle_create_measurement(const std::vector<std::string>& v)
 
     try
     {
-        tsdb::create_measurement(v[2].c_str(),fields);
+        tsdb::database db(components[0]);
+        tsdb::create_measurement(db,components[1],fields);
     }
     catch (const futil::errno_exception& e)
     {

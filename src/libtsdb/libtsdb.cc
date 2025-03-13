@@ -1017,37 +1017,35 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 }
 
 void
-tsdb::create_measurement(const futil::path& path,
+tsdb::create_measurement(const database& db, const futil::path& name,
     const std::vector<schema_entry>& fields) try
 {
-    if (path.empty() || path[0] == '/' || path.count_components() != 2)
+    if (name.empty() || name[0] == '/' || name.count_components() > 1)
         throw tsdb::invalid_measurement_exception();
 
-    futil::path dir_path("databases",path);
-    futil::mkdir(dir_path,0770);
+    futil::mkdir(db.dir,name,0770);
+    futil::directory m_dir(db.dir,name);
 
-    futil::path create_series_path(dir_path,"create_series_lock");
     futil::file fd;
     try
     {
-        fd.open(create_series_path,O_WRONLY | O_CREAT | O_EXCL,0660);
+        fd.open(m_dir,"create_series_lock",O_WRONLY | O_CREAT | O_EXCL,0660);
     }
     catch (...)
     {
-        rmdir(dir_path);
+        unlinkat(db.dir.fd,name,AT_REMOVEDIR);
         throw;
     }
     fd.close();
 
-    futil::path schema_path(dir_path,"schema.txt");
     try
     {
-        fd.open(schema_path,O_WRONLY | O_CREAT | O_EXCL | O_EXLOCK,0440);
+        fd.open(m_dir,"schema.txt",O_WRONLY | O_CREAT | O_EXCL | O_EXLOCK,0440);
     }
     catch (...)
     {
-        ::unlink(create_series_path);
-        rmdir(dir_path);
+        unlinkat(m_dir.fd,"create_series_lock",0);
+        unlinkat(db.dir.fd,name,AT_REMOVEDIR);
         throw;
     }
     
@@ -1058,9 +1056,9 @@ tsdb::create_measurement(const futil::path& path,
     }
     catch (...)
     {
-        ::unlink(create_series_path);
-        ::unlink(schema_path);
-        rmdir(dir_path);
+        unlinkat(m_dir.fd,"schema.txt",0);
+        unlinkat(m_dir.fd,"create_series_lock",0);
+        unlinkat(db.dir.fd,name,AT_REMOVEDIR);
         throw;
     }
 }

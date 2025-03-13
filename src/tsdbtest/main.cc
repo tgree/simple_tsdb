@@ -195,8 +195,9 @@ main(int argc, const char* argv[])
     for (const auto* db : databases)
     {
         tsdb::create_database(db);
+        tsdb::database _db(db);
         for (const auto* m : measurements)
-            tsdb::create_measurement(futil::path(db,m),fields);
+            tsdb::create_measurement(_db,m,fields);
     }
 
     std::vector<std::string> field_names;

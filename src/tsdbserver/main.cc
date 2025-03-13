@@ -196,7 +196,8 @@ handle_create_measurement(tcp::socket4& s,
     }
 
     printf("CREATE MEASUREMENT %s\n",path.c_str());
-    tsdb::create_measurement(path,fields);
+    tsdb::database db(database);
+    tsdb::create_measurement(db,measurement,fields);
 }
 
 static void

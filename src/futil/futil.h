@@ -548,6 +548,12 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void mkdir(const directory& dir, const char* path, mode_t mode)
+    {
+        if (::mkdirat(dir.fd,path,mode) == -1)
+            throw errno_exception(errno);
+    }
+
     inline void mkdir_if_not_exists(const char* path, mode_t mode)
     {
         // mkdir() doesn't seem to return EINTR.

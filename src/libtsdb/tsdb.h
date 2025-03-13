@@ -581,14 +581,8 @@ namespace tsdb
     void write_series(series_write_lock& write_lock, size_t npoints,
                       size_t bitmap_offset, size_t data_len, const void* data);
 
-    // Creates a new measurement in the TSDB instance rooted at the current
-    // working directory.  The path argument should have the form:
-    //
-    //      database_name/measurement_name
-    //
-    // and it creates a new measurement called "measurement_name" in the
-    // database "database_name".
-    void create_measurement(const futil::path& path,
+    // Creates a new measurement in the specified database.
+    void create_measurement(const database& db, const futil::path& name,
                             const std::vector<schema_entry>& fields);
 
     // Creates a new database in the TSDB instance rooted at the current working
