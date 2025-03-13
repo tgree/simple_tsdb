@@ -208,7 +208,8 @@ handle_get_schema(tcp::socket4& s,
 
     printf("GET SCHEMA FOR %s\n",measurement_path.c_str());
     std::vector<tsdb::field> fields;
-    tsdb::parse_schema(schema_path,fields);
+    futil::file schema_fd(schema_path,O_RDONLY | O_SHLOCK);
+    tsdb::parse_schema(schema_fd,fields);
     for (const auto& f : fields)
     {
         uint32_t ft[3] = {DT_FIELD_TYPE, f.type, DT_FIELD_NAME};
@@ -300,7 +301,8 @@ handle_select_points_limit(tcp::socket4& s,
 
     printf("SELECT %s FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
-    tsdb::select_op_first op(series,str::split(field_list,","),t0,t1,N);
+    tsdb::series_read_lock read_lock(series);
+    tsdb::select_op_first op(read_lock,str::split(field_list,","),t0,t1,N);
     _handle_select_points(op);
 }
 
@@ -319,7 +321,8 @@ handle_select_points_last(tcp::socket4& s,
 
     printf("SELECT %s FROM %s WHERE %llu <= time_ns <= %llu LAST %llu\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
-    tsdb::select_op_last op(series,str::split(field_list,","),t0,t1,N);
+    tsdb::series_read_lock read_lock(series);
+    tsdb::select_op_last op(read_lock,str::split(field_list,","),t0,t1,N);
     _handle_select_points(op);
 }
 

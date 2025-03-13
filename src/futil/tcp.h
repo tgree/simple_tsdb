@@ -120,11 +120,10 @@ namespace tcp
         }
 
         socket4(socket4&& other):
-            futil::file_descriptor(other.fd),
+            futil::file_descriptor(std::move(other)),
             local_addr(other.local_addr),
             remote_addr(other.remote_addr)
         {
-            other.fd = -1;
         }
 
         ~socket4()

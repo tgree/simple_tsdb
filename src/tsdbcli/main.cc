@@ -319,7 +319,8 @@ _handle_select_series_limit(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    tsdb::select_op_first op(series,str::split(field_specifier,","),t0,t1,N);
+    tsdb::series_read_lock read_lock(series);
+    tsdb::select_op_first op(read_lock,str::split(field_specifier,","),t0,t1,N);
     _handle_select_series(op);
 }
 
@@ -397,7 +398,8 @@ _handle_select_series_last(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    tsdb::select_op_last op(series,str::split(field_specifier,","),t0,t1,N);
+    tsdb::series_read_lock read_lock(series);
+    tsdb::select_op_last op(read_lock,str::split(field_specifier,","),t0,t1,N);
     _handle_select_series(op);
 }
 

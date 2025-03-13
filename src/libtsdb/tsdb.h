@@ -361,6 +361,65 @@ namespace tsdb
             bitmap[index / 64] &= ~(((uint64_t)v) << (index % 64));
     }
 
+    struct _series_lock
+    {
+        futil::path         series_path;
+        futil::directory    series_dir;
+        futil::file         time_first_fd;
+        const uint64_t      time_first;
+
+        // Obtain the lock using a <database>/<measurement>/<series> path.
+        _series_lock(const futil::path& series_path, int oflag) try:
+            series_path(series_path),
+            series_dir(futil::path("databases",series_path)),
+            time_first_fd(series_dir,"time_first",oflag),
+            time_first(time_first_fd.read_u64())
+        {
+        }
+        catch (const futil::errno_exception& e)
+        {
+            if (e.errnov == ENOENT)
+                throw tsdb::no_such_series_exception();
+            throw;
+        }
+
+        // The lock has already been obtained and is being transferred to us.
+        _series_lock(futil::file&& time_first_fd,
+                     const futil::path& series_path):
+            series_path(series_path),
+            series_dir(futil::path("databases",series_path)),
+            time_first_fd(std::move(time_first_fd)),
+            time_first(time_first_fd.read_u64())
+        {
+        }
+    };
+
+    // Obtains a read lock on a series.
+    struct series_read_lock : public _series_lock
+    {
+        series_read_lock(const futil::path& series_path):
+            _series_lock(series_path,O_SHLOCK)
+        {
+        }
+    };
+
+#if 0
+    // Obtains a write lock on a series.
+    struct series_write_lock : public _series_lock
+    {
+        series_write_lock(const futil::path& series_path):
+            _series_lock(series_path,O_EXLOCK)
+        {
+        }
+
+        series_write_lock(futil::file&& time_first_fd,
+                          const futil::path& series_path):
+            _series_lock(std::move(time_first_fd),series_path)
+        {
+        }
+    };
+#endif
+
     // Class used to get data from a series.
     struct select_op
     {
@@ -369,16 +428,14 @@ namespace tsdb
         // deleting points during the query.  For time_last, we don't care if
         // someone adds points later, we only return the points from our
         // current snapshot of the live range.
-        futil::file         time_first_fd;
-        const uint64_t      time_first;
-        const uint64_t      time_last;
-        futil::file         index_fd;
-        futil::mapping      index_mapping;
-        const index_entry*  index_begin;
-        const index_entry*  index_end;
+        const series_read_lock& read_lock;
+        const uint64_t          time_last;
+        futil::file             index_fd;
+        futil::mapping          index_mapping;
+        const index_entry*      index_begin;
+        const index_entry*      index_end;
 
         // Query parameters.
-        const futil::path   series;
         uint64_t            t0;
         uint64_t            t1;
         uint64_t            rem_limit;
@@ -423,21 +480,21 @@ namespace tsdb
     protected:
         void _advance(bool is_first);
 
-        select_op(const futil::path& series,
+        select_op(const series_read_lock& read_lock,
                   const std::vector<std::string>& field_names,
                   uint64_t t0, uint64_t t1, uint64_t limit);
     };
 
     struct select_op_first : public select_op
     {
-        select_op_first(const futil::path& series,
+        select_op_first(const series_read_lock& read_lock,
                         const std::vector<std::string>& field_names,
                         uint64_t t0, uint64_t t1, uint64_t limit);
     };
 
     struct select_op_last : public select_op
     {
-        select_op_last(const futil::path& series,
+        select_op_last(const series_read_lock& read_lock,
                        const std::vector<std::string>& field_names,
                        uint64_t t0, uint64_t t1, uint64_t limit);
     };
@@ -452,8 +509,7 @@ namespace tsdb
     futil::path series_to_measurement(const futil::path& series);
 
     // Parses a schema file into a vector of fields.
-    void parse_schema(const futil::path& schema_path,
-                      std::vector<field>& fields);
+    void parse_schema(futil::file& fd, std::vector<field>& fields);
     void parse_schema_for_series(const futil::path& series,
                                  std::vector<field>& fields);
 

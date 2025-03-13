@@ -281,11 +281,17 @@ namespace futil
             }
         }
 
-        file_descriptor(const file_descriptor&);  // Link error if invoked.
-
         constexpr file_descriptor():fd(-1) {}
         
         constexpr file_descriptor(int fd):fd(fd) {}
+
+        file_descriptor(const file_descriptor&);  // Link error if invoked.
+
+        file_descriptor(file_descriptor&& other):
+            fd(other.fd)
+        {
+            other.fd = -1;
+        }
 
         ~file_descriptor()
         {
@@ -293,16 +299,13 @@ namespace futil
         }
     };
 
-    struct file : public file_descriptor
+    struct directory : public file_descriptor
     {
-        void open(const path& p, int oflag)
+        directory(const path& p)
         {
-            close();
-            if (oflag & O_CREAT)
-                throw inconsistent_file_params();
             for (;;)
             {
-                fd = ::open(p,oflag);
+                fd = ::open(p,O_DIRECTORY | O_SEARCH);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
@@ -310,34 +313,94 @@ namespace futil
             }
         }
 
-        void open(const path& p, int oflag, mode_t mode)
+        directory(const directory& d, const path& p)
         {
-            close();
-            if (!(oflag & O_CREAT))
-                throw inconsistent_file_params();
             for (;;)
             {
-                fd = ::open(p,oflag,mode);
+                fd = ::openat(d.fd,p,O_DIRECTORY | O_SEARCH);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
                     throw errno_exception(errno);
             }
         }
-        
-        void open_if_exists(const path& p, int oflag)
+    };
+
+    struct file : public file_descriptor
+    {
+        void openat(int dir_fd, const path& p, int oflag)
         {
             close();
             if (oflag & O_CREAT)
                 throw inconsistent_file_params();
             for (;;)
             {
-                fd = ::open(p,oflag);
+                fd = ::openat(dir_fd,p,oflag);
+                if (fd != -1)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+
+        void openat(int dir_fd, const path& p, int oflag, mode_t mode)
+        {
+            close();
+            if (!(oflag & O_CREAT))
+                throw inconsistent_file_params();
+            for (;;)
+            {
+                fd = ::openat(dir_fd,p,oflag,mode);
+                if (fd != -1)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+
+        void open(const path& p, int oflag)
+        {
+            openat(AT_FDCWD,p,oflag);
+        }
+
+        void open(const path& p, int oflag, mode_t mode)
+        {
+            openat(AT_FDCWD,p,oflag,mode);
+        }
+
+        void open(const directory& d, const path& p, int oflag)
+        {
+            openat(d.fd,p,oflag);
+        }
+
+        void open(const directory& d, const path& p, int oflag, mode_t mode)
+        {
+            openat(d.fd,p,oflag,mode);
+        }
+        
+        void openat_if_exists(int dir_fd, const path& p, int oflag)
+        {
+            close();
+            if (oflag & O_CREAT)
+                throw inconsistent_file_params();
+            for (;;)
+            {
+                fd = ::openat(dir_fd,p,oflag);
                 if (fd != -1 || errno == ENOENT)
                     return;
                 if (errno != EINTR)
                     throw errno_exception(errno);
             }
+        }
+
+        void open_if_exists(const path& p, int oflag)
+        {
+            openat_if_exists(AT_FDCWD,p,oflag);
+        }
+
+        void open_if_exists(const directory& d, const path& p, int oflag)
+        {
+            openat_if_exists(d.fd,p,oflag);
         }
 
         void read_all(void* _p, size_t n)
@@ -465,6 +528,16 @@ namespace futil
         file(const path& p, int oflag, mode_t mode)
         {
             open(p,oflag,mode);
+        }
+
+        file(const directory& d, const path& p, int oflag)
+        {
+            open(d,p,oflag);
+        }
+
+        file(const directory& d, const path& p, int oflag, mode_t mode)
+        {
+            open(d,p,oflag,mode);
         }
     };
 

@@ -287,6 +287,7 @@ main(int argc, const char* argv[])
         size_t npoints = lp - fp;
 
         // Perform the query.
+        tsdb::series_read_lock read_lock(ss.path);
         tsdb::select_op* op;
         size_t N;
         switch (rand() % 3)
@@ -299,7 +300,7 @@ main(int argc, const char* argv[])
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],npoints);
-                op = new tsdb::select_op_first(ss.path,field_names,t0,t1,-1);
+                op = new tsdb::select_op_first(read_lock,field_names,t0,t1,-1);
             break;
 
             case 1:
@@ -312,7 +313,7 @@ main(int argc, const char* argv[])
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],N,npoints);
-                op = new tsdb::select_op_first(ss.path,field_names,t0,t1,N);
+                op = new tsdb::select_op_first(read_lock,field_names,t0,t1,N);
             break;
 
             case 2:
@@ -326,7 +327,7 @@ main(int argc, const char* argv[])
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],N,npoints);
-                op = new tsdb::select_op_last(ss.path,field_names,t0,t1,N);
+                op = new tsdb::select_op_last(read_lock,field_names,t0,t1,N);
             break;
         }
 

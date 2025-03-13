@@ -19,9 +19,8 @@ tsdb::series_to_measurement(const futil::path& series)
 }
 
 void
-tsdb::parse_schema(const futil::path& path, std::vector<field>& _fields) try
+tsdb::parse_schema(futil::file& fd, std::vector<field>& _fields) try
 {
-    futil::file fd(path,O_RDONLY | O_SHLOCK);
     off_t f_size = fd.lseek(0,SEEK_END);
     auto m = fd.mmap(0,f_size,PROT_READ,MAP_SHARED,0);
 
@@ -62,7 +61,8 @@ tsdb::parse_schema_for_series(const futil::path& series,
 {
     futil::path schema_path("databases",series_to_measurement(series),
                             "schema.txt");
-    tsdb::parse_schema(schema_path,fields);
+    futil::file schema_fd(schema_path,O_RDONLY);
+    tsdb::parse_schema(schema_fd,fields);
 }
 
 uint64_t
@@ -169,71 +169,21 @@ tsdb::delete_points(const futil::path& series, uint64_t t)
     index_fd.fcntl(F_BARRIERFSYNC);
     printf("Deleted %zu slots from the start of the index file.\n",
            index_slot - index_begin);
-
-    // Now we 
-#if 0
-    // Start by incrementing time_first to t + 1.  If t is past time_last for
-    // some reason, we increment time_first only up to time_last + 1, so that
-    // the next data write to the series will increment time_last by 1, giving
-    // us time_first = time_last = t + 1 and having one point in the series as
-    // expected by a new write.
-
-    // We need to delete up to and including t.
-    time_first = (t <= time_last) ? t + 1 : time_last + 1;
-
-    // Okay, we've incremented time_first.  Search for index slots that wholly
-    // precede time_first and delete those files from the series.
-    while (index_slot < index_end - 1)
-    {
-        // If time_first is >= the first entry in the NEXT index slot, then we
-        // know this index slot is completely deleted.  Otherwise, break out.
-        if (time_first < (index_slot + 1)->time_ns)
-            break;
-
-        // Delete this index slot.
-
-        // Advance.
-        ++index_slot;
-    }
-
-    // If t was specified as a timestamp in the gap between chunks, or as the
-    // last timestamp in a full chunk, then we can't know if we should delete
-    // the last index slot without checking its last entry.
-    size_t len = timestamp_file_fd.lseek(0,SEEK_END);
-    if (len == 2048*1024)
-    {
-        timestamp_file_fd.lseek(-8,SEEK_END);
-        if (time_first >= timestamp_file_fd.read_u64())
-        {
-            futil::unlink_if_exists(time_ns_path + index_slot->timestamp_file);
-            for (const auto& f : fields)
-            {
-                futil::unlink_if_exists(series_path + "fields" + f.name +
-                                        index_slot->timestamp_file);
-                futil::unlink_if_exists(series_path + "bitmaps" + f.name +
-                                        index_slot->timestamp_file);
-            }
-            ++index_slot;
-        }
-    }
-#endif
 }
 
 // TODO: This sets index_begin as the start of the index file.  Instead, it
 // should search for the first slot that could hold time_first since a delete
 // operation could have incremented time_first and then crashed before deleting
 // the chunk files or shifting the index file up.
-tsdb::select_op::select_op(const futil::path& series,
+tsdb::select_op::select_op(const series_read_lock& read_lock,
     const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
     uint64_t limit):
-        time_first_fd(futil::path("databases",series,"time_first"),
-                      O_RDONLY | O_SHLOCK),
-        time_first(time_first_fd.read_u64()),
-        time_last(get_time_last(series)),
+        read_lock(read_lock),
+        time_last(futil::file(read_lock.series_dir,"time_last",
+                              O_RDONLY).read_u64()),
         index_begin(NULL),
         index_end(NULL),
-        series(series),
-        t0(MAX(_t0,time_first)),
+        t0(MAX(_t0,read_lock.time_first)),
         t1(MIN(_t1,time_last)),
         rem_limit(limit),
         fields(field_names.size()),
@@ -249,11 +199,11 @@ tsdb::select_op::select_op(const futil::path& series,
         field_data(field_names.size())
 {
     // Validate the time and limit ranges.
-    if (time_first > time_last)
+    if (read_lock.time_first > time_last)
         return;
     if (_t0 > _t1)
         return;
-    if (_t1 < time_first)
+    if (_t1 < read_lock.time_first)
         return;
     if (_t0 > time_last)
         return;
@@ -264,7 +214,7 @@ tsdb::select_op::select_op(const futil::path& series,
     // measurement, which means there must be at least one chunk, which means
     // there must be at least one slot in the index file - so we won't attempt
     // to mmap() an empty file which always fails.
-    index_fd.open(futil::path("databases",series,"index"),O_RDONLY);
+    index_fd.open(read_lock.series_dir,"index",O_RDONLY);
     index_mapping.map(NULL,index_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                       index_fd.fd,0),
     index_begin = (const index_entry*)index_mapping.addr;
@@ -275,7 +225,8 @@ tsdb::select_op::select_op(const futil::path& series,
     // names that were passed in; this is the order in which we will return
     // the data points.
     std::vector<field> schema_fields;
-    parse_schema_for_series(series,schema_fields);
+    futil::file schema_fd(read_lock.series_dir,"../schema.txt",O_RDONLY);
+    parse_schema(schema_fd,schema_fields);
     for (const auto& fn : field_names)
     {
         bool found = false;
@@ -304,9 +255,8 @@ tsdb::select_op::_advance(bool is_first)
     }
 
     // Map the timestamp file associated with the target slot.
-    futil::path time_ns_path("databases",series,"time_ns");
-    futil::file timestamp_fd(time_ns_path + index_slot->timestamp_file,
-                             O_RDONLY);
+    futil::directory time_ns_dir(read_lock.series_dir,"time_ns");
+    futil::file timestamp_fd(time_ns_dir,index_slot->timestamp_file,O_RDONLY);
     off_t timestamp_fd_size = timestamp_fd.lseek(0,SEEK_END);
     futil::mmap(timestamp_mapping.addr,timestamp_fd_size,PROT_READ,
                 MAP_SHARED | MAP_FIXED,timestamp_fd.fd,0);
@@ -336,8 +286,7 @@ tsdb::select_op::_advance(bool is_first)
             // know that there is still data to return), then open and map it,
             // overwriting the previous mapping.
             ++index_slot;
-            timestamp_fd.open(time_ns_path + index_slot->timestamp_file,
-                              O_RDONLY);
+            timestamp_fd.open(time_ns_dir,index_slot->timestamp_file,O_RDONLY);
             timestamp_fd_size = timestamp_fd.lseek(0,SEEK_END);
             futil::mmap(timestamp_mapping.addr,timestamp_fd_size,PROT_READ,
                         MAP_SHARED | MAP_FIXED,timestamp_fd.fd,0);
@@ -367,12 +316,12 @@ tsdb::select_op::_advance(bool is_first)
     rem_limit -= npoints;
 
     // Map the data points.
+    futil::directory fields_dir(read_lock.series_dir,"fields");
     for (size_t i=0; i<fields.size(); ++i)
     {
         const auto& f = fields[i];
-        futil::path field_path("databases",series,"fields",f.name,
-                               index_slot->timestamp_file);
-        futil::file field_fd(field_path,O_RDONLY);
+        futil::path field_path(f.name,index_slot->timestamp_file);
+        futil::file field_fd(fields_dir,field_path,O_RDONLY);
         const auto* fti = &ftinfos[f.type];
         size_t len = (timestamp_fd_size/8)*fti->nbytes;
         if (is_first)
@@ -391,13 +340,13 @@ tsdb::select_op::_advance(bool is_first)
     }
 
     // Map the bitmap points.  Bitmap files are always 32K in size.
+    futil::directory bitmaps_dir(read_lock.series_dir,"bitmaps");
     bitmap_offset = start_index;
     for (size_t i=0; i<fields.size(); ++i)
     {
         const auto& f = fields[i];
-        futil::path bitmap_path("databases",series,"bitmaps",f.name,
-                                index_slot->timestamp_file);
-        futil::file bitmap_fd(bitmap_path,O_RDONLY);
+        futil::path bitmap_path(f.name,index_slot->timestamp_file);
+        futil::file bitmap_fd(bitmaps_dir,bitmap_path,O_RDONLY);
         if (is_first)
         {
             bitmap_mappings.emplace_back((void*)NULL,32*1024,PROT_READ,
@@ -411,10 +360,10 @@ tsdb::select_op::_advance(bool is_first)
     }
 }
 
-tsdb::select_op_first::select_op_first(const futil::path& series,
+tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
     const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
     uint64_t limit):
-        select_op(series,field_names,_t0,_t1,limit)
+        select_op(read_lock,field_names,_t0,_t1,limit)
 {
     // If we have no work to do, return.
     if (fields.empty())
@@ -428,7 +377,7 @@ tsdb::select_op_first::select_op_first(const futil::path& series,
         printf("%s/%s ",f.name.c_str(),ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
-           series.c_str(),t0,t1,limit);
+           read_lock.series_path.c_str(),t0,t1,limit);
 
     // Find the target slot.  std::upper_bound returns the first slot greater
     // than the requested value, meaning that t0 must appear in the slot
@@ -442,10 +391,10 @@ tsdb::select_op_first::select_op_first(const futil::path& series,
     _advance(true);
 }
 
-tsdb::select_op_last::select_op_last(const futil::path& series,
+tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
     uint64_t limit):
-        select_op(series,field_names,_t0,_t1,limit)
+        select_op(read_lock,field_names,_t0,_t1,limit)
 {
     // If we have no work to do, return.
     if (fields.empty())
@@ -459,7 +408,7 @@ tsdb::select_op_last::select_op_last(const futil::path& series,
         printf("%s/%s ",f.name.c_str(),ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LAST %llu\n",
-           series.c_str(),t0,t1,limit);
+           read_lock.series_path.c_str(),t0,t1,limit);
 
     // Find the location of both t0 and t1.
     auto* t0_index_slot = std::upper_bound(index_begin,index_end,t0);
@@ -478,9 +427,9 @@ tsdb::select_op_last::select_op_last(const futil::path& series,
 
     // Now, we need to map both slots and find the beginning and ending of the
     // target range.
-    futil::path time_ns_path("databases",series,"time_ns");
-    futil::file t0_file(time_ns_path + t0_index_slot->timestamp_file,O_RDONLY);
-    futil::file t1_file(time_ns_path + t1_index_slot->timestamp_file,O_RDONLY);
+    futil::directory time_ns_dir(read_lock.series_dir,"time_ns");
+    futil::file t0_file(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
+    futil::file t1_file(time_ns_dir,t1_index_slot->timestamp_file,O_RDONLY);
     auto t0_mmap = t0_file.mmap(NULL,t0_file.lseek(0,SEEK_END),PROT_READ,
                                 MAP_SHARED,0);
     auto t1_mmap = t1_file.mmap(NULL,t1_file.lseek(0,SEEK_END),PROT_READ,
@@ -529,7 +478,7 @@ tsdb::select_op_last::select_op_last(const futil::path& series,
         // Extract the timestamp from the right index.
         size_t t1_index = t1_upper - t1_data_begin;
         size_t index = (t1_index - rem_limit) % (2048*1024/8);
-        t0_file.open(time_ns_path + t0_index_slot->timestamp_file,O_RDONLY);
+        t0_file.open(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
         t0_file.lseek(index*8,SEEK_SET);
         t0 = t0_file.read_u64();
     }
@@ -544,7 +493,7 @@ tsdb::select_op_last::select_op_last(const futil::path& series,
         printf("%s/%s ",f.name.c_str(),ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
-           series.c_str(),t0,t1,rem_limit);
+           read_lock.series_path.c_str(),t0,t1,rem_limit);
 
     // And map it all.
     index_slot = t0_index_slot;
@@ -584,7 +533,8 @@ tsdb::write_series(const futil::path& series, size_t npoints,
 
     std::vector<field> fields;
     futil::path schema_path("databases",measurement,"schema.txt");
-    parse_schema(schema_path,fields);
+    futil::file schema_fd(schema_path,O_RDONLY | O_SHLOCK);
+    parse_schema(schema_fd,fields);
 
     // Compute the expected data length, starting with the timestamps and then
     // each field.
@@ -612,9 +562,9 @@ tsdb::write_series(const futil::path& series, size_t npoints,
 
     // Find the first and last time stamps and ensure that the timestamps are
     // in strictly-increasing order.
-    const auto* time_data = (const uint64_t*)data;
-    uint64_t time_first   = time_data[0];
-    uint64_t time_last    = time_data[npoints-1];
+    const auto* time_data   = (const uint64_t*)data;
+    uint64_t chunk_first_ns = time_data[0];
+    uint64_t chunk_last_ns  = time_data[npoints-1];
     for (size_t i=1; i<npoints; ++i)
     {
         if (time_data[i] <= time_data[i-1])
@@ -674,7 +624,7 @@ tsdb::write_series(const futil::path& series, size_t npoints,
             // timestamp.
             futil::file time_first_fd(time_first_path,
                                       O_CREAT | O_TRUNC | O_WRONLY,0660);
-            time_first_fd.write_all(&time_first,sizeof(uint64_t));
+            time_first_fd.write_all(&chunk_first_ns,sizeof(uint64_t));
             time_first_fd.fsync();
             time_first_fd.close();
 
@@ -715,7 +665,7 @@ tsdb::write_series(const futil::path& series, size_t npoints,
     // timestamp, we should validate and discard the overlapping part and then
     // only write the new part.
     size_t n_overlap_points = 0;
-    if (time_first <= time_last_stored)
+    if (chunk_first_ns <= time_last_stored)
     {
         // TODO: We should get time_first_stored and silently discard any
         // points before that point in time - those are points that have
@@ -745,12 +695,14 @@ tsdb::write_series(const futil::path& series, size_t npoints,
         // can't write anywhere, or to just discard the very-old points.
         //
         // Select all data points from the overlap.
-        uint64_t overlap_time_last = MIN(time_last,time_last_stored);
+        uint64_t overlap_time_last = MIN(chunk_last_ns,time_last_stored);
         std::vector<std::string> field_names;
         field_names.reserve(fields.size());
         for (const auto& f : fields)
             field_names.emplace_back(f.name);
-        select_op_first op(series,field_names,time_first,overlap_time_last,-1);
+        series_read_lock read_lock(series);
+        select_op_first op(read_lock,field_names,chunk_first_ns,
+                           overlap_time_last,-1);
         kassert(op.npoints);
         
         // Compare all the points.
@@ -813,7 +765,8 @@ tsdb::write_series(const futil::path& series, size_t npoints,
         else
             printf("Dropping %zu overlapping points.\n",n_overlap_points);
 
-        time_first = time_data[0];
+        // Update chunk_first_ns, although we don't use it again.
+        chunk_first_ns = time_data[0];
     }
 
     // Open the most recent timestamp file if it exists, and perform validation
