@@ -50,6 +50,8 @@ struct parsed_data_token
         size_t      len;
         uint64_t    u64;
     };
+
+    std::string to_string() const {return std::string(data,len);}
 };
 
 struct chunk_header
@@ -206,7 +208,8 @@ handle_get_schema(tcp::socket4& s,
     futil::path measurement_path(database,measurement);
 
     printf("GET SCHEMA FOR %s\n",measurement_path.c_str());
-    tsdb::measurement m(measurement_path);
+    tsdb::database db(tokens[0].to_string());
+    tsdb::measurement m(db,tokens[1].to_string());
     for (const auto& f : m.fields)
     {
         uint32_t ft[3] = {DT_FIELD_TYPE, f.type, DT_FIELD_NAME};
@@ -226,14 +229,19 @@ handle_write_points(tcp::socket4& s,
     std::string series(tokens[2].data,tokens[2].len);
     futil::path path(database,measurement,series);
 
-    tsdb::measurement m(futil::path(database,measurement));
-    auto write_lock = tsdb::open_or_create_and_lock_series(m,path);
+    printf("WRITE TO %s\n",path.c_str());
+    tsdb::database db(tokens[0].to_string());
+    tsdb::measurement m(db,tokens[1].to_string());
+    auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
 
     for (;;)
     {
         uint32_t dt = s.pop<uint32_t>();
         if (dt == DT_END)
+        {
+            printf("WRITE END\n");
             return;
+        }
         if (dt != DT_CHUNK)
             throw futil::errno_exception(EINVAL);
 
@@ -258,7 +266,9 @@ handle_delete_points(tcp::socket4& s,
     uint64_t t = tokens[3].u64;
 
     printf("DELETE FROM %s WHERE time_ns <= %llu\n",path.c_str(),t);
-    tsdb::delete_points(path,t);
+    tsdb::database db(database);
+    tsdb::measurement m(db,measurement);
+    tsdb::delete_points(m,series,t);
 }
 
 static void
@@ -302,8 +312,10 @@ handle_select_points_limit(tcp::socket4& s,
 
     printf("SELECT %s FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
-    tsdb::series_read_lock read_lock(series);
-    tsdb::select_op_first op(read_lock,str::split(field_list,","),t0,t1,N);
+    tsdb::database db(database);
+    tsdb::measurement m(db,measurement);
+    tsdb::series_read_lock read_lock(m,series);
+    tsdb::select_op_first op(read_lock,path,str::split(field_list,","),t0,t1,N);
     _handle_select_points(op);
 }
 
@@ -322,8 +334,10 @@ handle_select_points_last(tcp::socket4& s,
 
     printf("SELECT %s FROM %s WHERE %llu <= time_ns <= %llu LAST %llu\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
-    tsdb::series_read_lock read_lock(series);
-    tsdb::select_op_last op(read_lock,str::split(field_list,","),t0,t1,N);
+    tsdb::database db(database);
+    tsdb::measurement m(db,measurement);
+    tsdb::series_read_lock read_lock(m,series);
+    tsdb::select_op_last op(read_lock,path,str::split(field_list,","),t0,t1,N);
     _handle_select_points(op);
 }
 

@@ -5,9 +5,19 @@
 #include <hdr/kmath.h>
 #include <algorithm>
 
-tsdb::measurement::measurement(const futil::path& path) try:
-    dir(futil::path("databases",path)),
-    name(path),
+tsdb::database::database(const futil::path& path) try:
+    dir(futil::path("databases",path))
+{
+}
+catch (const futil::errno_exception& e)
+{
+    if (e.errnov == ENOENT)
+        throw tsdb::no_such_database_exception();
+    throw;
+}
+
+tsdb::measurement::measurement(const database& db, const futil::path& path) try:
+    dir(db.dir,path),
     schema_fd(dir,"schema.txt",O_RDONLY),
     schema_mapping(0,schema_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                    schema_fd.fd,0),
@@ -32,30 +42,27 @@ catch (const futil::errno_exception& e)
 }
 
 void
-tsdb::delete_points(const futil::path& series, uint64_t t)
+tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
 {
     // We need to find the first valid timestamp > t.  This becomes the new
     // value for time_first and then we drop all points before it.  If no such
     // timestamp exists, then time_first becomes time_last + 1 and we drop
     // everything except the last chunk, which only drop if it is full.  This
     // all has to be done while holding the time_first lock.
-    futil::path series_path("databases",series);
-    futil::path time_ns_path(series_path,"time_ns");
-
-    // Parse the schema for this series to find the field names.
-    measurement m(series_path + "..");
+    futil::directory series_dir(m.dir,series);
+    futil::directory time_ns_dir(series_dir,"time_ns");
 
     // We need to get time_first and time_last.  We lock time_first so that
     // nobody else tries to access the series while we are adjusting things.
-    futil::file time_first_fd(series_path + "time_first",O_RDWR | O_EXLOCK);
-    futil::file time_last_fd(series_path + "time_last",O_RDONLY);
+    futil::file time_first_fd(series_dir,"time_first",O_RDWR | O_EXLOCK);
+    futil::file time_last_fd(series_dir,"time_last",O_RDONLY);
     uint64_t time_first = time_first_fd.read_u64();
     uint64_t time_last = time_last_fd.read_u64();
     if (t < time_first)
         return;
 
     // Map the index file and find the beginning and end.
-    futil::file index_fd(series_path + "index",O_RDWR);
+    futil::file index_fd(series_dir,"index",O_RDWR);
     auto index_m = index_fd.mmap(NULL,index_fd.lseek(0,SEEK_END),
                                  PROT_READ | PROT_WRITE,MAP_SHARED,0);
     auto* index_begin = (index_entry*)index_m.addr;
@@ -72,8 +79,7 @@ tsdb::delete_points(const futil::path& series, uint64_t t)
 
     // Map the timestamp chunk and search it for t.  The std::upper_bound will
     // find the timestamp after t, unless it is the end of the chunk.
-    futil::file timestamp_fd(time_ns_path + index_slot->timestamp_file,
-                             O_RDONLY);
+    futil::file timestamp_fd(time_ns_dir,index_slot->timestamp_file,O_RDONLY);
     auto timestamp_m = timestamp_fd.mmap(NULL,timestamp_fd.lseek(0,SEEK_END),
                                          PROT_READ,MAP_SHARED,0);
     auto* timestamps_begin = (const uint64_t*)timestamp_m.addr;
@@ -105,15 +111,16 @@ tsdb::delete_points(const futil::path& series, uint64_t t)
     time_first_fd.fcntl(F_BARRIERFSYNC);
 
     // Delete all orphaned chunks.
+    futil::directory fields_dir(series_dir,"fields");
+    futil::directory bitmaps_dir(series_dir,"bitmaps");
     for (auto* slot = index_begin; slot < index_slot; ++slot)
     {
-        futil::unlink_if_exists(time_ns_path + slot->timestamp_file);
+        futil::unlink_if_exists(time_ns_dir,slot->timestamp_file);
         for (const auto& f : m.fields)
         {
-            futil::unlink_if_exists(series_path + "fields" + f.name +
-                                    slot->timestamp_file);
-            futil::unlink_if_exists(series_path + "bitmaps" + f.name +
-                                    slot->timestamp_file);
+            futil::path sub_path(f.name,slot->timestamp_file);
+            futil::unlink_if_exists(fields_dir,sub_path);
+            futil::unlink_if_exists(bitmaps_dir,sub_path);
         }
     }
 
@@ -180,11 +187,10 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
     // We are sure to keep the fields vector in the same order as the field
     // names that were passed in; this is the order in which we will return
     // the data points.
-    measurement m(read_lock.series_path + "..");
     for (const auto& fn : field_names)
     {
         bool found = false;
-        for (const auto& sf : m.fields)
+        for (const auto& sf : read_lock.m.fields)
         {
             if (sf.name == fn)
             {
@@ -315,8 +321,8 @@ tsdb::select_op::_advance(bool is_first)
 }
 
 tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
-    const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
-    uint64_t limit):
+    const futil::path& series_id, const std::vector<std::string>& field_names,
+    uint64_t _t0, uint64_t _t1, uint64_t limit):
         select_op(read_lock,field_names,_t0,_t1,limit)
 {
     // If we have no work to do, return.
@@ -331,7 +337,7 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
         printf("%s/%s ",f.name,ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
-           read_lock.series_path.c_str(),t0,t1,limit);
+           series_id.c_str(),t0,t1,limit);
 
     // Find the target slot.  std::upper_bound returns the first slot greater
     // than the requested value, meaning that t0 must appear in the slot
@@ -346,8 +352,8 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
 }
 
 tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
-    const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
-    uint64_t limit):
+    const futil::path& series_id, const std::vector<std::string>& field_names,
+    uint64_t _t0, uint64_t _t1, uint64_t limit):
         select_op(read_lock,field_names,_t0,_t1,limit)
 {
     // If we have no work to do, return.
@@ -362,7 +368,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         printf("%s/%s ",f.name,ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LAST %llu\n",
-           read_lock.series_path.c_str(),t0,t1,limit);
+           series_id.c_str(),t0,t1,limit);
 
     // Find the location of both t0 and t1.
     auto* t0_index_slot = std::upper_bound(index_begin,index_end,t0);
@@ -447,7 +453,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         printf("%s/%s ",f.name,ftinfo->name);
     }
     printf("] FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
-           read_lock.series_path.c_str(),t0,t1,rem_limit);
+           series_id.c_str(),t0,t1,rem_limit);
 
     // And map it all.
     index_slot = t0_index_slot;
@@ -460,9 +466,16 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
 {
     // Try to acquire a write lock on the series.
     futil::file time_last_fd;
-    futil::path series_path("databases",series);
-    futil::path time_last_path(series_path,"time_last");
-    time_last_fd.open_if_exists(time_last_path,O_RDWR | O_EXLOCK);
+    try
+    {
+        futil::directory series_dir(m.dir,series);
+        time_last_fd.open_if_exists(series_dir,"time_last",O_RDWR | O_EXLOCK);
+    }
+    catch (const futil::errno_exception& e)
+    {
+        if (e.errnov != ENOENT)
+            throw e;
+    }
 
     // If the time_last file doesn't exist, we need to create the series.
     if (time_last_fd.fd == -1)
@@ -471,33 +484,34 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
         futil::file create_series_lock_fd(m.dir,"create_series_lock",
                                           O_WRONLY | O_EXLOCK);
 
+        // Create and open the series directory.
+        futil::mkdir_if_not_exists(m.dir,series,0770);
+        futil::directory series_dir(m.dir,series);
+
         // Someone else may have created it in the meantime.
-        time_last_fd.open_if_exists(time_last_path,O_RDWR | O_EXLOCK);
+        time_last_fd.open_if_exists(series_dir,"time_last",O_RDWR | O_EXLOCK);
         if (time_last_fd.fd == -1)
         {
-            // Create the series directory.
-            futil::mkdir_if_not_exists(series_path,0770);
-
             // Create the time sub-directory.
-            futil::mkdir_if_not_exists(series_path + "time_ns",0770);
+            futil::mkdir_if_not_exists(series_dir,"time_ns",0770);
 
             // Create the fields sub-directory.
-            futil::path fields_path(series_path,"fields");
-            futil::mkdir_if_not_exists(fields_path,0770);
+            futil::mkdir_if_not_exists(series_dir,"fields",0770);
+            futil::directory fields_dir(series_dir,"fields");
 
             // Create the bitmaps sub-directory.
-            futil::path bitmaps_path(series_path,"bitmaps");
-            futil::mkdir_if_not_exists(bitmaps_path,0770);
+            futil::mkdir_if_not_exists(series_dir,"bitmaps",0770);
+            futil::directory bitmaps_dir(series_dir,"bitmaps");
 
             // Create all of the field and bitmap sub-directories.
             for (const auto& f : m.fields)
             {
-                futil::mkdir_if_not_exists(fields_path + f.name,0770);
-                futil::mkdir_if_not_exists(bitmaps_path + f.name,0770);
+                futil::mkdir_if_not_exists(fields_dir,f.name,0770);
+                futil::mkdir_if_not_exists(bitmaps_dir,f.name,0770);
             }
 
             // Create the time_first file and populate it with the value 1.
-            futil::file time_first_fd(series_path + "time_first",
+            futil::file time_first_fd(series_dir,"time_first",
                                       O_CREAT | O_TRUNC | O_WRONLY | O_EXLOCK,
                                       0660);
             uint64_t one = 1;
@@ -507,15 +521,15 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
 
             // Create an empty index file.  No lock is needed since you can't
             // delete anything from an empty file!
-            futil::file index_fd(series_path + "index",
-                                 O_CREAT | O_TRUNC | O_RDWR,0660);
+            futil::file index_fd(series_dir,"index",O_CREAT | O_TRUNC | O_RDWR,
+                                 0660);
             index_fd.fsync();
 
             // Write barrier so that time_last_fd is the last thing to go out.
             index_fd.fcntl(F_BARRIERFSYNC);
 
             // Create the time_last file and populate it with 0.
-            time_last_fd.open(time_last_path,
+            time_last_fd.open(series_dir,"time_last",
                               O_RDWR | O_EXCL | O_CREAT | O_EXLOCK,0660);
             uint64_t zero = 0;
             time_last_fd.write_all(&zero,sizeof(uint64_t));
@@ -523,7 +537,7 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
         }
     }
 
-    return series_write_lock(series,std::move(time_last_fd));
+    return series_write_lock(m,series,std::move(time_last_fd));
 }
 catch (const futil::errno_exception& e)
 {
@@ -561,14 +575,13 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     //     are points that would have been partially written before a crash.
     //     This garbage data will eventually be overwritten if new points come
     //     in, but we will never access it otherwise.
-    measurement m(write_lock.series_path + "..");
 
     // Compute the expected data length, starting with the timestamps and then
     // each field.
     std::vector<const uint64_t*> field_bitmap_ptrs;
     std::vector<const char*> field_data_ptrs;
     auto* data_ptr = (const char*)data + npoints*8;
-    for (auto& f : m.fields)
+    for (auto& f : write_lock.m.fields)
     {
         const auto* fti     = &ftinfos[f.type];
         size_t bitmap_words = ceil_div<size_t>(npoints + bitmap_offset,64);
@@ -640,10 +653,10 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // Select all data points from the overlap.
         uint64_t overlap_time_last = MIN(chunk_last_ns,write_lock.time_last);
         std::vector<std::string> field_names;
-        field_names.reserve(m.fields.size());
-        for (const auto& f : m.fields)
+        field_names.reserve(write_lock.m.fields.size());
+        for (const auto& f : write_lock.m.fields)
             field_names.emplace_back(f.name);
-        select_op_first op(write_lock,field_names,chunk_first_ns,
+        select_op_first op(write_lock,"<overwrite>",field_names,chunk_first_ns,
                            overlap_time_last,-1);
         kassert(op.npoints);
         
@@ -659,21 +672,21 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             time_data += op.npoints;
 
             // Do a memcmp on all of the fields.
-            for (size_t i=0; i<m.fields.size(); ++i)
+            for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
-                const auto* fti = &ftinfos[m.fields[i].type];
+                const auto* fti = &ftinfos[write_lock.m.fields[i].type];
                 size_t len = op.npoints*fti->nbytes;
                 if (memcmp(field_data_ptrs[i],op.field_data[i],len))
                 {
                     printf("Overwrite mismatch in field %s.\n",
-                           m.fields[i].name);
+                           write_lock.m.fields[i].name);
                     throw tsdb::field_overwrite_mismatch_exception();
                 }
                 field_data_ptrs[i] += len;
             }
 
             // Manually check all the bitmaps.
-            for (size_t i=0; i<m.fields.size(); ++i)
+            for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
                 for (size_t j=0; j<op.npoints; ++j)
                 {
@@ -683,7 +696,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                     if (new_bitmap != op.get_bitmap_bit(i,j))
                     {
                         printf("Overwrite mismatch in bitmap %s.\n",
-                               m.fields[i].name);
+                               write_lock.m.fields[i].name);
                         throw tsdb::bitmap_overwrite_mismatch_exception();
                     }
                 }
@@ -720,9 +733,9 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     futil::directory bitmaps_dir(write_lock.series_dir,"bitmaps");
     futil::file tail_fd;
     std::vector<futil::path> field_file_paths;
-    std::vector<futil::file> field_fds(m.fields.size());
+    std::vector<futil::file> field_fds(write_lock.m.fields.size());
     std::vector<futil::path> bitmap_file_paths;
-    std::vector<futil::file> bitmap_fds(m.fields.size());
+    std::vector<futil::file> bitmap_fds(write_lock.m.fields.size());
     off_t index_len = index_fd.lseek(0,SEEK_END);
     size_t nindices = index_len / sizeof(index_entry);
     size_t avail_points = 0;
@@ -740,7 +753,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // Generate all the paths
         field_file_paths.clear();
         bitmap_file_paths.clear();
-        for (const auto& field : m.fields)
+        for (const auto& field : write_lock.m.fields)
         {
             field_file_paths.emplace_back(field.name,ie.timestamp_file);
             bitmap_file_paths.emplace_back(field.name,ie.timestamp_file);
@@ -895,14 +908,16 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             // bitmap accounting via mmap() much simpler.
             field_file_paths.clear();
             bitmap_file_paths.clear();
-            for (size_t i=0; i<m.fields.size(); ++i)
+            for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
-                field_file_paths.emplace_back(m.fields[i].name,time_data_str);
+                field_file_paths.emplace_back(write_lock.m.fields[i].name,
+                                              time_data_str);
                 field_fds[i].open(fields_dir,field_file_paths[i],
                                   O_CREAT | O_TRUNC | O_WRONLY,0660);
                 field_fds[i].fsync();
 
-                bitmap_file_paths.emplace_back(m.fields[i].name,time_data_str);
+                bitmap_file_paths.emplace_back(write_lock.m.fields[i].name,
+                                               time_data_str);
                 bitmap_fds[i].open(bitmaps_dir,bitmap_file_paths[i],
                                    O_CREAT | O_TRUNC | O_RDWR,0660);
                 bitmap_fds[i].truncate(2048*1024/8/8);
@@ -953,9 +968,9 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
         // Write out all the field files first.
         size_t timestamp_index = pos / 8;
-        for (size_t i=0; i<m.fields.size(); ++i)
+        for (size_t i=0; i<write_lock.m.fields.size(); ++i)
         {
-            const auto* fti = &ftinfos[m.fields[i].type];
+            const auto* fti = &ftinfos[write_lock.m.fields[i].type];
             size_t nbytes = write_points*fti->nbytes;
             field_fds[i].lseek(timestamp_index*fti->nbytes,SEEK_SET);
             field_fds[i].write_all(field_data_ptrs[i],nbytes);
@@ -964,7 +979,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         }
 
         // Update all the bitmap files.
-        for (size_t i=0; i<m.fields.size(); ++i)
+        for (size_t i=0; i<write_lock.m.fields.size(); ++i)
         {
             auto m = bitmap_fds[i].mmap(0,2048*1024/8/8,PROT_READ | PROT_WRITE,
                                         MAP_SHARED,0);

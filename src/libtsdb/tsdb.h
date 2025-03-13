@@ -353,16 +353,21 @@ namespace tsdb
     };
     KASSERT(sizeof(schema_entry) == 128);
 
+    struct database
+    {
+        futil::directory    dir;
+
+        database(const futil::path& path);
+    };
+
     struct measurement
     {
         futil::directory                dir;
-        std::string                     name;
         futil::file                     schema_fd;
         futil::mapping                  schema_mapping;
         std::span<const schema_entry>   fields;
 
-        // Path of the form: <database_name>/<measurement_name>
-        measurement(const futil::path& path);
+        measurement(const database& db, const futil::path& path);
     };
 
     struct index_entry
@@ -397,15 +402,15 @@ namespace tsdb
 
     struct _series_lock
     {
-        futil::path         series_path;
+        const measurement&  m;
         futil::directory    series_dir;
         futil::file         time_first_fd;
         uint64_t            time_first;
 
-        // Obtain the lock using a <database>/<measurement>/<series> path.
-        _series_lock(const futil::path& series_path, int oflag) try:
-            series_path(series_path),
-            series_dir(futil::path("databases",series_path)),
+        _series_lock(const measurement& m, const futil::path& series,
+                     int oflag) try:
+            m(m),
+            series_dir(m.dir,series),
             time_first_fd(series_dir,"time_first",oflag),
             time_first(time_first_fd.read_u64())
         {
@@ -421,14 +426,15 @@ namespace tsdb
     // Obtains a read lock on a series.
     struct series_read_lock : public _series_lock
     {
-        series_read_lock(const futil::path& series_path):
-            _series_lock(series_path,O_RDONLY | O_SHLOCK)
+        series_read_lock(const measurement& m, const futil::path& series):
+            _series_lock(m,series,O_RDONLY | O_SHLOCK)
         {
         }
 
     protected:
-        series_read_lock(const futil::path& series_path, int oflag):
-            _series_lock(series_path,oflag)
+        series_read_lock(const measurement& m, const futil::path& series,
+                         int oflag):
+            _series_lock(m,series,oflag)
         {
         }
     };
@@ -441,9 +447,9 @@ namespace tsdb
 
         // Transfer ownership of an O_EXLOCK exclusive lock fd on time_last to
         // us.
-        series_write_lock(const futil::path& series_path,
+        series_write_lock(const measurement& m, const futil::path& series,
                           futil::file&& _time_last_fd):
-            series_read_lock(series_path,O_RDWR | O_SHLOCK),
+            series_read_lock(m,series,O_RDWR | O_SHLOCK),
             time_last_fd(std::move(_time_last_fd)),
             time_last(time_last_fd.read_u64())
         {
@@ -523,6 +529,7 @@ namespace tsdb
     struct select_op_first : public select_op
     {
         select_op_first(const series_read_lock& read_lock,
+                        const futil::path& series_id,
                         const std::vector<std::string>& field_names,
                         uint64_t t0, uint64_t t1, uint64_t limit);
     };
@@ -530,12 +537,14 @@ namespace tsdb
     struct select_op_last : public select_op
     {
         select_op_last(const series_read_lock& read_lock,
+                       const futil::path& series_id,
                        const std::vector<std::string>& field_names,
                        uint64_t t0, uint64_t t1, uint64_t limit);
     };
 
     // Deletes points from the series, up to and including timestamp t.
-    void delete_points(const futil::path& series, uint64_t t);
+    void delete_points(const measurement& m, const futil::path& series,
+                       uint64_t t);
 
     // Writes data points to the specified series.  If the series does not
     // exist (but the measurement does exist) then the series will be created.

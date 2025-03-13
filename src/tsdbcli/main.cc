@@ -319,8 +319,17 @@ _handle_select_series_limit(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    tsdb::series_read_lock read_lock(series);
-    tsdb::select_op_first op(read_lock,str::split(field_specifier,","),t0,t1,N);
+    auto components = futil::path(series).decompose();
+    if (components.size() != 3)
+    {
+        printf("Invalid series: %s\n",series.c_str());
+        return;
+    }
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::series_read_lock read_lock(m,components[2]);
+    tsdb::select_op_first op(read_lock,series,str::split(field_specifier,","),
+                             t0,t1,N);
     _handle_select_series(op);
 }
 
@@ -398,8 +407,17 @@ _handle_select_series_last(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    tsdb::series_read_lock read_lock(series);
-    tsdb::select_op_last op(read_lock,str::split(field_specifier,","),t0,t1,N);
+    auto components = futil::path(series).decompose();
+    if (components.size() != 3)
+    {
+        printf("Invalid series: %s\n",series.c_str());
+        return;
+    }
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::series_read_lock read_lock(m,components[2]);
+    tsdb::select_op_last op(read_lock,series,str::split(field_specifier,","),
+                            t0,t1,N);
     _handle_select_series(op);
 }
 
@@ -463,8 +481,16 @@ handle_delete_from_series(const std::vector<std::string>& cmd)
             return;
         --t;
     }
+    auto components = futil::path(cmd[2]).decompose();
+    if (components.size() != 3)
+    {
+        printf("Invalid series: %s\n",cmd[2].c_str());
+        return;
+    }
 
-    tsdb::delete_points(cmd[2],t);
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::delete_points(m,components[2],t);
 }
 
 static void
@@ -474,12 +500,19 @@ handle_write_series(const std::vector<std::string>& v)
     //
     //  write series pt-1/xtalx_data/XTI-10-1000000 N
     uint32_t n = std::stoul(v[3]);
+    auto components = futil::path(v[2]).decompose();
+    if (components.size() != 3)
+    {
+        printf("Invalid series: %s\n",v[2].c_str());
+        return;
+    }
 
-    tsdb::measurement m(futil::path(v[2],".."));
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
 
     // Generate points.
     tsdb::series_write_lock write_lock =
-        tsdb::open_or_create_and_lock_series(m,v[2]);
+        tsdb::open_or_create_and_lock_series(m,components[2]);
 
     uint64_t t0 = write_lock.time_last + 1;
     if (t0 == 1)

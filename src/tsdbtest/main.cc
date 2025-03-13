@@ -127,10 +127,9 @@ static void
 write_series(series_state& ss, size_t offset, size_t npoints)
 {
     // Acquire the write lock.
-    futil::path m_path(futil::path(ss.database,ss.measurement));
-    futil::path s_path(m_path,ss.series);
-    tsdb::measurement m(m_path);
-    auto write_lock = tsdb::open_or_create_and_lock_series(m,s_path);
+    tsdb::database db(ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    auto write_lock = tsdb::open_or_create_and_lock_series(m,ss.series);
 
     while (npoints)
     {
@@ -307,7 +306,9 @@ main(int argc, const char* argv[])
         size_t npoints = lp - fp;
 
         // Perform the query.
-        tsdb::series_read_lock read_lock(ss.dms_path);
+        tsdb::database db(ss.database);
+        tsdb::measurement m(db,ss.measurement);
+        tsdb::series_read_lock read_lock(m,ss.series);
         tsdb::select_op* op;
         size_t N;
         switch (rand() % 3)
@@ -320,7 +321,8 @@ main(int argc, const char* argv[])
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],npoints);
-                op = new tsdb::select_op_first(read_lock,field_names,t0,t1,-1);
+                op = new tsdb::select_op_first(read_lock,ss.dms_path,
+                                               field_names,t0,t1,-1);
             break;
 
             case 1:
@@ -333,7 +335,8 @@ main(int argc, const char* argv[])
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],N,npoints);
-                op = new tsdb::select_op_first(read_lock,field_names,t0,t1,N);
+                op = new tsdb::select_op_first(read_lock,ss.dms_path,
+                                               field_names,t0,t1,N);
             break;
 
             case 2:
@@ -347,7 +350,8 @@ main(int argc, const char* argv[])
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],N,npoints);
-                op = new tsdb::select_op_last(read_lock,field_names,t0,t1,N);
+                op = new tsdb::select_op_last(read_lock,ss.dms_path,
+                                              field_names,t0,t1,N);
             break;
         }
 
