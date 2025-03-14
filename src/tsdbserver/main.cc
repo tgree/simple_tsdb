@@ -295,7 +295,7 @@ _handle_select_points(tcp::socket4& s, tsdb::select_op& op)
     {
         size_t len = op.compute_chunk_len();
         uint32_t tokens[4] = {DT_CHUNK,(uint32_t)op.npoints,
-                              (uint32_t)op.bitmap_offset,(uint32_t)len};
+                              (uint32_t)(op.bitmap_offset % 64),(uint32_t)len};
         s.send_all(tokens,sizeof(tokens));
 
         // Start by sending timestamp data.
@@ -303,7 +303,8 @@ _handle_select_points(tcp::socket4& s, tsdb::select_op& op)
 
         // Send each field in turn.
         size_t bitmap_index = op.bitmap_offset / 64;
-        size_t bitmap_n = ceil_div<size_t>(op.bitmap_offset + op.npoints,64);
+        size_t bitmap_n = ceil_div<size_t>(op.bitmap_offset + op.npoints,64) -
+                          bitmap_index;
         for (size_t i=0; i<op.fields.size(); ++i)
         {
             // First we send the bitmap.

@@ -505,7 +505,10 @@ namespace tsdb
                 const auto* fti = &ftinfos[f.type];
                 S += round_up_pow2(N*fti->nbytes,8);
             }
-            return 8*(N + ceil_div<size_t>(bitmap_offset + N,64)*M) + S;
+            size_t bitmap_begin = bitmap_offset / 64;
+            size_t bitmap_end = ceil_div<size_t>(bitmap_offset + N,64);
+            size_t bitmap_n = bitmap_end - bitmap_begin;
+            return 8*(N + bitmap_n*M) + S;
         }
 
         constexpr bool get_bitmap_bit(size_t field_index, size_t i) const
