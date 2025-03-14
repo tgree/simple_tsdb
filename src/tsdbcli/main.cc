@@ -235,7 +235,7 @@ static const command_syntax commands[] =
     },
 };
 
-static void
+static void __UNUSED__
 print_op_points(const tsdb::select_op& op, size_t index, size_t n)
 {
     for (size_t i=index; i<index + n; ++i)
@@ -285,6 +285,26 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
     }
 }
 
+static uint8_t
+sum(const tsdb::select_op& op)
+{
+    uint8_t sum = 0;
+    for (size_t i=0; i<op.npoints; ++i)
+    {
+        sum += op.timestamp_data[i];
+        for (size_t j=0; j<op.fields.size(); ++j)
+        {
+            auto* fti = &tsdb::ftinfos[op.fields[j].type];
+            uint8_t v = ((const uint8_t*)op.field_data[j])[i*fti->nbytes];
+            if (op.is_field_null(j,i))
+                sum -= v;
+            else
+                sum += v;
+        }
+    }
+    return sum;
+}
+
 static void
 _handle_select_series(tsdb::select_op& op) try
 {
@@ -298,6 +318,7 @@ _handle_select_series(tsdb::select_op& op) try
 
     for (;;)
     {
+#if 0
         for (size_t i=0; i<op.fields.size() + 1; ++i)
             printf("-------------------- ");
         printf("\n");
@@ -311,6 +332,8 @@ _handle_select_series(tsdb::select_op& op) try
             print_op_points(op,op.npoints-MAX_PRINT_RESULTS/2,
                             MAX_PRINT_RESULTS/2);
         }
+#endif
+        printf("N: %6zu  Chunk sum: %u\n",op.npoints,sum(op));
         if (op.is_last)
             break;
 
