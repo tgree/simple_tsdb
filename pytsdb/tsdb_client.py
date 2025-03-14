@@ -209,7 +209,7 @@ class FieldData:
         return len(self.values)
 
     def __getitem__(self, i):
-        if i < 0 || i >= len(self.values):
+        if i < 0 or i >= len(self.values):
             raise IndexError
 
         if not self.get_bitmap_bit(i):
@@ -255,28 +255,30 @@ class RXChunk:
 
 
 class SelectOP:
-    def __init__(self, client, database, measurement, series, schema, fields,
-                 t0, t1, N):
+    def __init__(self, client, ct_op, database, measurement, series, schema,
+                 fields, t0, t1, N):
         self.client = client
         self.schema = schema
-        self.fields = fields
+        self.fields = fields or [se.name for se in schema.fields]
+
+        dt_n = DT_NLAST if ct_op == CT_SELECT_POINTS_LAST else DT_NLIMIT
 
         database = database.encode()
         measurement = measurement.encode()
         series = series.encode()
-        field_list = ','.join(fields).encode()
+        field_list = ','.join(self.fields).encode()
         cmd = struct.pack('<IIH%usIH%usIH%usIH%usIQIQIQI' % (len(database),
                                                              len(measurement),
                                                              len(series),
                                                              len(field_list)),
-                          CT_SELECT_POINTS_LIMIT,
+                          ct_op,
                           DT_DATABASE, len(database), database,
                           DT_MEASUREMENT, len(measurement), measurement,
                           DT_SERIES, len(series), series,
                           DT_FIELD_LIST, len(field_list), field_list,
                           DT_TIME_FIRST, t0,
                           DT_TIME_LAST, t1,
-                          DT_NLIMIT, N,
+                          dt_n, N,
                           DT_END)
         self.client._sendall(cmd)
 
@@ -447,7 +449,13 @@ class TSDBClient:
 
         self._write_points_end()
 
-    def select_points_begin(self, database, measurement, series, schema,
-                            fields, t0, t1, N=0xFFFFFFFFFFFFFFFF):
-        return SelectOP(self, database, measurement, series, schema, fields,
-                        t0, t1, N)
+    def select_points(self, database, measurement, series, schema, fields=None,
+                      t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        return SelectOP(self, CT_SELECT_POINTS_LIMIT, database, measurement,
+                        series, schema, fields, t0, t1, N)
+
+    def select_last_points(self, database, measurement, series, schema,
+                           fields=None, t0=0, t1=0xFFFFFFFFFFFFFFFF,
+                           N=0xFFFFFFFFFFFFFFFF):
+        return SelectOP(self, CT_SELECT_POINTS_LAST, database, measurement,
+                        series, schema, fields, t0, t1, N)
