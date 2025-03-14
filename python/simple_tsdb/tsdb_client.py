@@ -33,25 +33,27 @@ DT_FIELD_TYPE           = 0x7DB40C2A
 DT_FIELD_NAME           = 0x5C0D45C1
 DT_READY_FOR_CHUNK      = 0x6000531C
 
+
 # Status codes.
-SC_INIT_IO_ERROR                = -1
-SC_CREATE_DATABASE_IO_ERROR     = -2
-SC_CREATE_MEASUREMENT_IO_ERROR  = -3
-SC_INVALID_MEASUREMENT          = -4
-SC_INVALID_SERIES               = -5
-SC_CORRUPT_SCHEMA_FILE          = -6
-SC_NO_SUCH_FIELD                = -7
-SC_END_OF_SELECT                = -8
-SC_INCORRECT_WRITE_CHUNK_LEN    = -9
-SC_OUT_OF_ORDER_TIMESTAMPS      = -10
-SC_TIMESTAMP_OVERWRITE_MISMATCH = -11
-SC_FIELD_OVERWRITE_MISMATCH     = -12
-SC_BITMAP_OVERWRITE_MISMATCH    = -13
-SC_TAIL_FILE_TOO_BIG            = -14
-SC_TAIL_FILE_INVALID_SIZE       = -15
-SC_INVALID_TIME_LAST            = -16
-SC_NO_SUCH_SERIES               = -17
-SC_NO_SUCH_DATABASE             = -18
+class StatusCode:
+    INIT_IO_ERROR                = -1
+    CREATE_DATABASE_IO_ERROR     = -2
+    CREATE_MEASUREMENT_IO_ERROR  = -3
+    INVALID_MEASUREMENT          = -4
+    INVALID_SERIES               = -5
+    CORRUPT_SCHEMA_FILE          = -6
+    NO_SUCH_FIELD                = -7
+    END_OF_SELECT                = -8
+    INCORRECT_WRITE_CHUNK_LEN    = -9
+    OUT_OF_ORDER_TIMESTAMPS      = -10
+    TIMESTAMP_OVERWRITE_MISMATCH = -11
+    FIELD_OVERWRITE_MISMATCH     = -12
+    BITMAP_OVERWRITE_MISMATCH    = -13
+    TAIL_FILE_TOO_BIG            = -14
+    TAIL_FILE_INVALID_SIZE       = -15
+    INVALID_TIME_LAST            = -16
+    NO_SUCH_SERIES               = -17
+    NO_SUCH_DATABASE             = -18
 
 
 class StatusException(Exception):
@@ -97,7 +99,7 @@ def round_up(v, K):
     '''
     Rounds up to the nearest multiple of K.
     '''
-    return math.ceil(v / K) * K
+    return ceil_div(v, K) * K
 
 
 class Field:
@@ -108,7 +110,7 @@ class Field:
     def __repr__(self):
         return '<%s %s>' % (self.field_type.name, self.name)
 
-    def pack(self, points):
+    def pack(self, points, index, n):
         '''
         A list of N points is packed as follows:
 
@@ -118,8 +120,8 @@ class Field:
 
         The padding aligns the total length to a multiple of 8 bytes.
         '''
-        bitmap = [0xFFFFFFFFFFFFFFFF] * ceil_div(len(points), 64)
-        values = [p[self.name] for p in points]
+        bitmap = [0xFFFFFFFFFFFFFFFF] * ceil_div(n, 64)
+        values = [points[i][self.name] for i in range(index, index + n)]
         for i, v in enumerate(values):
             if v is None:
                 values[i] = 0
@@ -127,7 +129,7 @@ class Field:
 
         bitmap = np.array(bitmap, dtype=np.uint64)
         values = np.array(values, dtype=self.field_type.np_type)
-        nbytes = len(points) * self.field_type.size
+        nbytes = n * self.field_type.size
         if nbytes % 8:
             pad = bytes(8 - (nbytes % 8))
         else:
@@ -153,7 +155,7 @@ class Schema:
         timestamps = np.array(timestamps, dtype=np.uint64)
         data = b''
         for f in self.fields:
-            data += f.pack(points)
+            data += f.pack(points, index, n)
 
         return b'' + timestamps.data + data
 
@@ -180,7 +182,7 @@ class Schema:
         If we require N to be a multiple of 64, that simplifies to:
 
             len(N) = 8*N +
-                     N/8*M +
+                     (N/8)*M +
                      N*f1.size +
                      N*f2.size +
                      ...
@@ -306,7 +308,7 @@ class SelectOP:
         return RXChunk(self.schema, self.fields, npoints, bitmap_offset, data)
 
 
-class TSDBClient:
+class Client:
     def __init__(self, host='127.0.0.1', port=4000):
         self.addr = (host, port)
         self.socket = socket.create_connection(self.addr)
@@ -444,7 +446,13 @@ class TSDBClient:
         while rem_points:
             n = min(rem_points, N)
             data = schema.pack_points(points, index, n)
-            self._write_points_chunk(len(points), 0, data)
+            # print('n %u  len(data) %u   max_data_len %u   '
+            #       'data_len_for_npoints %u'
+            #       % (n, len(data), max_data_len,
+            #          schema.data_len_for_npoints(n)))
+            assert schema.data_len_for_npoints(n) == len(data)
+            assert len(data) <= max_data_len
+            self._write_points_chunk(n, 0, data)
             index += n
             rem_points -= n
 
