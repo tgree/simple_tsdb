@@ -260,6 +260,7 @@ handle_write_points(tcp::socket4& s,
         if (ch.data_len > 10*1024*1024)
             throw futil::errno_exception(ENOMEM);
 
+        printf("RECV %u BYTES\n",ch.data_len);
         auto_buf data(ch.data_len);
         s.recv_all(data,ch.data_len);
 

@@ -227,7 +227,7 @@ main(int argc, const char* argv[])
         states.emplace_back(series_state{db,m,s,futil::path(db,m,s)});
 
         auto& ss = states.back();
-        size_t nelems = (rand() % 1000000) + 1;
+        size_t nelems = (rand() % 10000000) + 1;
         ss.points.reserve(nelems);
         for (size_t j=0; j<nelems; ++j)
         {
