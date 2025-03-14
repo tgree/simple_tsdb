@@ -148,6 +148,8 @@ static const command_syntax commands[] =
     },
 };
 
+static const uint8_t pad_bytes[8] = {};
+
 static void
 handle_create_database(tcp::socket4& s,
     const std::vector<parsed_data_token>& tokens)
@@ -280,26 +282,50 @@ handle_delete_points(tcp::socket4& s,
 }
 
 static void
-_handle_select_points(tsdb::select_op& op)
+_handle_select_points(tcp::socket4& s, tsdb::select_op& op)
 {
     if (!op.npoints)
     {
-        // Write DT_END.
+        uint32_t dt = DT_END;
+        s.send_all(&dt,sizeof(dt));
         return;
     }
 
-    // 1. For each chunk:
-    //      1. Write DT_CHUNK_POINTS.
-    //      2. Write timestamps.
-    //      3. For each field:
-    //          1. Write bitmap bit start offset.
-    //          2. Write bitmap data (only from uint64_t word start offset).
-    //          3. Write field data.
-    // 2. Write DT_CHUNK_END
     for (;;)
     {
+        size_t len = op.compute_chunk_len();
+        uint32_t tokens[4] = {DT_CHUNK,(uint32_t)op.npoints,
+                              (uint32_t)op.bitmap_offset,(uint32_t)len};
+        s.send_all(tokens,sizeof(tokens));
+
+        // Start by sending timestamp data.
+        s.send_all(op.timestamp_data,8*op.npoints);
+
+        // Send each field in turn.
+        size_t bitmap_index = op.bitmap_offset / 64;
+        size_t bitmap_n = ceil_div<size_t>(op.bitmap_offset + op.npoints,64);
+        for (size_t i=0; i<op.fields.size(); ++i)
+        {
+            // First we send the bitmap.
+            auto* bitmap = (const uint64_t*)op.bitmap_mappings[i].addr;
+            s.send_all(&bitmap[bitmap_index],bitmap_n*8);
+
+            // Next we send the field data.
+            const auto* fti = &tsdb::ftinfos[op.fields[i].type];
+            size_t data_len = op.npoints*fti->nbytes;
+            s.send_all(op.field_data[i],data_len);
+
+            // Finally, pad to 8 bytes if necessary.
+            if (data_len % 8)
+                s.send_all(pad_bytes,8 - (data_len % 8));
+        }
+
         if (op.is_last)
-            break;
+        {
+            uint32_t dt = DT_END;
+            s.send_all(&dt,sizeof(dt));
+            return;
+        }
 
         op.advance();
     }
@@ -324,7 +350,7 @@ handle_select_points_limit(tcp::socket4& s,
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
     tsdb::select_op_first op(read_lock,path,str::split(field_list,","),t0,t1,N);
-    _handle_select_points(op);
+    _handle_select_points(s,op);
 }
 
 static void
@@ -346,7 +372,7 @@ handle_select_points_last(tcp::socket4& s,
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
     tsdb::select_op_last op(read_lock,path,str::split(field_list,","),t0,t1,N);
-    _handle_select_points(op);
+    _handle_select_points(s,op);
 }
 
 static void

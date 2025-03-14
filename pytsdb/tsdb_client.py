@@ -142,6 +142,11 @@ class Schema:
     def __repr__(self):
         return repr(self.fields)
 
+    def get_field_type(self, name):
+        for f in self.fields:
+            if f.name == name:
+                return f.field_type
+
     def pack_points(self, points, index, n):
         timestamps = [points[i]['time_ns'] for i in range(index, index + n)]
         timestamps = np.array(timestamps, dtype=np.uint64)
@@ -192,6 +197,110 @@ class Schema:
         S = sum(f.field_type.size for f in self.fields)
         N = int((data_len / (8 + S + M/8)) / 64) * 64
         return N
+
+
+class FieldData:
+    def __init__(self, bitmap_offset, bitmap_data, field_data, np_type):
+        self.bitmap_offset = bitmap_offset
+        self.bitmap = np.frombuffer(bitmap_data, dtype=np.uint64)
+        self.values = np.frombuffer(field_data, dtype=np_type)
+
+    def __len__(self):
+        return len(self.values)
+
+    def __getitem__(self, i):
+        if i < 0 || i >= len(self.values):
+            raise IndexError
+
+        if not self.get_bitmap_bit(i):
+            return None
+        return self.values[i]
+
+    def get_bitmap_bit(self, i):
+        bitmap_i = (self.bitmap_offset + i) // 8
+        shift    = (self.bitmap_offset + i) % 8
+        return self.bitmap[bitmap_i] & (1 << shift)
+
+
+class RXChunk:
+    def __init__(self, schema, fields, npoints, bitmap_offset, data):
+        self.schema        = schema
+        self.npoints       = npoints
+        self.bitmap_offset = bitmap_offset
+        self.data          = data
+
+        data_view       = memoryview(data)
+        self.timestamps = np.frombuffer(data_view[0:npoints*8], dtype=np.uint64)
+        offset          = npoints*8
+
+        self.fields   = {}
+        bitmap_nbytes = math.ceil((bitmap_offset + npoints) / 64) * 8
+        for name in fields:
+            bitmap_data = data_view[offset:offset + bitmap_nbytes]
+            offset += bitmap_nbytes
+
+            ft = schema.get_field_type(name)
+            data_len = ft.size*npoints
+            field_data = data_view[offset:offset + data_len]
+            offset += data_len
+
+            if data_len % 8:
+                offset += (8 - (data_len % 8))
+
+            self.fields[name] = FieldData(bitmap_offset, bitmap_data,
+                                          field_data, ft.np_type)
+
+    def __repr__(self):
+        return 'RXChunk(%u points)' % self.npoints
+
+
+class SelectOP:
+    def __init__(self, client, database, measurement, series, schema, fields,
+                 t0, t1, N):
+        self.client = client
+        self.schema = schema
+        self.fields = fields
+
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        field_list = ','.join(fields).encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIH%usIQIQIQI' % (len(database),
+                                                             len(measurement),
+                                                             len(series),
+                                                             len(field_list)),
+                          CT_SELECT_POINTS_LIMIT,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_FIELD_LIST, len(field_list), field_list,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          DT_NLIMIT, N,
+                          DT_END)
+        self.client._sendall(cmd)
+
+        dt = self.client._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self.client._recv_i32())
+
+        self.last_token = dt
+
+    def read_chunk(self):
+        if self.last_token == DT_END:
+            assert self.client._recv_u32() == DT_STATUS_CODE
+            assert self.client._recv_i32() == 0
+            return None
+
+        assert self.last_token == DT_CHUNK
+        npoints       = self.client._recv_u32()
+        bitmap_offset = self.client._recv_u32()
+        data_len      = self.client._recv_u32()
+        data          = self.client._recvall(data_len)
+
+        self.last_token = self.client._recv_u32()
+
+        return RXChunk(self.schema, self.fields, npoints, bitmap_offset, data)
 
 
 class TSDBClient:
@@ -337,3 +446,8 @@ class TSDBClient:
             rem_points -= n
 
         self._write_points_end()
+
+    def select_points_begin(self, database, measurement, series, schema,
+                            fields, t0, t1, N=0xFFFFFFFFFFFFFFFF):
+        return SelectOP(self, database, measurement, series, schema, fields,
+                        t0, t1, N)

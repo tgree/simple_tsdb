@@ -5,6 +5,7 @@
 
 #include <futil/futil.h>
 #include <hdr/fixed_vector.h>
+#include <hdr/kmath.h>
 #include <vector>
 #include <span>
 
@@ -492,6 +493,19 @@ namespace tsdb
         inline void advance()
         {
             _advance(false);
+        }
+
+        constexpr size_t compute_chunk_len() const
+        {
+            size_t N = npoints;
+            size_t M = fields.size();
+            size_t S = 0;
+            for (const auto& f : fields)
+            {
+                const auto* fti = &ftinfos[f.type];
+                S += round_up_pow2(N*fti->nbytes,8);
+            }
+            return 8*(N + ceil_div<size_t>(bitmap_offset + N,64)*M) + S;
         }
 
         constexpr bool get_bitmap_bit(size_t field_index, size_t i) const

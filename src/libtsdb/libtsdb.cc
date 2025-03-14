@@ -954,6 +954,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             // need to make time_first point at the start of this chunk.
             if (write_lock.time_first > write_lock.time_last)
             {
+                // TODO: Double check that in this case we are also writing
+                // to the first entry of the index file.
                 write_lock.time_first = time_data[0];
                 write_lock.time_first_fd.lseek(0,SEEK_SET);
                 write_lock.time_first_fd.write_all(&write_lock.time_first,8);
