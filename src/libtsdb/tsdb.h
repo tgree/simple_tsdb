@@ -321,6 +321,8 @@ namespace tsdb
         FT_U64  = 3,
         FT_F32  = 4,
         FT_F64  = 5,
+        FT_I32  = 6,
+        FT_I64  = 7,
     };
 
     struct field_type_info
@@ -338,6 +340,8 @@ namespace tsdb
         [tsdb::FT_U64]  = {tsdb::FT_U64,8,"u64"},
         [tsdb::FT_F32]  = {tsdb::FT_F32,4,"f32"},
         [tsdb::FT_F64]  = {tsdb::FT_F64,8,"f64"},
+        [tsdb::FT_I32]  = {tsdb::FT_I32,4,"i32"},
+        [tsdb::FT_I64]  = {tsdb::FT_I64,8,"i64"},
     };
 
     struct schema_entry

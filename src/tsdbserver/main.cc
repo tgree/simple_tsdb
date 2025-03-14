@@ -192,6 +192,10 @@ handle_create_measurement(tcp::socket4& s,
             se.type = tsdb::FT_F32;
         else if (field_specifier[1] == "f64")
             se.type = tsdb::FT_F64;
+        else if (field_specifier[1] == "i32")
+            se.type = tsdb::FT_I32;
+        else if (field_specifier[1] == "i64")
+            se.type = tsdb::FT_I64;
         else
             throw futil::errno_exception(EINVAL);
 
