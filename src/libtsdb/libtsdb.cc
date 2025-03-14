@@ -151,8 +151,8 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         rem_limit(limit),
         fields(field_names.size() ?: read_lock.m.fields.size()),
         index_slot(NULL),
-        timestamp_mapping(NULL,2048*1024,PROT_NONE,MAP_ANONYMOUS | MAP_PRIVATE,
-                          -1,0),
+        timestamp_mapping(NULL,CHUNK_FILE_SIZE,PROT_NONE,
+                          MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
         field_mappings(field_names.size() ?: read_lock.m.fields.size()),
         bitmap_mappings(field_names.size() ?: read_lock.m.fields.size()),
         is_last(true),
@@ -307,7 +307,7 @@ tsdb::select_op::_advance(bool is_first)
         }
     }
 
-    // Map the bitmap points.  Bitmap files are always 32K in size.
+    // Map the bitmap points.  Bitmap files are always fixed size.
     futil::directory bitmaps_dir(read_lock.series_dir,"bitmaps");
     bitmap_offset = start_index;
     for (size_t i=0; i<fields.size(); ++i)
@@ -317,12 +317,12 @@ tsdb::select_op::_advance(bool is_first)
         futil::file bitmap_fd(bitmaps_dir,bitmap_path,O_RDONLY);
         if (is_first)
         {
-            bitmap_mappings.emplace_back((void*)NULL,32*1024,PROT_READ,
+            bitmap_mappings.emplace_back((void*)NULL,BITMAP_FILE_SIZE,PROT_READ,
                                          MAP_SHARED,bitmap_fd.fd,0);
         }
         else
         {
-            futil::mmap(bitmap_mappings[i].addr,32*1024,PROT_READ,
+            futil::mmap(bitmap_mappings[i].addr,BITMAP_FILE_SIZE,PROT_READ,
                         MAP_SHARED | MAP_FIXED,bitmap_fd.fd,0);
         }
     }
@@ -422,7 +422,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         t0_avail_points = t0_mmap.len/8 - (t0_lower - t0_data_begin);
         t1_avail_points = t1_upper - t1_data_begin;
         avail_points = t0_avail_points + t1_avail_points +
-            (2048*1024/8)*n_middle_slots;
+            CHUNK_NPOINTS*n_middle_slots;
     }
     else
         t0_avail_points = t1_avail_points = avail_points = t1_index - t0_index;
@@ -440,12 +440,12 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
             if (++t0_index_slot == t1_index_slot)
                 t0_avail_points = t1_avail_points;
             else
-                t0_avail_points = 2048*1024/8;
+                t0_avail_points = CHUNK_NPOINTS;
         }
 
         // Extract the timestamp from the right index.
         size_t t1_index = t1_upper - t1_data_begin;
-        size_t index = (t1_index - rem_limit) % (2048*1024/8);
+        size_t index = (t1_index - rem_limit) % CHUNK_NPOINTS;
         t0_file.open(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
         t0_file.lseek(index*8,SEEK_SET);
         t0 = t0_file.read_u64();
@@ -772,7 +772,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
         // Validate the file size.
         pos = tail_fd.lseek(0,SEEK_END);
-        if (pos > 2*1024*1024)
+        if (pos > CHUNK_FILE_SIZE)
             throw tsdb::tail_file_too_big_exception(pos);
         if (pos % sizeof(uint64_t))
             throw tsdb::tail_file_invalid_size_exception(pos);
@@ -802,7 +802,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                     field_fds[j].open(fields_dir,field_file_paths[j],O_WRONLY);
                     bitmap_fds[j].open(bitmaps_dir,bitmap_file_paths[j],O_RDWR);
                 }
-                avail_points = (2*1024*1024 - pos) / sizeof(uint64_t);
+                avail_points = (CHUNK_FILE_SIZE - pos) / sizeof(uint64_t);
                 break;
             }
 
@@ -866,7 +866,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 pos = (const char*)iter - (const char*)iter_first + 8;
                 tail_fd.lseek(pos,SEEK_SET);
                 tail_fd.truncate(pos);
-                avail_points = (2*1024*1024 - pos) / sizeof(uint64_t);
+                avail_points = (CHUNK_FILE_SIZE - pos) / sizeof(uint64_t);
                 break;
             }
 
@@ -928,7 +928,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                                                time_data_str);
                 bitmap_fds[i].open(bitmaps_dir,bitmap_file_paths[i],
                                    O_CREAT | O_TRUNC | O_RDWR,0660);
-                bitmap_fds[i].truncate(2048*1024/8/8);
+                bitmap_fds[i].truncate(CHUNK_NPOINTS/8);
                 bitmap_fds[i].fsync();
             }
 
@@ -938,7 +938,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             // the file if it exists.
             tail_fd.open(time_ns_dir,time_data_str,O_CREAT | O_TRUNC | O_WRONLY,
                          0660);
-            avail_points = 2*1024*1024 / sizeof(uint64_t);
+            avail_points = CHUNK_NPOINTS;
             pos = 0;
 
             // TODO: If we crash here, there is now a dangling, empty timestamp
@@ -991,8 +991,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // Update all the bitmap files.
         for (size_t i=0; i<write_lock.m.fields.size(); ++i)
         {
-            auto m = bitmap_fds[i].mmap(0,2048*1024/8/8,PROT_READ | PROT_WRITE,
-                                        MAP_SHARED,0);
+            auto m = bitmap_fds[i].mmap(0,CHUNK_NPOINTS/8,
+                                        PROT_READ | PROT_WRITE,MAP_SHARED,0);
             auto* bitmap = (uint64_t*)m.addr;
             size_t bitmap_index = timestamp_index;
             for (size_t j=0; j<write_points; ++j)
