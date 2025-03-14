@@ -27,7 +27,7 @@ tsdb::measurement::measurement(const database& db, const futil::path& path) try:
 {
     for (const auto& f : fields)
     {
-        if (f.type == 0 || f.type > 5 || f.name[0] == '\0' ||
+        if (f.type == 0 || f.type > LAST_FIELD_TYPE || f.name[0] == '\0' ||
             f.name[123] != '\0')
         {
             throw tsdb::corrupt_schema_file_exception();
@@ -1024,6 +1024,9 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         avail_points      -= write_points;
         src_bitmap_offset += write_points;
     }
+
+    // Fully synchronize everything.
+    write_lock.time_last_fd.fcntl(F_FULLFSYNC);
 }
 
 void

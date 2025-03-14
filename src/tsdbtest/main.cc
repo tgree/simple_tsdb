@@ -33,6 +33,8 @@ std::vector<tsdb::schema_entry> fields =
     {tsdb::FT_U64,{},"field_u64"},
     {tsdb::FT_F32,{},"field_f32"},
     {tsdb::FT_F64,{},"field_f64"},
+    {tsdb::FT_I32,{},"field_i32"},
+    {tsdb::FT_I64,{},"field_i64"},
 };
 
 struct data_point
@@ -45,6 +47,8 @@ struct data_point
     uint64_t    field_u64;
     float       field_f32;
     double      field_f64;
+    int32_t     field_i32;
+    int64_t     field_i64;
 
     bool        field_bool_is_null;
     bool        field_u32_1_is_null;
@@ -52,6 +56,8 @@ struct data_point
     bool        field_u64_is_null;
     bool        field_f32_is_null;
     bool        field_f64_is_null;
+    bool        field_i32_is_null;
+    bool        field_i64_is_null;
 };
 bool operator<(const data_point& lhs, uint64_t time_ns)
 {
@@ -167,6 +173,10 @@ write_series(series_state& ss, size_t offset, size_t npoints)
         push_32(data,&p0->field_f32,cpoints);
         push_bitmap(data,&p0->field_f64_is_null,cpoints);
         push_64(data,&p0->field_f64,cpoints);
+        push_bitmap(data,&p0->field_i32_is_null,cpoints);
+        push_32(data,&p0->field_i32,cpoints);
+        push_bitmap(data,&p0->field_i64_is_null,cpoints);
+        push_64(data,&p0->field_i64,cpoints);
         kassert(data.size()*8 == expected_len);
 
         // Write the series to disk.
@@ -229,6 +239,10 @@ main(int argc, const char* argv[])
                 ((uint64_t)rand() << 32) | rand(),
                 (float)rand() / RAND_MAX,
                 (double)rand() / RAND_MAX,
+                (int32_t)(rand() - (RAND_MAX/2)),
+                (int64_t)(rand() - (RAND_MAX/2)),
+                rand() < (RAND_MAX / 1000),
+                rand() < (RAND_MAX / 1000),
                 rand() < (RAND_MAX / 1000),
                 rand() < (RAND_MAX / 1000),
                 rand() < (RAND_MAX / 1000),
@@ -374,12 +388,16 @@ main(int argc, const char* argv[])
                     op->get_field<uint64_t,3>(i),
                     op->get_field<float,4>(i),
                     op->get_field<double,5>(i),
+                    op->get_field<int32_t,6>(i),
+                    op->get_field<int64_t,7>(i),
                     op->is_field_null(0,i),
                     op->is_field_null(1,i),
                     op->is_field_null(2,i),
                     op->is_field_null(3,i),
                     op->is_field_null(4,i),
                     op->is_field_null(5,i),
+                    op->is_field_null(6,i),
+                    op->is_field_null(7,i),
                 };
                 kassert(p.time_ns             == fp->time_ns);
                 kassert(p.field_bool          == fp->field_bool);
@@ -388,12 +406,16 @@ main(int argc, const char* argv[])
                 kassert(p.field_u64           == fp->field_u64);
                 kassert(p.field_f32           == fp->field_f32);
                 kassert(p.field_f64           == fp->field_f64);
+                kassert(p.field_i32           == fp->field_i32);
+                kassert(p.field_i64           == fp->field_i64);
                 kassert(p.field_bool_is_null  == fp->field_bool_is_null);
                 kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
                 kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
                 kassert(p.field_u64_is_null   == fp->field_u64_is_null);
                 kassert(p.field_f32_is_null   == fp->field_f32_is_null);
                 kassert(p.field_f64_is_null   == fp->field_f64_is_null);
+                kassert(p.field_i32_is_null   == fp->field_i32_is_null);
+                kassert(p.field_i64_is_null   == fp->field_i64_is_null);
                 ++fp;
             }
 

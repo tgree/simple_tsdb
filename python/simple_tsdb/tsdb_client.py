@@ -83,11 +83,13 @@ class FieldType:
 
 # Field types
 FIELD_TYPES = {
-    1 : FieldType('bool', 0, 1, 'B', np.ubyte),
-    2 : FieldType('u32',  1, 4, 'I', np.uint32),
-    3 : FieldType('u64',  2, 8, 'Q', np.uint64),
-    4 : FieldType('f32',  3, 4, 'f', np.float32),
-    5 : FieldType('f64',  4, 8, 'd', np.float64),
+    1 : FieldType('bool', 1, 1, 'B', np.ubyte),
+    2 : FieldType('u32',  2, 4, 'I', np.uint32),
+    3 : FieldType('u64',  3, 8, 'Q', np.uint64),
+    4 : FieldType('f32',  4, 4, 'f', np.float32),
+    5 : FieldType('f64',  5, 8, 'd', np.float64),
+    6 : FieldType('i32',  6, 4, 'i', np.int32),
+    7 : FieldType('i64',  7, 8, 'q', np.int64),
 }
 
 

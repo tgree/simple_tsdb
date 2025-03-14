@@ -324,6 +324,7 @@ namespace tsdb
         FT_I32  = 6,
         FT_I64  = 7,
     };
+#define LAST_FIELD_TYPE     7
 
     struct field_type_info
     {

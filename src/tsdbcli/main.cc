@@ -271,6 +271,14 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
                 case tsdb::FT_F64:
                     printf("%20f ",((const double*)p)[i]);
                 break;
+
+                case tsdb::FT_I32:
+                    printf("%20d ",((const int32_t*)p)[i]);
+                break;
+
+                case tsdb::FT_I64:
+                    printf("%20lld ",((const int64_t*)p)[i]);
+                break;
             }
         }
         printf("\n");
@@ -545,6 +553,7 @@ handle_write_series(const std::vector<std::string>& v)
             break;
 
             case tsdb::FT_U32:
+            case tsdb::FT_I32:
                 for (size_t i=0; i<ceil_div(n,2U); ++i)
                 {
                     data_points.push_back((((uint64_t)u32 + 0ULL) <<  0) |
@@ -554,6 +563,7 @@ handle_write_series(const std::vector<std::string>& v)
             break;
 
             case tsdb::FT_U64:
+            case tsdb::FT_I64:
                 for (size_t i=0; i<n; ++i)
                     data_points.push_back(u64++);
             break;
@@ -644,6 +654,10 @@ handle_create_measurement(const std::vector<std::string>& v)
             se.type = tsdb::FT_F32;
         else if (field_specifier[1] == "f64")
             se.type = tsdb::FT_F64;
+        else if (field_specifier[1] == "i32")
+            se.type = tsdb::FT_I32;
+        else if (field_specifier[1] == "i64")
+            se.type = tsdb::FT_I64;
         else
         {
             printf("Unrecognized field type '%s'.\n",
