@@ -111,7 +111,7 @@ class Field:
     def pack(self, points):
         '''
         A list of N points is packed as follows:
-        
+
             uint64_t    bitmap[ceil(N/4)]
             point_type  point[N]
             uint8_t     padding[]
@@ -146,6 +146,7 @@ class Schema:
         for f in self.fields:
             if f.name == name:
                 return f.field_type
+        raise KeyError
 
     def pack_points(self, points, index, n):
         timestamps = [points[i]['time_ns'] for i in range(index, index + n)]
@@ -166,7 +167,7 @@ class Schema:
         Suppose we have M fields.  We would like to calculate the maximum
         number of points, N, that could be packed into a buffer length of
         data_len bytes.
-        
+
         We have the following function:
 
             len(N) = 8*N +                      # Timestamps
