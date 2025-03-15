@@ -548,10 +548,23 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void mkdir(const directory& dir, const char* path, mode_t mode)
+    {
+        if (::mkdirat(dir.fd,path,mode) == -1)
+            throw errno_exception(errno);
+    }
+
     inline void mkdir_if_not_exists(const char* path, mode_t mode)
     {
         // mkdir() doesn't seem to return EINTR.
         if (::mkdir(path,mode) == -1 && errno != EEXIST)
+            throw errno_exception(errno);
+    }
+
+    inline void mkdir_if_not_exists(const directory& dir, const char* path,
+                                    mode_t mode)
+    {
+        if (::mkdirat(dir.fd,path,mode) == -1 && errno != EEXIST)
             throw errno_exception(errno);
     }
 
@@ -569,9 +582,21 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void unlink(const directory& dir, const char* path)
+    {
+        if (::unlinkat(dir.fd,path,0) == -1)
+            throw errno_exception(errno);
+    }
+
     inline void unlink_if_exists(const char* path)
     {
         if (::unlink(path) == -1 && errno != ENOENT)
+            throw errno_exception(errno);
+    }
+
+    inline void unlink_if_exists(const directory& dir, const char* path)
+    {
+        if (::unlinkat(dir.fd,path,0) == -1 && errno != ENOENT)
             throw errno_exception(errno);
     }
 
