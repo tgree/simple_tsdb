@@ -367,6 +367,16 @@ namespace futil
         {
             openat(AT_FDCWD,p,oflag,mode);
         }
+
+        void open(const directory& d, const path& p, int oflag)
+        {
+            openat(d.fd,p,oflag);
+        }
+
+        void open(const directory& d, const path& p, int oflag, mode_t mode)
+        {
+            openat(d.fd,p,oflag,mode);
+        }
         
         void openat_if_exists(int dir_fd, const path& p, int oflag)
         {
@@ -386,6 +396,11 @@ namespace futil
         void open_if_exists(const path& p, int oflag)
         {
             openat_if_exists(AT_FDCWD,p,oflag);
+        }
+
+        void open_if_exists(const directory& d, const path& p, int oflag)
+        {
+            openat_if_exists(d.fd,p,oflag);
         }
 
         void read_all(void* _p, size_t n)
@@ -513,6 +528,16 @@ namespace futil
         file(const path& p, int oflag, mode_t mode)
         {
             open(p,oflag,mode);
+        }
+
+        file(const directory& d, const path& p, int oflag)
+        {
+            open(d,p,oflag);
+        }
+
+        file(const directory& d, const path& p, int oflag, mode_t mode)
+        {
+            open(d,p,oflag,mode);
         }
     };
 
