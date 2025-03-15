@@ -12,9 +12,9 @@
 
 namespace futil
 {
-    struct exception
+    struct exception : public std::exception
     {
-        constexpr exception() {}
+        exception() {}
     };
 
     struct errno_exception : public exception
@@ -30,7 +30,7 @@ namespace futil
             return strerror(errnov);
         }
 
-        constexpr errno_exception(int errnov):
+        errno_exception(int errnov):
             exception(),
             errnov(errnov)
         {
@@ -41,7 +41,7 @@ namespace futil
     // case if the second path is an absolute path, for instance.
     struct invalid_join_exception : public exception
     {
-        constexpr invalid_join_exception():
+        invalid_join_exception():
             exception()
         {
         }
@@ -50,7 +50,7 @@ namespace futil
     // Exception thrown if trying to access a character past the end of a path.
     struct out_of_range_exception : public exception
     {
-        constexpr out_of_range_exception():
+        out_of_range_exception():
             exception()
         {
         }
@@ -60,7 +60,7 @@ namespace futil
     // (i.e. O_CREAT without a mode or a mode without O_CREAT).
     struct inconsistent_file_params : public exception
     {
-        constexpr inconsistent_file_params():
+        inconsistent_file_params():
             exception()
         {
         }
