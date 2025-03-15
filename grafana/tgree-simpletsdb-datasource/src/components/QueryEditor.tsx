@@ -7,39 +7,47 @@ import { MyDataSourceOptions, MyQuery } from '../types';
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
 export function QueryEditor({ query, onChange, onRunQuery }: Props) {
-  const onQueryTextChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...query, queryText: event.target.value });
+  const onMeasurementChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onChange({ ...query, measurement: event.target.value });
+  };
+  const onSeriesChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onChange({ ...query, series: event.target.value });
+  };
+  const onFieldChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onChange({ ...query, field: event.target.value });
   };
 
-  const onConstantChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...query, constant: parseFloat(event.target.value) });
-    // executes the query
-    onRunQuery();
-  };
-
-  const { queryText, constant } = query;
+  const { measurement, series, field } = query;
 
   return (
-    <Stack gap={0}>
-      <InlineField label="Constant">
+    <div>
+      <InlineField label="Measurement" labelWidth={16} tooltip="Not used yet">
         <Input
-          id="query-editor-constant"
-          onChange={onConstantChange}
-          value={constant}
-          width={8}
-          type="number"
-          step="0.1"
-        />
-      </InlineField>
-      <InlineField label="Query Text" labelWidth={16} tooltip="Not used yet">
-        <Input
-          id="query-editor-query-text"
-          onChange={onQueryTextChange}
-          value={queryText || ''}
+          id="query-editor-measurement"
+          onChange={onMeasurementChange}
+          value={measurement || ''}
           required
-          placeholder="Enter a query"
+          placeholder="Enter a measurement"
         />
       </InlineField>
-    </Stack>
+      <InlineField label="Series" labelWidth={16} tooltip="Not used yet">
+        <Input
+          id="query-editor-series"
+          onChange={onSeriesChange}
+          value={series || ''}
+          required
+          placeholder="Enter a series"
+        />
+      </InlineField>
+      <InlineField label="Field" labelWidth={16} tooltip="Not used yet">
+        <Input
+          id="query-editor-field"
+          onChange={onFieldChange}
+          value={field || ''}
+          required
+          placeholder="Enter a field"
+        />
+      </InlineField>
+    </div>
   );
 }

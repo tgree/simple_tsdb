@@ -1,7 +1,7 @@
 apiVersion: 1
 
 datasources:
-  - name: 'Simple TSDB'
+  - name: 'STSDB PT-1'
     type: 'tgree-simpletsdb-datasource'
     access: proxy
     isDefault: false
@@ -9,6 +9,5 @@ datasources:
     version: 1
     editable: true
     jsonData:
-      path: '/resources'
+      database: 'pt-1-data'
     secureJsonData:
-      apiKey: 'api-key'
