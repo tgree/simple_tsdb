@@ -15,12 +15,14 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   applyTemplateVariables(query: MyQuery, scopedVars: ScopedVars) {
     return {
       ...query,
-      queryText: getTemplateSrv().replace(query.queryText, scopedVars),
+      measurement: getTemplateSrv().replace(query.measurement, scopedVars),
+      series: getTemplateSrv().replace(query.series, scopedVars),
+      field: getTemplateSrv().replace(query.field, scopedVars),
     };
   }
 
   filterQuery(query: MyQuery): boolean {
     // if no query has been provided, prevent the query from being executed
-    return !!query.queryText;
+    return !!query.measurement && !!query.series && !!query.field;
   }
 }
