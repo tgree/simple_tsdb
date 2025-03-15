@@ -163,54 +163,6 @@ tsdb::delete_points(const futil::path& series, uint64_t t)
     index_fd.fcntl(F_BARRIERFSYNC);
     printf("Deleted %zu slots from the start of the index file.\n",
            index_slot - index_begin);
-
-    // Now we 
-#if 0
-    // Start by incrementing time_first to t + 1.  If t is past time_last for
-    // some reason, we increment time_first only up to time_last + 1, so that
-    // the next data write to the series will increment time_last by 1, giving
-    // us time_first = time_last = t + 1 and having one point in the series as
-    // expected by a new write.
-
-    // We need to delete up to and including t.
-    time_first = (t <= time_last) ? t + 1 : time_last + 1;
-
-    // Okay, we've incremented time_first.  Search for index slots that wholly
-    // precede time_first and delete those files from the series.
-    while (index_slot < index_end - 1)
-    {
-        // If time_first is >= the first entry in the NEXT index slot, then we
-        // know this index slot is completely deleted.  Otherwise, break out.
-        if (time_first < (index_slot + 1)->time_ns)
-            break;
-
-        // Delete this index slot.
-
-        // Advance.
-        ++index_slot;
-    }
-
-    // If t was specified as a timestamp in the gap between chunks, or as the
-    // last timestamp in a full chunk, then we can't know if we should delete
-    // the last index slot without checking its last entry.
-    size_t len = timestamp_file_fd.lseek(0,SEEK_END);
-    if (len == 2048*1024)
-    {
-        timestamp_file_fd.lseek(-8,SEEK_END);
-        if (time_first >= timestamp_file_fd.read_u64())
-        {
-            futil::unlink_if_exists(time_ns_path + index_slot->timestamp_file);
-            for (const auto& f : fields)
-            {
-                futil::unlink_if_exists(series_path + "fields" + f.name +
-                                        index_slot->timestamp_file);
-                futil::unlink_if_exists(series_path + "bitmaps" + f.name +
-                                        index_slot->timestamp_file);
-            }
-            ++index_slot;
-        }
-    }
-#endif
 }
 
 // TODO: This sets index_begin as the start of the index file.  Instead, it
