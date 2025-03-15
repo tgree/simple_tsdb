@@ -299,6 +299,33 @@ namespace futil
         }
     };
 
+    struct directory : public file_descriptor
+    {
+        directory(const path& p)
+        {
+            for (;;)
+            {
+                fd = ::open(p,O_DIRECTORY | O_SEARCH);
+                if (fd != -1)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+
+        directory(const directory& d, const path& p)
+        {
+            for (;;)
+            {
+                fd = ::openat(d.fd,p,O_DIRECTORY | O_SEARCH);
+                if (fd != -1)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+    };
+
     struct file : public file_descriptor
     {
         void openat(int dir_fd, const path& p, int oflag)
