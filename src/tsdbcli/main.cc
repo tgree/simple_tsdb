@@ -271,6 +271,14 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
                 case tsdb::FT_F64:
                     printf("%20f ",((const double*)p)[i]);
                 break;
+
+                case tsdb::FT_I32:
+                    printf("%20d ",((const int32_t*)p)[i]);
+                break;
+
+                case tsdb::FT_I64:
+                    printf("%20lld ",((const int64_t*)p)[i]);
+                break;
             }
         }
         printf("\n");
@@ -285,7 +293,7 @@ _handle_select_series(tsdb::select_op& op) try
 
     printf("%20s ","time_ns");
     for (const auto& f : op.fields)
-        printf("%20s ",f.name.c_str());
+        printf("%20s ",f.name);
     printf("\n");
 
     for (;;)
@@ -319,7 +327,19 @@ _handle_select_series_limit(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    tsdb::select_op_first op(series,str::split(field_specifier,","),t0,t1,N);
+    auto components = futil::path(series).decompose();
+    if (components.size() != 3)
+    {
+        printf("Invalid series: %s\n",series.c_str());
+        return;
+    }
+    std::vector<std::string> fields;
+    if (field_specifier != "*")
+        fields = str::split(field_specifier,",");
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::series_read_lock read_lock(m,components[2]);
+    tsdb::select_op_first op(read_lock,series,fields,t0,t1,N);
     _handle_select_series(op);
 }
 
@@ -397,7 +417,19 @@ _handle_select_series_last(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    tsdb::select_op_last op(series,str::split(field_specifier,","),t0,t1,N);
+    auto components = futil::path(series).decompose();
+    if (components.size() != 3)
+    {
+        printf("Invalid series: %s\n",series.c_str());
+        return;
+    }
+    std::vector<std::string> fields;
+    if (field_specifier != "*")
+        fields = str::split(field_specifier,",");
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::series_read_lock read_lock(m,components[2]);
+    tsdb::select_op_last op(read_lock,series,fields,t0,t1,N);
     _handle_select_series(op);
 }
 
@@ -461,8 +493,16 @@ handle_delete_from_series(const std::vector<std::string>& cmd)
             return;
         --t;
     }
+    auto components = futil::path(cmd[2]).decompose();
+    if (components.size() != 3)
+    {
+        printf("Invalid series: %s\n",cmd[2].c_str());
+        return;
+    }
 
-    tsdb::delete_points(cmd[2],t);
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::delete_points(m,components[2],t);
 }
 
 static void
@@ -472,35 +512,28 @@ handle_write_series(const std::vector<std::string>& v)
     //
     //  write series pt-1/xtalx_data/XTI-10-1000000 N
     uint32_t n = std::stoul(v[3]);
-
-    std::vector<tsdb::field> fields;
-    try
+    auto components = futil::path(v[2]).decompose();
+    if (components.size() != 3)
     {
-        tsdb::parse_schema_for_series(v[2],fields);
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error parsing schema: %s\n",e.c_str());
+        printf("Invalid series: %s\n",v[2].c_str());
         return;
     }
 
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+
     // Generate points.
-    uint64_t t0 = 1;
-    try
-    {
-        t0 = tsdb::get_time_last(v[2]) + 1;
-    }
-    catch (const futil::errno_exception& e)
-    {
-        if (e.errnov != ENOENT)
-            throw;
-    }
+    tsdb::series_write_lock write_lock =
+        tsdb::open_or_create_and_lock_series(m,components[2]);
+
+    uint64_t t0 = write_lock.time_last + 1;
     if (t0 == 1)
         t0 = 1741235979144457000;
+
     std::vector<uint64_t> data_points;
     for (size_t i=0; i<n; ++i)
         data_points.push_back(t0++);
-    for (const auto& field : fields)
+    for (const auto& field : m.fields)
     {
         // Generate a bitmap with some random null values.  We nullify one
         // value out of every 64.
@@ -520,6 +553,7 @@ handle_write_series(const std::vector<std::string>& v)
             break;
 
             case tsdb::FT_U32:
+            case tsdb::FT_I32:
                 for (size_t i=0; i<ceil_div(n,2U); ++i)
                 {
                     data_points.push_back((((uint64_t)u32 + 0ULL) <<  0) |
@@ -529,6 +563,7 @@ handle_write_series(const std::vector<std::string>& v)
             break;
 
             case tsdb::FT_U64:
+            case tsdb::FT_I64:
                 for (size_t i=0; i<n; ++i)
                     data_points.push_back(u64++);
             break;
@@ -565,7 +600,7 @@ handle_write_series(const std::vector<std::string>& v)
     try
 #endif
     {
-        tsdb::write_series(v[2],n,data_points.size()*sizeof(uint64_t),
+        tsdb::write_series(write_lock,n,0,data_points.size()*sizeof(uint64_t),
                            &data_points[0]);
     }
 #if 0
@@ -583,7 +618,14 @@ handle_create_measurement(const std::vector<std::string>& v)
     //
     //  create measurement pt-1/xtalx_data with fields \
     //      pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
-    std::vector<tsdb::field> fields;
+    auto components = futil::path(v[2]).decompose();
+    if (components.size() != 2)
+    {
+        printf("Invalid measurement path.\n");
+        return;
+    }
+
+    std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(v[5],",");
     for (const auto& fs : field_specifiers)
     {
@@ -594,19 +636,28 @@ handle_create_measurement(const std::vector<std::string>& v)
             printf("Invalid field specifier: %s\n",fs.c_str());
             return;
         }
+        if (field_specifier[0].size() >= 124)
+        {
+            printf("Field name too long: %s\n",fs.c_str());
+            return;
+        }
 
-        tsdb::field f;
-        f.name = field_specifier[0];
+        tsdb::schema_entry se{};
+        strcpy(se.name,field_specifier[0].c_str());
         if (field_specifier[1] == "bool")
-            f.type = tsdb::FT_BOOL;
+            se.type = tsdb::FT_BOOL;
         else if (field_specifier[1] == "u32")
-            f.type = tsdb::FT_U32;
+            se.type = tsdb::FT_U32;
         else if (field_specifier[1] == "u64")
-            f.type = tsdb::FT_U64;
+            se.type = tsdb::FT_U64;
         else if (field_specifier[1] == "f32")
-            f.type = tsdb::FT_F32;
+            se.type = tsdb::FT_F32;
         else if (field_specifier[1] == "f64")
-            f.type = tsdb::FT_F64;
+            se.type = tsdb::FT_F64;
+        else if (field_specifier[1] == "i32")
+            se.type = tsdb::FT_I32;
+        else if (field_specifier[1] == "i64")
+            se.type = tsdb::FT_I64;
         else
         {
             printf("Unrecognized field type '%s'.\n",
@@ -614,12 +665,13 @@ handle_create_measurement(const std::vector<std::string>& v)
             return;
         }
 
-        fields.push_back(f);
+        fields.push_back(se);
     }
 
     try
     {
-        tsdb::create_measurement(v[2].c_str(),fields);
+        tsdb::database db(components[0]);
+        tsdb::create_measurement(db,components[1],fields);
     }
     catch (const futil::errno_exception& e)
     {
