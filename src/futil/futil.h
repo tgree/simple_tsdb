@@ -242,17 +242,65 @@ namespace futil
         }
     };
 
-    struct file
+    struct file_descriptor
     {
         int fd;
 
-        void swap(file& other)
+        void swap(file_descriptor& other)
         {
             int temp = fd;
             fd = other.fd;
             other.fd = temp;
         }
 
+        void close()
+        {
+            if (fd == -1)
+                return;
+
+            for (;;)
+            {
+                // Attempt the close.
+                int err = ::close(fd);
+
+                // If we closed successfully, or we failed to close with
+                // anything other than EINTR, return.  close() can fail with
+                // EIO if a preceding write() later failed due to an IO error.
+                // The file descriptor is left in an unspecified state so you
+                // cannot do ANYTHING with it.
+                //
+                // It may be desirable to throw an exception or something, but
+                // this is a really nasty case.
+                if (err != -1)
+                {
+                    fd = -1;
+                    return;
+                }
+                if (errno != EINTR)
+                    return;
+            }
+        }
+
+        constexpr file_descriptor():fd(-1) {}
+        
+        constexpr file_descriptor(int fd):fd(fd) {}
+
+        file_descriptor(const file_descriptor&);  // Link error if invoked.
+
+        file_descriptor(file_descriptor&& other):
+            fd(other.fd)
+        {
+            other.fd = -1;
+        }
+
+        ~file_descriptor()
+        {
+            close();
+        }
+    };
+
+    struct file : public file_descriptor
+    {
         void openat(int dir_fd, const path& p, int oflag)
         {
             close();
@@ -311,34 +359,6 @@ namespace futil
         void open_if_exists(const path& p, int oflag)
         {
             openat_if_exists(AT_FDCWD,p,oflag);
-        }
-
-        void close()
-        {
-            if (fd == -1)
-                return;
-
-            for (;;)
-            {
-                // Attempt the close.
-                int err = ::close(fd);
-
-                // If we closed successfully, or we failed to close with
-                // anything other than EINTR, return.  close() can fail with
-                // EIO if a preceding write() later failed due to an IO error.
-                // The file descriptor is left in an unspecified state so you
-                // cannot do ANYTHING with it.
-                //
-                // It may be desirable to throw an exception or something, but
-                // this is a really nasty case.
-                if (err != -1)
-                {
-                    fd = -1;
-                    return;
-                }
-                if (errno != EINTR)
-                    return;
-            }
         }
 
         void read_all(void* _p, size_t n)
@@ -456,25 +476,16 @@ namespace futil
             }
         }
 
-        file(const file&);  // Link error if invoked.
+        constexpr file() {}
 
-        constexpr file():fd(-1) {}
-
-        file(const path& p, int oflag):
-            fd(-1)
+        file(const path& p, int oflag)
         {
             open(p,oflag);
         }
 
-        file(const path& p, int oflag, mode_t mode):
-            fd(-1)
+        file(const path& p, int oflag, mode_t mode)
         {
             open(p,oflag,mode);
-        }
-
-        ~file()
-        {
-            close();
         }
     };
 
