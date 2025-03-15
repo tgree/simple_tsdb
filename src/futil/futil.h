@@ -253,14 +253,14 @@ namespace futil
             other.fd = temp;
         }
 
-        void open(const path& p, int oflag)
+        void openat(int dir_fd, const path& p, int oflag)
         {
             close();
             if (oflag & O_CREAT)
                 throw inconsistent_file_params();
             for (;;)
             {
-                fd = ::open(p,oflag);
+                fd = ::openat(dir_fd,p,oflag);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
@@ -268,34 +268,49 @@ namespace futil
             }
         }
 
-        void open(const path& p, int oflag, mode_t mode)
+        void openat(int dir_fd, const path& p, int oflag, mode_t mode)
         {
             close();
             if (!(oflag & O_CREAT))
                 throw inconsistent_file_params();
             for (;;)
             {
-                fd = ::open(p,oflag,mode);
+                fd = ::openat(dir_fd,p,oflag,mode);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
                     throw errno_exception(errno);
             }
         }
+
+        void open(const path& p, int oflag)
+        {
+            openat(AT_FDCWD,p,oflag);
+        }
+
+        void open(const path& p, int oflag, mode_t mode)
+        {
+            openat(AT_FDCWD,p,oflag,mode);
+        }
         
-        void open_if_exists(const path& p, int oflag)
+        void openat_if_exists(int dir_fd, const path& p, int oflag)
         {
             close();
             if (oflag & O_CREAT)
                 throw inconsistent_file_params();
             for (;;)
             {
-                fd = ::open(p,oflag);
+                fd = ::openat(dir_fd,p,oflag);
                 if (fd != -1 || errno == ENOENT)
                     return;
                 if (errno != EINTR)
                     throw errno_exception(errno);
             }
+        }
+
+        void open_if_exists(const path& p, int oflag)
+        {
+            openat_if_exists(AT_FDCWD,p,oflag);
         }
 
         void close()
