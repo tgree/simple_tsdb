@@ -25,6 +25,7 @@ const (
 	CT_SELECT_POINTS_LAST   uint32 = 0x76CF2220
 	CT_DELETE_POINTS        uint32 = 0xD9082F2C
 	CT_GET_SCHEMA           uint32 = 0x87E5A959
+    	CT_NOP                  uint32 = 0x22CF1296
 
 	DT_DATABASE             uint32 = 0x39385A4F   // <database>
 	DT_MEASUREMENT          uint32 = 0xDC1F48F3   // <measurement>
@@ -207,6 +208,25 @@ func (d *Datasource) CheckHealth(_ context.Context, req *backend.CheckHealthRequ
 	}
 	*/
 
+	// Open a connection to the TSDB server.
+	tc, err := NewTSDBClient()
+	if err != nil {
+		return &backend.CheckHealthResult{
+			Status:  backend.HealthStatusError,
+			Message: "Unable to connect to TSDB server",
+		}, nil
+	}
+	defer tc.Close()
+
+	// Issue a NOP command.
+	err = tc.NOP()
+	if err != nil {
+		return &backend.CheckHealthResult{
+			Status:  backend.HealthStatusError,
+			Message: "TSDB server didn't handle NOP command",
+		}, nil
+	}
+
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
 		Message: "Data source is working",
@@ -324,6 +344,36 @@ func (self *TSDBClient) ReadString(size uint16) (string, error) {
 		panic("Unexpected read length!")
 	}
 	return string(buf), nil
+}
+
+func (self *TSDBClient) NOP() error {
+	err := self.WriteU32(CT_NOP)
+	if err != nil {
+		return err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return err
+	}
+
+	dt, err := self.ReadU32()
+	if err != nil {
+		return err
+	}
+	if dt != DT_STATUS_CODE {
+		panic("Expected DT_STATUS_CODE.")
+	}
+	sc, err := self.ReadI32()
+	if err != nil {
+		return err
+	}
+	if sc != 0 {
+		backend.Logger.Debug("Status", "status", sc)
+		panic("Unexpected NOP status")
+	}
+
+	return nil
 }
 
 func (self *TSDBClient) GetSchema(database string, measurement string) (*Schema, error) {
