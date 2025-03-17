@@ -1029,6 +1029,12 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     write_lock.time_last_fd.fcntl(F_FULLFSYNC);
 }
 
+std::vector<std::string>
+tsdb::list_series(const measurement& m)
+{
+    return m.dir.listdirs();
+}
+
 void
 tsdb::create_measurement(const database& db, const futil::path& name,
     const std::vector<schema_entry>& fields) try
@@ -1082,6 +1088,12 @@ catch (const futil::errno_exception& e)
     throw tsdb::create_measurement_io_error_exception(e.errnov);
 }
 
+std::vector<std::string>
+tsdb::list_measurements(const database& db)
+{
+    return db.dir.listdirs();
+}
+
 void
 tsdb::create_database(const char* name) try
 {
@@ -1090,6 +1102,12 @@ tsdb::create_database(const char* name) try
 catch (const futil::errno_exception& e)
 {
     throw tsdb::create_database_io_error_exception(e.errnov);
+}
+
+std::vector<std::string>
+tsdb::list_databases()
+{
+    return futil::directory("databases").listdirs();
 }
 
 void
