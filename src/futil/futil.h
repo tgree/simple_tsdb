@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <dirent.h>
 #include <string>
 #include <vector>
 
@@ -301,6 +302,56 @@ namespace futil
 
     struct directory : public file_descriptor
     {
+        std::vector<std::string> _listdir(uint32_t mask) const
+        {
+            int search_fd;
+            for (;;)
+            {
+                search_fd = ::openat(fd,".",O_DIRECTORY);
+                if (search_fd != -1)
+                    break;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+
+            std::vector<std::string> dirs;
+            auto* dirp = ::fdopendir(search_fd);
+            if (dirp == NULL)
+            {
+                printf("fdopendir returned NULL.\n");
+                throw errno_exception(EBADF);
+            }
+            struct dirent* dp;
+            while ((dp = ::readdir(dirp)) != NULL)
+            {
+                if (!(mask & (1ULL << dp->d_type)))
+                    continue;
+                if (dp->d_name[0] == '.')
+                {
+                    if (dp->d_namlen == 1)
+                        continue;
+                    if (dp->d_name[1] == '.' && dp->d_namlen == 2)
+                        continue;
+                }
+
+                dirs.push_back(dp->d_name);
+            }
+
+            ::closedir(dirp);
+
+            return dirs;
+        }
+
+        inline std::vector<std::string> listdirs() const
+        {
+            return _listdir(1 << DT_DIR);
+        }
+
+        inline std::vector<std::string> listall() const
+        {
+            return _listdir(-1);
+        }
+
         directory(const path& p)
         {
             for (;;)
