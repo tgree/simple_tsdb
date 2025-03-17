@@ -608,13 +608,22 @@ namespace tsdb
     void write_series(series_write_lock& write_lock, size_t npoints,
                       size_t bitmap_offset, size_t data_len, const void* data);
 
+    // Lists all the series in the specified measurement.
+    std::vector<std::string> list_series(const measurement& m);
+
     // Creates a new measurement in the specified database.
     void create_measurement(const database& db, const futil::path& name,
                             const std::vector<schema_entry>& fields);
 
+    // Lists all the measurements in the specified database.
+    std::vector<std::string> list_measurements(const database& db);
+
     // Creates a new database in the TSDB instance rooted at the current working
     // directory.
     void create_database(const char* name);
+
+    // Returns a list of all databases.
+    std::vector<std::string> list_databases();
 
     // Creates a new TSDB instance rooted at the current working directory.
     void init();
