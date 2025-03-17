@@ -682,7 +682,6 @@ handle_create_measurement(const std::vector<std::string>& v)
 static void
 handle_create_database(const std::vector<std::string>& cmd)
 {
-    kassert(cmd.size() == 3);
     printf("Creating database \"%s\"...\n",cmd[2].c_str());
     try
     {
@@ -740,18 +739,6 @@ main(int argc, const char* argv[])
         }
 
         auto v = str::split(cmd);
-#if 0
-        if (cmd == "init")
-            tsdb_init();
-        else if (cmd.starts_with("create database "))
-            handle_create_database(v);
-        else if (cmd.starts_with("create measurement "))
-            tsdb_create_measurement(cmd);
-        else if (cmd.starts_with("write series "))
-            tsdb_write_series(cmd);
-        else
-            printf("Syntax error\n");
-#else
         bool handled = false;
         for (const auto& c : commands)
         {
@@ -765,6 +752,5 @@ main(int argc, const char* argv[])
 
         if (!handled)
             printf("Syntax error.\n");
-#endif
     }
 }
