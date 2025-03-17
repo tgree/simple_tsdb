@@ -444,8 +444,6 @@ parse_cmd(tcp::socket4& s, const command_syntax& cs)
             }
         }
 
-        // TODO: We need real tsdb exceptions to know what type of error code
-        // to send back.
         uint32_t status[2] = {DT_STATUS_CODE, 0};
         try
         {
