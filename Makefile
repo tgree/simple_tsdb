@@ -8,6 +8,7 @@
 # 	T.LD       - linker file to use
 TARGETS := \
 	tsdbcli \
+	tsdbserver \
 	tsdbtest
 
 # Build options.

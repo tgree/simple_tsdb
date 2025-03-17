@@ -25,14 +25,16 @@ constexpr const char* measurements[] =
     "measurement3",
 };
 
-std::vector<tsdb::field> fields =
+std::vector<tsdb::schema_entry> fields =
 {
-    {"field_bool",tsdb::FT_BOOL},
-    {"field_u32_1",tsdb::FT_U32},
-    {"field_u32_2",tsdb::FT_U32},
-    {"field_u64",tsdb::FT_U64},
-    {"field_f32",tsdb::FT_F32},
-    {"field_f64",tsdb::FT_F64},
+    {tsdb::FT_BOOL,{},"field_bool"},
+    {tsdb::FT_U32,{},"field_u32_1"},
+    {tsdb::FT_U32,{},"field_u32_2"},
+    {tsdb::FT_U64,{},"field_u64"},
+    {tsdb::FT_F32,{},"field_f32"},
+    {tsdb::FT_F64,{},"field_f64"},
+    {tsdb::FT_I32,{},"field_i32"},
+    {tsdb::FT_I64,{},"field_i64"},
 };
 
 struct data_point
@@ -45,6 +47,8 @@ struct data_point
     uint64_t    field_u64;
     float       field_f32;
     double      field_f64;
+    int32_t     field_i32;
+    int64_t     field_i64;
 
     bool        field_bool_is_null;
     bool        field_u32_1_is_null;
@@ -52,6 +56,8 @@ struct data_point
     bool        field_u64_is_null;
     bool        field_f32_is_null;
     bool        field_f64_is_null;
+    bool        field_i32_is_null;
+    bool        field_i64_is_null;
 };
 bool operator<(const data_point& lhs, uint64_t time_ns)
 {
@@ -64,7 +70,10 @@ bool operator<(uint64_t time_ns, const data_point& rhs)
 
 struct series_state
 {
-    futil::path             path;
+    std::string             database;
+    std::string             measurement;
+    std::string             series;
+    futil::path             dms_path;
     std::vector<data_point> points;
 };
 
@@ -123,41 +132,61 @@ push_64(std::vector<uint64_t>& data, const T* v, size_t npoints)
 static void
 write_series(series_state& ss, size_t offset, size_t npoints)
 {
-    // Compute the expected length.
-    size_t expected_len = npoints*8; // Timestamps
-    for (auto& f : fields)
+    // Acquire the write lock.
+    tsdb::database db(ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    auto write_lock = tsdb::open_or_create_and_lock_series(m,ss.series);
+
+    while (npoints)
     {
-        const auto* fti = &tsdb::ftinfos[f.type];
-        expected_len   += ceil_div<size_t>(npoints,64)*8; // Bitmap
-        expected_len   += ceil_div<size_t>(npoints*fti->nbytes,8)*8; // Data
+        // Figure out how many to write in this op.
+        size_t cpoints = (npoints > 1000 ? npoints - 1000 : npoints);
+
+        // Compute the expected length.
+        size_t expected_len = cpoints*8; // Timestamps
+        for (auto& f : fields)
+        {
+            const auto* fti = &tsdb::ftinfos[f.type];
+            expected_len   += ceil_div<size_t>(cpoints,64)*8; // Bitmap
+            expected_len   += ceil_div<size_t>(cpoints*fti->nbytes,8)*8; // Data
+        }
+
+        // Create the data vector.
+        std::vector<uint64_t> data;
+        data.reserve(expected_len/8);
+
+        // Push the timestamps.
+        auto* p0 = &ss.points[offset];
+        for (size_t i=0; i<cpoints; ++i)
+            data.push_back(p0[i].time_ns);
+
+        // Push each field, first the bitmap then the data.
+        push_bitmap(data,&p0->field_bool_is_null,cpoints);
+        push_bool(data,&p0->field_bool,cpoints);
+        push_bitmap(data,&p0->field_u32_1_is_null,cpoints);
+        push_32(data,&p0->field_u32_1,cpoints);
+        push_bitmap(data,&p0->field_u32_2_is_null,cpoints);
+        push_32(data,&p0->field_u32_2,cpoints);
+        push_bitmap(data,&p0->field_u64_is_null,cpoints);
+        push_64(data,&p0->field_u64,cpoints);
+        push_bitmap(data,&p0->field_f32_is_null,cpoints);
+        push_32(data,&p0->field_f32,cpoints);
+        push_bitmap(data,&p0->field_f64_is_null,cpoints);
+        push_64(data,&p0->field_f64,cpoints);
+        push_bitmap(data,&p0->field_i32_is_null,cpoints);
+        push_32(data,&p0->field_i32,cpoints);
+        push_bitmap(data,&p0->field_i64_is_null,cpoints);
+        push_64(data,&p0->field_i64,cpoints);
+        kassert(data.size()*8 == expected_len);
+
+        // Write the series to disk.
+        printf("Writing %zu points to %s...\n",cpoints,ss.dms_path.c_str());
+        tsdb::write_series(write_lock,cpoints,0,expected_len,&data[0]);
+        printf("Done\n");
+
+        npoints -= cpoints;
+        offset  += cpoints;
     }
-
-    // Create the data vector.
-    std::vector<uint64_t> data;
-    data.reserve(expected_len/8);
-
-    // Push the timestamps.
-    auto* p0 = &ss.points[offset];
-    for (size_t i=0; i<npoints; ++i)
-        data.push_back(p0[i].time_ns);
-
-    // Push each field, first the bitmap then the data.
-    push_bitmap(data,&p0->field_bool_is_null,npoints);
-    push_bool(data,&p0->field_bool,npoints);
-    push_bitmap(data,&p0->field_u32_1_is_null,npoints);
-    push_32(data,&p0->field_u32_1,npoints);
-    push_bitmap(data,&p0->field_u32_2_is_null,npoints);
-    push_32(data,&p0->field_u32_2,npoints);
-    push_bitmap(data,&p0->field_u64_is_null,npoints);
-    push_64(data,&p0->field_u64,npoints);
-    push_bitmap(data,&p0->field_f32_is_null,npoints);
-    push_32(data,&p0->field_f32,npoints);
-    push_bitmap(data,&p0->field_f64_is_null,npoints);
-    push_64(data,&p0->field_f64,npoints);
-    kassert(data.size()*8 == expected_len);
-
-    // Write the series to disk.
-    tsdb::write_series(ss.path,npoints,expected_len,&data[0]);
 }
 
 int
@@ -165,8 +194,8 @@ main(int argc, const char* argv[])
 {
     // Create a temporary directory for our database.
     char tmp[] = "/tmp/tsdbtest.XXXXXX";
-    mkdtemp(tmp);
-    chdir(tmp);
+    futil::mkdtemp(tmp);
+    futil::chdir(tmp);
 
     // Initialize the database directory.
     printf("Initializing test databases in %s...\n",tmp);
@@ -176,8 +205,9 @@ main(int argc, const char* argv[])
     for (const auto* db : databases)
     {
         tsdb::create_database(db);
+        tsdb::database _db(db);
         for (const auto* m : measurements)
-            tsdb::create_measurement(futil::path(db,m),fields);
+            tsdb::create_measurement(_db,m,fields);
     }
 
     std::vector<std::string> field_names;
@@ -194,10 +224,10 @@ main(int argc, const char* argv[])
         const auto* db = databases[rand() % NELEMS(databases)];
         const auto* m  = measurements[rand() % NELEMS(measurements)];
         std::string s  = "series_" + std::to_string(i);
-        states.emplace_back(series_state{futil::path(db,m,s)});
+        states.emplace_back(series_state{db,m,s,futil::path(db,m,s)});
 
         auto& ss = states.back();
-        size_t nelems = rand() % 1000000;
+        size_t nelems = (rand() % 10000000) + 1;
         ss.points.reserve(nelems);
         for (size_t j=0; j<nelems; ++j)
         {
@@ -209,6 +239,10 @@ main(int argc, const char* argv[])
                 ((uint64_t)rand() << 32) | rand(),
                 (float)rand() / RAND_MAX,
                 (double)rand() / RAND_MAX,
+                (int32_t)(rand() - (RAND_MAX/2)),
+                (int64_t)(rand() - (RAND_MAX/2)),
+                rand() < (RAND_MAX / 1000),
+                rand() < (RAND_MAX / 1000),
                 rand() < (RAND_MAX / 1000),
                 rand() < (RAND_MAX / 1000),
                 rand() < (RAND_MAX / 1000),
@@ -223,7 +257,7 @@ main(int argc, const char* argv[])
     // Populate all of the series.
     for (auto& ss : states)
     {
-        printf("Populating series %s...\n",ss.path.c_str());
+        printf("Populating series %s...\n",ss.dms_path.c_str());
         if(ss.points.size() >= 4096*1024/8)
         {
             // The series is large.  Write two 2M chunks, test a 100% overlap
@@ -287,6 +321,9 @@ main(int argc, const char* argv[])
         size_t npoints = lp - fp;
 
         // Perform the query.
+        tsdb::database db(ss.database);
+        tsdb::measurement m(db,ss.measurement);
+        tsdb::series_read_lock read_lock(m,ss.series);
         tsdb::select_op* op;
         size_t N;
         switch (rand() % 3)
@@ -295,11 +332,12 @@ main(int argc, const char* argv[])
                 // No limit.
                 printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
                        "EXPECT %zu\n",
-                       ss.path.c_str(),t0,t1,
+                       ss.dms_path.c_str(),t0,t1,
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],npoints);
-                op = new tsdb::select_op_first(ss.path,field_names,t0,t1,-1);
+                op = new tsdb::select_op_first(read_lock,ss.dms_path,
+                                               field_names,t0,t1,-1);
             break;
 
             case 1:
@@ -308,11 +346,12 @@ main(int argc, const char* argv[])
                 npoints = MIN(N,npoints);
                 printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
                        "LIMIT %zu EXPECT %zu\n",
-                       ss.path.c_str(),t0,t1,
+                       ss.dms_path.c_str(),t0,t1,
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],N,npoints);
-                op = new tsdb::select_op_first(ss.path,field_names,t0,t1,N);
+                op = new tsdb::select_op_first(read_lock,ss.dms_path,
+                                               field_names,t0,t1,N);
             break;
 
             case 2:
@@ -322,11 +361,12 @@ main(int argc, const char* argv[])
                 fp = lp - npoints;
                 printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
                        "LAST %zu EXPECT %zu\n",
-                       ss.path.c_str(),t0,t1,
+                       ss.dms_path.c_str(),t0,t1,
                        ss.points.front().time_ns,
                        ss.points.back().time_ns,
                        t_type[0],t_type[1],N,npoints);
-                op = new tsdb::select_op_last(ss.path,field_names,t0,t1,N);
+                op = new tsdb::select_op_last(read_lock,ss.dms_path,
+                                              field_names,t0,t1,N);
             break;
         }
 
@@ -348,12 +388,16 @@ main(int argc, const char* argv[])
                     op->get_field<uint64_t,3>(i),
                     op->get_field<float,4>(i),
                     op->get_field<double,5>(i),
+                    op->get_field<int32_t,6>(i),
+                    op->get_field<int64_t,7>(i),
                     op->is_field_null(0,i),
                     op->is_field_null(1,i),
                     op->is_field_null(2,i),
                     op->is_field_null(3,i),
                     op->is_field_null(4,i),
                     op->is_field_null(5,i),
+                    op->is_field_null(6,i),
+                    op->is_field_null(7,i),
                 };
                 kassert(p.time_ns             == fp->time_ns);
                 kassert(p.field_bool          == fp->field_bool);
@@ -362,12 +406,16 @@ main(int argc, const char* argv[])
                 kassert(p.field_u64           == fp->field_u64);
                 kassert(p.field_f32           == fp->field_f32);
                 kassert(p.field_f64           == fp->field_f64);
+                kassert(p.field_i32           == fp->field_i32);
+                kassert(p.field_i64           == fp->field_i64);
                 kassert(p.field_bool_is_null  == fp->field_bool_is_null);
                 kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
                 kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
                 kassert(p.field_u64_is_null   == fp->field_u64_is_null);
                 kassert(p.field_f32_is_null   == fp->field_f32_is_null);
                 kassert(p.field_f64_is_null   == fp->field_f64_is_null);
+                kassert(p.field_i32_is_null   == fp->field_i32_is_null);
+                kassert(p.field_i64_is_null   == fp->field_i64_is_null);
                 ++fp;
             }
 
