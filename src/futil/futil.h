@@ -12,9 +12,9 @@
 
 namespace futil
 {
-    struct exception
+    struct exception : public std::exception
     {
-        constexpr exception() {}
+        exception() {}
     };
 
     struct errno_exception : public exception
@@ -30,7 +30,7 @@ namespace futil
             return strerror(errnov);
         }
 
-        constexpr errno_exception(int errnov):
+        errno_exception(int errnov):
             exception(),
             errnov(errnov)
         {
@@ -41,7 +41,7 @@ namespace futil
     // case if the second path is an absolute path, for instance.
     struct invalid_join_exception : public exception
     {
-        constexpr invalid_join_exception():
+        invalid_join_exception():
             exception()
         {
         }
@@ -50,7 +50,7 @@ namespace futil
     // Exception thrown if trying to access a character past the end of a path.
     struct out_of_range_exception : public exception
     {
-        constexpr out_of_range_exception():
+        out_of_range_exception():
             exception()
         {
         }
@@ -60,7 +60,7 @@ namespace futil
     // (i.e. O_CREAT without a mode or a mode without O_CREAT).
     struct inconsistent_file_params : public exception
     {
-        constexpr inconsistent_file_params():
+        inconsistent_file_params():
             exception()
         {
         }
@@ -242,60 +242,15 @@ namespace futil
         }
     };
 
-    struct file
+    struct file_descriptor
     {
         int fd;
 
-        void swap(file& other)
+        void swap(file_descriptor& other)
         {
             int temp = fd;
             fd = other.fd;
             other.fd = temp;
-        }
-
-        void open(const path& p, int oflag)
-        {
-            close();
-            if (oflag & O_CREAT)
-                throw inconsistent_file_params();
-            for (;;)
-            {
-                fd = ::open(p,oflag);
-                if (fd != -1)
-                    return;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
-        }
-
-        void open(const path& p, int oflag, mode_t mode)
-        {
-            close();
-            if (!(oflag & O_CREAT))
-                throw inconsistent_file_params();
-            for (;;)
-            {
-                fd = ::open(p,oflag,mode);
-                if (fd != -1)
-                    return;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
-        }
-        
-        void open_if_exists(const path& p, int oflag)
-        {
-            close();
-            if (oflag & O_CREAT)
-                throw inconsistent_file_params();
-            for (;;)
-            {
-                fd = ::open(p,oflag);
-                if (fd != -1 || errno == ENOENT)
-                    return;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
         }
 
         void close()
@@ -324,6 +279,128 @@ namespace futil
                 if (errno != EINTR)
                     return;
             }
+        }
+
+        constexpr file_descriptor():fd(-1) {}
+        
+        constexpr file_descriptor(int fd):fd(fd) {}
+
+        file_descriptor(const file_descriptor&);  // Link error if invoked.
+
+        file_descriptor(file_descriptor&& other):
+            fd(other.fd)
+        {
+            other.fd = -1;
+        }
+
+        ~file_descriptor()
+        {
+            close();
+        }
+    };
+
+    struct directory : public file_descriptor
+    {
+        directory(const path& p)
+        {
+            for (;;)
+            {
+                fd = ::open(p,O_DIRECTORY | O_SEARCH);
+                if (fd != -1)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+
+        directory(const directory& d, const path& p)
+        {
+            for (;;)
+            {
+                fd = ::openat(d.fd,p,O_DIRECTORY | O_SEARCH);
+                if (fd != -1)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+    };
+
+    struct file : public file_descriptor
+    {
+        void openat(int dir_fd, const path& p, int oflag)
+        {
+            close();
+            if (oflag & O_CREAT)
+                throw inconsistent_file_params();
+            for (;;)
+            {
+                fd = ::openat(dir_fd,p,oflag);
+                if (fd != -1)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+
+        void openat(int dir_fd, const path& p, int oflag, mode_t mode)
+        {
+            close();
+            if (!(oflag & O_CREAT))
+                throw inconsistent_file_params();
+            for (;;)
+            {
+                fd = ::openat(dir_fd,p,oflag,mode);
+                if (fd != -1)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+
+        void open(const path& p, int oflag)
+        {
+            openat(AT_FDCWD,p,oflag);
+        }
+
+        void open(const path& p, int oflag, mode_t mode)
+        {
+            openat(AT_FDCWD,p,oflag,mode);
+        }
+
+        void open(const directory& d, const path& p, int oflag)
+        {
+            openat(d.fd,p,oflag);
+        }
+
+        void open(const directory& d, const path& p, int oflag, mode_t mode)
+        {
+            openat(d.fd,p,oflag,mode);
+        }
+        
+        void openat_if_exists(int dir_fd, const path& p, int oflag)
+        {
+            close();
+            if (oflag & O_CREAT)
+                throw inconsistent_file_params();
+            for (;;)
+            {
+                fd = ::openat(dir_fd,p,oflag);
+                if (fd != -1 || errno == ENOENT)
+                    return;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+        }
+
+        void open_if_exists(const path& p, int oflag)
+        {
+            openat_if_exists(AT_FDCWD,p,oflag);
+        }
+
+        void open_if_exists(const directory& d, const path& p, int oflag)
+        {
+            openat_if_exists(d.fd,p,oflag);
         }
 
         void read_all(void* _p, size_t n)
@@ -441,25 +518,26 @@ namespace futil
             }
         }
 
-        file(const file&);  // Link error if invoked.
+        constexpr file() {}
 
-        constexpr file():fd(-1) {}
-
-        file(const path& p, int oflag):
-            fd(-1)
+        file(const path& p, int oflag)
         {
             open(p,oflag);
         }
 
-        file(const path& p, int oflag, mode_t mode):
-            fd(-1)
+        file(const path& p, int oflag, mode_t mode)
         {
             open(p,oflag,mode);
         }
 
-        ~file()
+        file(const directory& d, const path& p, int oflag)
         {
-            close();
+            open(d,p,oflag);
+        }
+
+        file(const directory& d, const path& p, int oflag, mode_t mode)
+        {
+            open(d,p,oflag,mode);
         }
     };
 
@@ -470,10 +548,23 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void mkdir(const directory& dir, const char* path, mode_t mode)
+    {
+        if (::mkdirat(dir.fd,path,mode) == -1)
+            throw errno_exception(errno);
+    }
+
     inline void mkdir_if_not_exists(const char* path, mode_t mode)
     {
         // mkdir() doesn't seem to return EINTR.
         if (::mkdir(path,mode) == -1 && errno != EEXIST)
+            throw errno_exception(errno);
+    }
+
+    inline void mkdir_if_not_exists(const directory& dir, const char* path,
+                                    mode_t mode)
+    {
+        if (::mkdirat(dir.fd,path,mode) == -1 && errno != EEXIST)
             throw errno_exception(errno);
     }
 
@@ -491,9 +582,21 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void unlink(const directory& dir, const char* path)
+    {
+        if (::unlinkat(dir.fd,path,0) == -1)
+            throw errno_exception(errno);
+    }
+
     inline void unlink_if_exists(const char* path)
     {
         if (::unlink(path) == -1 && errno != ENOENT)
+            throw errno_exception(errno);
+    }
+
+    inline void unlink_if_exists(const directory& dir, const char* path)
+    {
+        if (::unlinkat(dir.fd,path,0) == -1 && errno != ENOENT)
             throw errno_exception(errno);
     }
 
