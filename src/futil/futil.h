@@ -22,11 +22,7 @@ namespace futil
     {
         int errnov;
 
-        operator const char*() const
-        {
-            return strerror(errnov);
-        }
-        const char* c_str() const
+        virtual const char* what() const noexcept override
         {
             return strerror(errnov);
         }
@@ -42,16 +38,12 @@ namespace futil
     // case if the second path is an absolute path, for instance.
     struct invalid_join_exception : public exception
     {
-        invalid_join_exception():
-            exception()
+        virtual const char* what() const noexcept override
         {
+            return "Cannot join paths.";
         }
-    };
 
-    // Exception thrown if trying to access a character past the end of a path.
-    struct out_of_range_exception : public exception
-    {
-        out_of_range_exception():
+        invalid_join_exception():
             exception()
         {
         }
@@ -61,6 +53,11 @@ namespace futil
     // (i.e. O_CREAT without a mode or a mode without O_CREAT).
     struct inconsistent_file_params : public exception
     {
+        virtual const char* what() const noexcept override
+        {
+            return "Inconsistent arguments passed to file::file().";
+        }
+
         inconsistent_file_params():
             exception()
         {
@@ -74,13 +71,9 @@ namespace futil
         size_t size() const {return _path.size();}
         bool empty() const  {return _path.empty();}
 
-        char operator[](size_t offset) const try
+        char operator[](size_t offset) const
         {
             return _path.at(offset);
-        }
-        catch (const std::out_of_range&)
-        {
-            throw out_of_range_exception();
         }
 
         const char* c_str() const

@@ -50,6 +50,11 @@ namespace tsdb
     {
         const int errnov;
 
+        virtual const char* what() const noexcept override
+        {
+            return strerror(errnov);
+        }
+
         errno_exception(status_code sc, int errnov):
             exception(sc),
             errnov(errnov)
@@ -67,7 +72,7 @@ namespace tsdb
 
     struct create_database_io_error_exception : public errno_exception
     {
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "I/O error creating database.";
         }
@@ -81,7 +86,7 @@ namespace tsdb
     struct no_such_database_exception : public exception
     {
         // The specified database does not exist.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "No such database.";
         }
@@ -91,7 +96,7 @@ namespace tsdb
 
     struct create_measurement_io_error_exception : public errno_exception
     {
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "I/O error creating measurement.";
         }
@@ -105,7 +110,7 @@ namespace tsdb
     struct no_such_measurement_exception : public exception
     {
         // The specified measurement does not exist.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "No such measurement.";
         }
@@ -116,7 +121,7 @@ namespace tsdb
     struct invalid_measurement_exception : public exception
     {
         // The specified path is not in <database>/<measurement> form.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Invalid measurement path.";
         }
@@ -127,7 +132,7 @@ namespace tsdb
     struct invalid_series_exception : public exception
     {
         // The specified path is not in <database>/<measurement>/<series> form.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Invalid series path.";
         }
@@ -138,7 +143,7 @@ namespace tsdb
     struct no_such_series_exception : public exception
     {
         // The specified series does not exist.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "No such series.";
         }
@@ -149,7 +154,7 @@ namespace tsdb
     struct corrupt_schema_file_exception : public exception
     {
         // The schema.txt file being parsed was malformed.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Invalid schema file.";
         }
@@ -160,7 +165,7 @@ namespace tsdb
     struct no_such_field_exception : public exception
     {
         // The specified field was not part of a measurement's schema.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "No such field.";
         }
@@ -171,7 +176,7 @@ namespace tsdb
     struct end_of_select_exception : public exception
     {
         // Tried to advance() past the end of a select_op result.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "End of select_op.";
         }
@@ -187,7 +192,7 @@ namespace tsdb
         // The length of the data buffer passed in to write_series() was
         // incorrect for the specified number of points and the measurement's
         // schema.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Incorrect chunk length.";
         }
@@ -205,7 +210,7 @@ namespace tsdb
     {
         // The timestamps passed to write_series() were not in strictly-
         // increasing order.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Out of order timestamps.";
         }
@@ -217,7 +222,7 @@ namespace tsdb
     {
         // When overwriting the tail of a series, the new timestamps didn't
         // match the old timestamps.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Timestamp overwrite mismatch.";
         }
@@ -232,7 +237,7 @@ namespace tsdb
     {
         // When overwriting the tail of a series, the new field contents didn't
         // match the old field contents for a given timestamp.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Field overwrite mistmatch.";
         }
@@ -247,7 +252,7 @@ namespace tsdb
     {
         // When overwriting the tail of a series, the new bitmap contents didn't
         // match the old bitmap contents for a given timestamp.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Bitmap overwrite mistmatch.";
         }
@@ -268,7 +273,7 @@ namespace tsdb
         const off_t size;
 
         // A tail file in the timestamp index is larger than 2M.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Tail file too large.";
         }
@@ -285,7 +290,7 @@ namespace tsdb
         const off_t size;
 
         // A tail file in the timestamp index is not a multiple of 64-bits.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Tail file has invalid length.";
         }
@@ -305,7 +310,7 @@ namespace tsdb
         // The time_last file should always have a timestamp that matches a
         // timestamp in a timestamp file.  Specifically, the last valid entry in
         // the timestamp tail file should be the same value as time_last.
-        virtual const char* what() const noexcept
+        virtual const char* what() const noexcept override
         {
             return "Tail file last timestamp not same as time_last timestamp.";
         }

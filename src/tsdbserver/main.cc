@@ -451,11 +451,6 @@ parse_cmd(tcp::socket4& s, const command_syntax& cs)
         {
             cs.handler(s,tokens);
         }
-        catch (const tsdb::errno_exception& e)
-        {
-            printf("TSDB exception: %s\n",strerror(e.errnov));
-            status[1] = e.sc;
-        }
         catch (const tsdb::exception& e)
         {
             printf("TSDB exception: %s\n",e.what());
@@ -508,9 +503,9 @@ parse_cmd(tcp::socket4& s)
             }
         }
     }
-    catch (const futil::errno_exception& e)
+    catch (const std::exception& e)
     {
-        printf("Error: %s\n",e.c_str());
+        printf("Error: %s\n",e.what());
     }
     catch (...)
     {

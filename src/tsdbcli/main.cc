@@ -318,7 +318,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
 }
 
 static void
-_handle_select_series(tsdb::select_op& op) try
+_handle_select_series(tsdb::select_op& op)
 {
     if (!op.npoints)
         return;
@@ -348,10 +348,6 @@ _handle_select_series(tsdb::select_op& op) try
 
         op.advance();
     }
-}
-catch (const futil::errno_exception& e)
-{
-    printf("Error fetching points: %s\n",e.c_str());
 }
 
 static void
@@ -543,16 +539,9 @@ handle_list_series(const std::vector<std::string>& v)
     auto components = futil::path(v[3]).decompose();
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
-    try
-    {
-        auto ss = tsdb::list_series(m);
-        for (const auto& s : ss)
-            printf("%s\n",s.c_str());
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    auto ss = tsdb::list_series(m);
+    for (const auto& s : ss)
+        printf("%s\n",s.c_str());
 }
 
 static void
@@ -640,19 +629,8 @@ handle_write_series(const std::vector<std::string>& v)
         }
     }
 
-#if 0
-    try
-#endif
-    {
-        tsdb::write_series(write_lock,n,0,data_points.size()*sizeof(uint64_t),
-                           &data_points[0]);
-    }
-#if 0
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
-#endif
+    tsdb::write_series(write_lock,n,0,data_points.size()*sizeof(uint64_t),
+                       &data_points[0]);
 }
 
 static void
@@ -662,16 +640,9 @@ handle_list_measurements(const std::vector<std::string>& v)
     //
     //  list measurements from pt-1
     tsdb::database db(v[3]);
-    try
-    {
-        auto ms = tsdb::list_measurements(db);
-        for (const auto& s : ms)
-            printf("%s\n",s.c_str());
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    auto ms = tsdb::list_measurements(db);
+    for (const auto& s : ms)
+        printf("%s\n",s.c_str());
 }
 
 static void
@@ -725,58 +696,30 @@ handle_create_measurement(const std::vector<std::string>& v)
     }
 
     auto components = futil::path(v[2]).decompose();
-    try
-    {
-        tsdb::database db(components[0]);
-        tsdb::create_measurement(db,components[1],fields);
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    tsdb::database db(components[0]);
+    tsdb::create_measurement(db,components[1],fields);
 }
 
 static void
 handle_list_databases(const std::vector<std::string>& cmd)
 {
-    try
-    {
-        auto dbs = tsdb::list_databases();
-        for (const auto& s : dbs)
-            printf("%s\n",s.c_str());
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    auto dbs = tsdb::list_databases();
+    for (const auto& s : dbs)
+        printf("%s\n",s.c_str());
 }
 
 static void
 handle_create_database(const std::vector<std::string>& cmd)
 {
     printf("Creating database \"%s\"...\n",cmd[2].c_str());
-    try
-    {
-        tsdb::create_database(cmd[2].c_str());
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    tsdb::create_database(cmd[2].c_str());
 }
 
 static void
 handle_init(const std::vector<std::string>&)
 {
     printf("Initializing TSDB directories...\n");
-    try
-    {
-        tsdb::init();
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    tsdb::init();
 }
 
 int
@@ -817,7 +760,14 @@ main(int argc, const char* argv[])
             if (c.parse(v))
             {
                 handled = true;
-                c.handler(v);
+                try
+                {
+                    c.handler(v);
+                }
+                catch (const std::exception& e)
+                {
+                    printf("Error: %s\n",e.what());
+                }
                 break;
             }
         }
