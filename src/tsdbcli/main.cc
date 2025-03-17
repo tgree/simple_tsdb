@@ -104,7 +104,7 @@ struct command_syntax
                 break;
 
                 case CT_DATABASE_SPECIFIER:
-                    if (std::count(cmd[i].begin(),cmd[i].end(),'/') != 0)
+                    if (cmd[i].find('/') != std::string::npos)
                         return false;
                 break;
 
