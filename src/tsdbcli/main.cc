@@ -327,15 +327,10 @@ _handle_select_series_limit(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    auto components = futil::path(series).decompose();
-    if (components.size() != 3)
-    {
-        printf("Invalid series: %s\n",series.c_str());
-        return;
-    }
     std::vector<std::string> fields;
     if (field_specifier != "*")
         fields = str::split(field_specifier,",");
+    auto components = futil::path(series).decompose();
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
@@ -417,15 +412,10 @@ _handle_select_series_last(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    auto components = futil::path(series).decompose();
-    if (components.size() != 3)
-    {
-        printf("Invalid series: %s\n",series.c_str());
-        return;
-    }
     std::vector<std::string> fields;
     if (field_specifier != "*")
         fields = str::split(field_specifier,",");
+    auto components = futil::path(series).decompose();
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
@@ -494,12 +484,6 @@ handle_delete_from_series(const std::vector<std::string>& cmd)
         --t;
     }
     auto components = futil::path(cmd[2]).decompose();
-    if (components.size() != 3)
-    {
-        printf("Invalid series: %s\n",cmd[2].c_str());
-        return;
-    }
-
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::delete_points(m,components[2],t);
@@ -513,12 +497,6 @@ handle_write_series(const std::vector<std::string>& v)
     //  write series pt-1/xtalx_data/XTI-10-1000000 N
     uint32_t n = std::stoul(v[3]);
     auto components = futil::path(v[2]).decompose();
-    if (components.size() != 3)
-    {
-        printf("Invalid series: %s\n",v[2].c_str());
-        return;
-    }
-
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
 
@@ -618,13 +596,6 @@ handle_create_measurement(const std::vector<std::string>& v)
     //
     //  create measurement pt-1/xtalx_data with fields \
     //      pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
-    auto components = futil::path(v[2]).decompose();
-    if (components.size() != 2)
-    {
-        printf("Invalid measurement path.\n");
-        return;
-    }
-
     std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(v[5],",");
     for (const auto& fs : field_specifiers)
@@ -668,6 +639,7 @@ handle_create_measurement(const std::vector<std::string>& v)
         fields.push_back(se);
     }
 
+    auto components = futil::path(v[2]).decompose();
     try
     {
         tsdb::database db(components[0]);
