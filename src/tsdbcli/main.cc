@@ -39,6 +39,9 @@ enum command_token
     CT_STR_LIMIT,
     CT_STR_LAST,
     CT_STR_DELETE,
+    CT_STR_LIST,
+    CT_STR_DATABASES,
+    CT_STR_MEASUREMENTS,
 
     // Other types.
     CT_DATABASE_SPECIFIER,      // <database>
@@ -69,6 +72,9 @@ constexpr const char* const keyword_strings[] =
     [CT_STR_LIMIT]          = "limit",
     [CT_STR_LAST]           = "last",
     [CT_STR_DELETE]         = "delete",
+    [CT_STR_LIST]           = "list",
+    [CT_STR_DATABASES]      = "databases",
+    [CT_STR_MEASUREMENTS]   = "measurements",
 };
 
 struct command_syntax
@@ -99,6 +105,9 @@ struct command_syntax
                 case CT_STR_LIMIT:
                 case CT_STR_LAST:
                 case CT_STR_DELETE:
+                case CT_STR_LIST:
+                case CT_STR_DATABASES:
+                case CT_STR_MEASUREMENTS:
                     if (strcasecmp(cmd[i].c_str(),keyword_strings[tokens[i]]))
                         return false;
                 break;
@@ -170,8 +179,11 @@ static void handle_select_series_two_op_last(
     const std::vector<std::string>& cmd);
 static void handle_delete_from_series(const std::vector<std::string>& cmd);
 static void handle_write_series(const std::vector<std::string>& cmd);
+static void handle_list_series(const std::vector<std::string>& cmd);
 static void handle_create_measurement(const std::vector<std::string>& cmd);
+static void handle_list_measurements(const std::vector<std::string>& cmd);
 static void handle_create_database(const std::vector<std::string>& cmd);
+static void handle_list_databases(const std::vector<std::string>& cmd);
 static void handle_init(const std::vector<std::string>& cmd);
 
 static const command_syntax commands[] =
@@ -185,13 +197,25 @@ static const command_syntax commands[] =
         {CT_STR_CREATE, CT_STR_DATABASE, CT_DATABASE_SPECIFIER},
     },
     {
+        handle_list_databases,
+        {CT_STR_LIST, CT_STR_DATABASES},
+    },
+    {
         handle_create_measurement,
         {CT_STR_CREATE, CT_STR_MEASUREMENT, CT_MEASUREMENT_SPECIFIER,
          CT_STR_WITH, CT_STR_FIELDS, CT_TYPED_FIELDS},
     },
     {
+        handle_list_measurements,
+        {CT_STR_LIST, CT_STR_MEASUREMENTS, CT_STR_FROM, CT_DATABASE_SPECIFIER},
+    },
+    {
         handle_write_series,
         {CT_STR_WRITE, CT_STR_SERIES, CT_SERIES_SPECIFIER, CT_UINT64},
+    },
+    {
+        handle_list_series,
+        {CT_STR_LIST, CT_STR_SERIES, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
     },
     {
         handle_select_series_one_op,
@@ -490,6 +514,27 @@ handle_delete_from_series(const std::vector<std::string>& cmd)
 }
 
 static void
+handle_list_series(const std::vector<std::string>& v)
+{
+    // Handles a command such as
+    //
+    //  list series from pt-1/xtalx_data
+    auto components = futil::path(v[3]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    try
+    {
+        auto ss = tsdb::list_series(m);
+        for (const auto& s : ss)
+            printf("%s\n",s.c_str());
+    }
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error: %s\n",e.c_str());
+    }
+}
+
+static void
 handle_write_series(const std::vector<std::string>& v)
 {
     // Handles a command such as:
@@ -590,6 +635,25 @@ handle_write_series(const std::vector<std::string>& v)
 }
 
 static void
+handle_list_measurements(const std::vector<std::string>& v)
+{
+    // Handles a command such as
+    //
+    //  list measurements from pt-1
+    tsdb::database db(v[3]);
+    try
+    {
+        auto ms = tsdb::list_measurements(db);
+        for (const auto& s : ms)
+            printf("%s\n",s.c_str());
+    }
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error: %s\n",e.c_str());
+    }
+}
+
+static void
 handle_create_measurement(const std::vector<std::string>& v)
 {
     // Handles a command such as:
@@ -644,6 +708,21 @@ handle_create_measurement(const std::vector<std::string>& v)
     {
         tsdb::database db(components[0]);
         tsdb::create_measurement(db,components[1],fields);
+    }
+    catch (const futil::errno_exception& e)
+    {
+        printf("Error: %s\n",e.c_str());
+    }
+}
+
+static void
+handle_list_databases(const std::vector<std::string>& cmd)
+{
+    try
+    {
+        auto dbs = tsdb::list_databases();
+        for (const auto& s : dbs)
+            printf("%s\n",s.c_str());
     }
     catch (const futil::errno_exception& e)
     {
