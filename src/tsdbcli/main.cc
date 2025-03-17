@@ -42,6 +42,7 @@ enum command_token
     CT_STR_LIST,
     CT_STR_DATABASES,
     CT_STR_MEASUREMENTS,
+    CT_STR_SCHEMA,
 
     // Other types.
     CT_DATABASE_SPECIFIER,      // <database>
@@ -75,6 +76,7 @@ constexpr const char* const keyword_strings[] =
     [CT_STR_LIST]           = "list",
     [CT_STR_DATABASES]      = "databases",
     [CT_STR_MEASUREMENTS]   = "measurements",
+    [CT_STR_SCHEMA]         = "schema",
 };
 
 struct command_syntax
@@ -108,6 +110,7 @@ struct command_syntax
                 case CT_STR_LIST:
                 case CT_STR_DATABASES:
                 case CT_STR_MEASUREMENTS:
+                case CT_STR_SCHEMA:
                     if (strcasecmp(cmd[i].c_str(),keyword_strings[tokens[i]]))
                         return false;
                 break;
@@ -180,6 +183,7 @@ static void handle_select_series_two_op_last(
 static void handle_delete_from_series(const std::vector<std::string>& cmd);
 static void handle_write_series(const std::vector<std::string>& cmd);
 static void handle_list_series(const std::vector<std::string>& cmd);
+static void handle_list_schema(const std::vector<std::string>& cmd);
 static void handle_create_measurement(const std::vector<std::string>& cmd);
 static void handle_list_measurements(const std::vector<std::string>& cmd);
 static void handle_create_database(const std::vector<std::string>& cmd);
@@ -216,6 +220,10 @@ static const command_syntax commands[] =
     {
         handle_list_series,
         {CT_STR_LIST, CT_STR_SERIES, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
+    },
+    {
+        handle_list_schema,
+        {CT_STR_LIST, CT_STR_SCHEMA, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
     },
     {
         handle_select_series_one_op,
@@ -511,6 +519,19 @@ handle_delete_from_series(const std::vector<std::string>& cmd)
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::delete_points(m,components[2],t);
+}
+
+static void
+handle_list_schema(const std::vector<std::string>& v)
+{
+    // Handles a command such as
+    //
+    //  list schema from pt-1/xtalx_data
+    auto components = futil::path(v[3]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    for (const auto& se : m.fields)
+        printf("%4s %s\n",tsdb::ftinfos[se.type].name,se.name);
 }
 
 static void
