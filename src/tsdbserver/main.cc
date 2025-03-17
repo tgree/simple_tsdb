@@ -21,6 +21,7 @@ enum command_token : uint32_t
     CT_SELECT_POINTS_LAST   = 0x76CF2220,
     CT_DELETE_POINTS        = 0xD9082F2C,
     CT_GET_SCHEMA           = 0x87E5A959,
+    CT_NOP                  = 0x22CF1296,
 };
 
 enum data_token : uint32_t
@@ -106,6 +107,8 @@ static void handle_select_points_limit(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_last(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+static void handle_nop(
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 
 static const command_syntax commands[] =
 {
@@ -145,6 +148,11 @@ static const command_syntax commands[] =
         CT_SELECT_POINTS_LAST,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
          DT_TIME_LAST, DT_NLAST, DT_END},
+    },
+    {
+        handle_nop,
+        CT_NOP,
+        {DT_END},
     },
 };
 
@@ -379,6 +387,12 @@ handle_select_points_last(tcp::socket4& s,
     tsdb::series_read_lock read_lock(m,series);
     tsdb::select_op_last op(read_lock,path,str::split(field_list,","),t0,t1,N);
     _handle_select_points(s,op);
+}
+
+static void
+handle_nop(tcp::socket4& s, const std::vector<parsed_data_token>& tokens)
+{
+    // Do nothing.
 }
 
 static void
