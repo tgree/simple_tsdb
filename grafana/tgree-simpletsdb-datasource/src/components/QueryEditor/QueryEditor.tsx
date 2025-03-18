@@ -1,7 +1,7 @@
-import React, { ReactElement } from 'react';
+import React, { ReactElement, useCallback } from 'react';
 import { InlineField, Select } from '@grafana/ui';
+import type { SelectableValue } from '@grafana/data';
 import { useMeasurements } from './useMeasurements';
-import { useChangeSelectableValue } from './useChangeSelectableValue';
 import type { EditorProps } from './types';
 
 export function QueryEditor(props: EditorProps): ReactElement {
@@ -9,10 +9,19 @@ export function QueryEditor(props: EditorProps): ReactElement {
 
   const asyncMeasurementsState = useMeasurements(datasource);
 
-  const onChangeMeasurement = useChangeSelectableValue(props, {
-    propertyName: 'measurement',
-    runQuery: true,
-  });
+  const onChangeMeasurement = useCallback(
+    (selectable: SelectableValue<string>) => {
+      if (!selectable?.value) {
+        return;
+      }
+
+      props.onChange({
+        ...props.query,
+        measurement: selectable.value,
+      });
+    },
+    [props]
+  );
 
   return (
     <>
