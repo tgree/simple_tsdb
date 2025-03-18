@@ -10,7 +10,7 @@ type AsyncSeriesState = {
 
 export function useSeries(datasource: BasicDataSource, measurement: string): AsyncSeriesState {
   const result = useAsync(async () => {
-    const { series } = await datasource.getSeries(datasource.database, measurement);
+    const { series } = await datasource.getSeriesList(datasource.database, measurement);
 
     return series.map((s) => ({
       label: s,

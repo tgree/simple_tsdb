@@ -10,7 +10,7 @@ type AsyncMeasurementsState = {
 
 export function useMeasurements(datasource: BasicDataSource): AsyncMeasurementsState {
   const result = useAsync(async () => {
-    const { measurements } = await datasource.getMeasurements(datasource.database);
+    const { measurements } = await datasource.getMeasurementList(datasource.database);
 
     return measurements.map((measurement) => ({
       label: measurement,

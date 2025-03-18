@@ -1,7 +1,7 @@
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
 import type { DataSourceInstanceSettings, ScopedVars } from '@grafana/data';
-import type { BasicQuery, BasicDataSourceOptions, DatabasesResponse, MeasurementsResponse,
-              SeriesResponse } from './types';
+import type { BasicQuery, BasicDataSourceOptions, DatabaseList, MeasurementList,
+              SeriesList } from './types';
 
 export class BasicDataSource extends DataSourceWithBackend<BasicQuery, BasicDataSourceOptions> {
   database: string;
@@ -25,15 +25,15 @@ export class BasicDataSource extends DataSourceWithBackend<BasicQuery, BasicData
     return true;
   }
 
-  getDatabases(): Promise<DatabasesResponse> {
+  getDatabaseList(): Promise<DatabaseList> {
     return this.getResource('/databases');
   }
 
-  getMeasurements(database: string): Promise<MeasurementsResponse> {
+  getMeasurementList(database: string): Promise<MeasurementList> {
     return this.getResource('/measurements?database=' + database);
   }
 
-  getSeries(database: string, measurement: string): Promise<SeriesResponse> {
+  getSeriesList(database: string, measurement: string): Promise<SeriesList> {
     return this.getResource('/measurements?database=' + database + '&measurement=' + measurement);
   }
 }

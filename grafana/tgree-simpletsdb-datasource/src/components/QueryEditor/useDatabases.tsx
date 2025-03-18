@@ -10,7 +10,7 @@ type AsyncDatabasesState = {
 
 export function useDatabases(datasource: BasicDataSource): AsyncDatabasesState {
   const result = useAsync(async () => {
-    const { databases } = await datasource.getDatabases();
+    const { databases } = await datasource.getDatabaseList();
 
     return databases.map((database) => ({
       label: database,

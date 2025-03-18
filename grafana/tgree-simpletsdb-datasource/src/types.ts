@@ -20,14 +20,14 @@ export interface BasicDataSourceOptions extends DataSourceJsonData {
 export interface BasicSecureJsonData {
 }
 
-export type DatabasesResponse = {
+export type DatabaseList = {
   databases: string[];
 };
 
-export type MeasurementsResponse = {
+export type MeasurementList = {
   measurements: string[];
 };
 
-export type SeriesResponse = {
+export type SeriesList = {
   series: string[];
 };
