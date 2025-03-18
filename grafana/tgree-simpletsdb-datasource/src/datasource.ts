@@ -1,7 +1,8 @@
 import { DataSourceInstanceSettings, CoreApp, ScopedVars } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
 
-import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY } from './types';
+import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY, DatabasesResponse, MeasurementsResponse,
+         SeriesResponse } from './types';
 
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
@@ -24,5 +25,17 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
   filterQuery(query: MyQuery): boolean {
     // if no query has been provided, prevent the query from being executed
     return !!query.measurement && !!query.series && !!query.field;
+  }
+
+  getDatabases(): Promise<DatabasesResponse> {
+    return this.getResource("/databases");
+  }
+
+  getMeasurements(database: String): Promise<MeasurementsResponse> {
+    return this.getResource("/measurements?database=" + database);
+  }
+
+  getSeries(database: String, measurement: String): Promise<SeriesResponse> {
+    return this.getResource("/series?database=" + database + "&measurement=" + measurement);
   }
 }

@@ -31,3 +31,15 @@ export interface MyDataSourceOptions extends DataSourceJsonData {
  */
 export interface MySecureJsonData {
 }
+
+export type DatabasesResponse = {
+    databases: string[];
+};
+
+export type MeasurementsResponse = {
+    measurements: string[];
+};
+
+export type SeriesResponse = {
+    series: string[];
+};
