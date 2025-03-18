@@ -30,6 +30,8 @@ const (
 	CT_LIST_DATABASES       uint32 = 0x29200D6D
 	CT_LIST_MEASUREMENTS    uint32 = 0x0FEB1399
 	CT_LIST_SERIES          uint32 = 0x7B8238D6
+	CT_COUNT_POINTS         uint32 = 0x0E329B19
+	CT_SUM_POINTS           uint32 = 0x90305A39
 	CT_NOP                  uint32 = 0x22CF1296
 
 	DT_DATABASE             uint32 = 0x39385A4F   // <database>
@@ -47,6 +49,9 @@ const (
 	DT_FIELD_TYPE           uint32 = 0x7DB40C2A   // <type> (uint32_t)
 	DT_FIELD_NAME           uint32 = 0x5C0D45C1   // <name>
 	DT_READY_FOR_CHUNK      uint32 = 0x6000531C   // <max_data_len> (uint32_t)
+	DT_NPOINTS              uint32 = 0x5F469D08   // <npoints> (uint64_t)
+	DT_WINDOW_NS            uint32 = 0x76F0C374   // <window_ns> (uint64_t)
+	DT_SUMS_CHUNK           uint32 = 0x53FC76FC   // <chunk_npoints> (uint16_t)
 
 	FT_BOOL uint8 = 1
 	FT_U32 uint8  = 2
@@ -146,6 +151,7 @@ type queryModel struct {
 	Measurement	string
 	Series		string
 	Field		string
+	IntervalMs      uint64
 }
 
 func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *TSDBClient, dm *datasourceModel, query backend.DataQuery) backend.DataResponse {
@@ -155,24 +161,47 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("json unmarshal: %v", err.Error()))
 	}
+	backend.Logger.Debug("Query", "query", query)
 
+	// Retrieve the point count for this measurement.
+	t0 := uint64(query.TimeRange.From.UnixNano())
+	t1 := uint64(query.TimeRange.To.UnixNano())
+	count_result, err := tc.CountPoints(dm.Database, qm.Measurement, qm.Series, t0, t1)
+	backend.Logger.Debug("Count Result", "count_result", count_result.String())
+
+	if count_result.npoints == 0 {
+		return backend.DataResponse{
+			Frames: []*data.Frame{
+				data.NewFrame(
+					"response",
+					data.NewField("time", nil, []time.Time{}),
+					data.NewField(qm.Series + "." + qm.Field, nil, []float64{}),
+				),
+			},
+		}
+	} else if count_result.npoints < 200000 {
+		return d.querySelect(tc, dm.Database, qm.Measurement, qm.Series, qm.Field, t0, t1)
+	} else {
+		return d.queryMean(tc, dm.Database, qm.Measurement, qm.Series, qm.Field, count_result.time_first, count_result.time_last, qm.IntervalMs * 1000000)
+	}
+}
+
+func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement string, series string, field string, t0 uint64, t1 uint64) backend.DataResponse {
 	// Retrieve the schema for this measurement.
-	schema, err := tc.GetSchema(dm.Database, qm.Measurement)
+	schema, err := tc.GetSchema(database, measurement)
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("get schema error: %v", err.Error()))
 	}
 
 	// Generate the SELECT operation.
-	t0 := query.TimeRange.From.UnixNano()
-	t1 := query.TimeRange.To.UnixNano()
-	op, err := tc.NewSelectOp(schema, qm.Series, qm.Field, uint64(t0), uint64(t1), 0xFFFFFFFFFFFFFFFF)
+	op, err := tc.NewSelectOp(schema, series, field, t0, t1, 0xFFFFFFFFFFFFFFFF)
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("error creating select op: %v", err.Error()))
 	}
 
 	// Pull chunks of data from the server and append them to our running data.
 	timestamps := []time.Time{}
-	value := schema.MakeArray(qm.Field)
+	ptrs := schema.MakePtrArray(field)
 	for {
 		rxc, err := op.ReadChunk()
 		if err != nil {
@@ -186,7 +215,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			timestamps = append(timestamps, time.Unix(0, int64(time_ns)))
 		}
 
-		value = rxc.AppendToArray(value)
+		ptrs = rxc.AppendToArray(ptrs)
 	}
 
 	// Return the response.
@@ -195,7 +224,62 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			data.NewFrame(
 				"response",
 				data.NewField("time", nil, timestamps),
-				data.NewField(qm.Field, nil, value),
+				data.NewField(series + "." + field, nil, ptrs),
+			),
+		},
+	}
+}
+
+func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement string, series string, field string, t0 uint64, t1 uint64, window_ns uint64) backend.DataResponse {
+	// Generate the SUMS operation.
+	op, err := tc.NewSumsOp(database, measurement, series, field, t0, t1, window_ns)
+	if err != nil {
+		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("error creating sums op: %v", err.Error()))
+	}
+
+	// Pull chunks of data from the server and append them to our running data.
+	// TODO: The number of buckets is known a priori...
+	timestamps := []time.Time{}
+	means := []float64{}
+	ptrs := []*float64{}
+	chunk_base := uint64(0)
+	for {
+		rxc, err := op.ReadChunk()
+		if err != nil {
+			return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("error reading chunk: %v", err.Error()))
+		}
+		if rxc == nil {
+			break
+		}
+
+		for _, time_ns := range rxc.timestamps {
+			timestamps = append(timestamps, time.Unix(0, int64(time_ns)))
+		}
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			if rxc.npoints[i] == 0 {
+				means = append(means, 0)
+			} else {
+				means = append(means, rxc.sums[i] / float64(rxc.npoints[i]))
+			}
+		}
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			if rxc.npoints[i] == 0 {
+				ptrs = append(ptrs, nil)
+			} else {
+				ptrs = append(ptrs, &means[chunk_base + uint64(i)])
+			}
+		}
+
+		chunk_base += uint64(rxc.nbuckets)
+	}
+
+	// Return the response.
+	return backend.DataResponse{
+		Frames: []*data.Frame{
+			data.NewFrame(
+				"response",
+				data.NewField("time", nil, timestamps),
+				data.NewField(series + "." + field, nil, ptrs),
 			),
 		},
 	}
@@ -497,6 +581,17 @@ func (self *TSDBClient) ReadU32() (uint32, error) {
 	return v, nil
 }
 
+func (self *TSDBClient) ReadU64() (uint64, error) {
+	var v uint64
+
+	err := binary.Read(self.conn, binary.LittleEndian, &v)
+	if err != nil {
+		return 0, err
+	}
+
+	return v, nil
+}
+
 func (self *TSDBClient) ReadI32() (int32, error) {
 	var v int32
 
@@ -781,6 +876,119 @@ func (self *TSDBClient) GetSchema(database string, measurement string) (*Schema,
 	}
 }
 
+type CountResult struct {
+	time_first	uint64
+	time_last	uint64
+	npoints		uint64
+}
+
+func (self *CountResult) String() string {
+	return fmt.Sprintf("<time_first: %v, time_last: %v, npoints: %v>", self.time_first, self.time_last, self.npoints)
+}
+
+func (self *TSDBClient) CountPoints(database string, measurement string, series string, t0 uint64, t1 uint64) (*CountResult, error) {
+	err := self.WriteU32(CT_COUNT_POINTS)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_SERIES, series)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	dt, err := self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if dt == DT_STATUS_CODE {
+		sc, err := self.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		backend.Logger.Debug("Status", "status", sc)
+		panic("Unexpected status")
+	}
+	if dt != DT_TIME_FIRST {
+		panic("Expected DT_TIME_FIRST")
+	}
+	time_first, err := self.ReadU64()
+	if err != nil {
+		return nil, err
+	}
+
+	dt, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if dt != DT_TIME_LAST {
+		panic("Expected DT_TIME_LAST")
+	}
+	time_last, err := self.ReadU64()
+	if err != nil {
+		return nil, err
+	}
+
+	dt, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if dt != DT_NPOINTS {
+		panic("Expected DT_NPOINTS")
+	}
+	npoints, err := self.ReadU64()
+	if err != nil {
+		return nil, err
+	}
+
+	dt, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if dt != DT_STATUS_CODE {
+		panic("Expected DT_STATUS_CODE")
+	}
+	sc, err := self.ReadI32()
+	if err != nil {
+		return nil, err
+	}
+	if sc != 0 {
+		backend.Logger.Debug("Status", "status", sc)
+		panic("Unexpected status")
+	}
+
+	return &CountResult{
+		time_first:	time_first,
+		time_last:	time_last,
+		npoints:	npoints,
+	}, nil
+}
+
 type SchemaField struct {
 	name		string
 	field_type	uint8
@@ -819,6 +1027,34 @@ func (self *Schema) MakeArray(field string) interface{} {
 
 	case FT_I64:
 		return []int64{}
+
+	default:
+		panic("Unknown field type!");
+	}
+}
+
+func (self *Schema) MakePtrArray(field string) interface{} {
+	switch self.fields_map[field].field_type {
+	case FT_BOOL:
+		return []*uint8{}
+
+	case FT_U32:
+		return []*uint32{}
+
+	case FT_U64:
+		return []*uint64{}
+
+	case FT_F32:
+		return []*float32{}
+
+	case FT_F64:
+		return []*float64{}
+
+	case FT_I32:
+		return []*int32{}
+
+	case FT_I64:
+		return []*int64{}
 
 	default:
 		panic("Unknown field type!");
@@ -999,36 +1235,262 @@ func NewChunk(op *SelectOp, npoints uint32, bitmap_offset uint32, data []byte) (
 	}, nil
 }
 
-func (self *RXChunk) AppendToArray(arr interface{}) interface{} {
+func (self *RXChunk) IsNull(i uint32) bool {
+	bitmap_index := (self.bitmap_offset + i) / 64
+	shift := (self.bitmap_offset + i) % 64
+	return (self.bitmap[bitmap_index] & (1 << shift)) == 0
+}
+
+func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 	p := unsafe.Pointer(&self.data[self.data_offset])
-	switch arr.(type) {
-	case []float64:
-		return append(arr.([]float64), unsafe.Slice((*float64)(p), self.npoints)...)
+	switch ptrs.(type) {
+	case []*float64:
+		vf64 := unsafe.Slice((*float64)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*float64), nil)
+			} else {
+				ptrs = append(ptrs.([]*float64), &vf64[i])
+			}
+		}
 
-	case []float32:
-		return append(arr.([]float32), unsafe.Slice((*float32)(p), self.npoints)...)
+	case []*float32:
+		vf32 := unsafe.Slice((*float32)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*float32), nil)
+			} else {
+				ptrs = append(ptrs.([]*float32), &vf32[i])
+			}
+		}
 
-	case []uint64:
-		return append(arr.([]uint64), unsafe.Slice((*uint64)(p), self.npoints)...)
+	case []*uint64:
+		vu64 := unsafe.Slice((*uint64)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*uint64), nil)
+			} else {
+				ptrs = append(ptrs.([]*uint64), &vu64[i])
+			}
+		}
 
-	case []uint32:
-		return append(arr.([]uint32), unsafe.Slice((*uint32)(p), self.npoints)...)
+	case []*uint32:
+		vu32 := unsafe.Slice((*uint32)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*uint32), nil)
+			} else {
+				ptrs = append(ptrs.([]*uint32), &vu32[i])
+			}
+		}
 
-	case []int64:
-		return append(arr.([]int64), unsafe.Slice((*int64)(p), self.npoints)...)
+	case []*int64:
+		vi64 := unsafe.Slice((*int64)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*int64), nil)
+			} else {
+				ptrs = append(ptrs.([]*int64), &vi64[i])
+			}
+		}
 
-	case []int32:
-		return append(arr.([]int32), unsafe.Slice((*int32)(p), self.npoints)...)
+	case []*int32:
+		vi32 := unsafe.Slice((*int32)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*int32), nil)
+			} else {
+				ptrs = append(ptrs.([]*int32), &vi32[i])
+			}
+		}
 
-	case []uint8:
-		return append(arr.([]uint8), unsafe.Slice((*uint8)(p), self.npoints)...)
+	case []*uint8:
+		vu8 := unsafe.Slice((*uint8)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*uint8), nil)
+			} else {
+				ptrs = append(ptrs.([]*uint8), &vu8[i])
+			}
+		}
 
 	default:
 		backend.Logger.Debug("Unknown field type!")
 		panic("Unknown field type!")
 	}
+
+	return ptrs
 }
 
 func (self *RXChunk) String() string {
 	return fmt.Sprintf("<npoints %v, bitmap_offset %v>", self.npoints, self.bitmap_offset)
+}
+
+type SumsOp struct {
+	client		*TSDBClient
+	database	string
+	measurement	string
+	series		string
+	field		string
+	t0		uint64
+	t1		uint64
+	window_ns	uint64
+	last_token	uint32
+}
+
+func (self *TSDBClient) NewSumsOp(database string, measurement string, series string, field string, t0 uint64, t1 uint64, window_ns uint64) (*SumsOp, error) {
+	op := SumsOp{
+		client:		self,
+		database:	database,
+		measurement:	measurement,
+		series:		series,
+		field:		field,
+		t0:		t0,
+		t1:		t1,
+		window_ns:	window_ns,
+	}
+
+	err := self.WriteU32(CT_SUM_POINTS)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_SERIES, series)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_FIELD_LIST, field)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_WINDOW_NS, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	op.last_token, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if op.last_token == DT_STATUS_CODE {
+		sc, err := self.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		backend.Logger.Debug("Status", "status", sc)
+		panic("Unexpected status")
+	}
+
+	return &op, nil
+}
+
+type RXSumsChunk struct {
+	op		*SumsOp
+	nbuckets	uint16
+	data		[]byte
+	timestamps	[]uint64
+	sums		[]float64
+	npoints		[]uint64
+}
+
+func (self *SumsOp) ReadChunk() (*RXSumsChunk, error) {
+	if self.last_token == DT_END {
+		dt, err := self.client.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt != DT_STATUS_CODE {
+			backend.Logger.Debug("Garbage token", "garbage_token", dt)
+			panic("Expected DT_STATUS_CODE")
+		}
+		
+		sc, err := self.client.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		if sc != 0 {
+			backend.Logger.Debug("Status", "status", sc)
+			panic("Unexpected status")
+		}
+
+		return nil, nil
+	}
+
+	if self.last_token != DT_SUMS_CHUNK {
+		panic("Expected DT_SUMS_CHUNK or DT_END")
+	}
+	chunk_npoints, err := self.client.ReadU16()
+	if err != nil {
+		return nil, err
+	}
+
+	data_len := chunk_npoints * (8 + 1 * 16)	// 1 since only 1 field
+	data := make([]byte, data_len)
+	n, err := io.ReadFull(self.client.conn, data)
+	if err != nil {
+		return nil, err
+	}
+	if n != int(data_len) {
+		backend.Logger.Debug("Bad read length", "expected len", data_len, "got len", n)
+		panic("Unexpected read length!")
+	}
+
+	self.last_token, err = self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewSumsChunk(self, chunk_npoints, data)
+}
+
+func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, error) {
+	pos := uint32(0)
+	dpos := 8 * uint32(chunk_npoints)
+
+	p := unsafe.Pointer(&data[pos])
+	timestamps := unsafe.Slice((*uint64)(p), chunk_npoints)
+	pos += dpos
+
+	p = unsafe.Pointer(&data[pos])
+	sums := unsafe.Slice((*float64)(p), chunk_npoints)
+	pos += dpos
+
+	p = unsafe.Pointer(&data[pos])
+	npoints := unsafe.Slice((*uint64)(p), chunk_npoints)
+
+	return &RXSumsChunk{
+		op:		op,
+		nbuckets:	chunk_npoints,
+		data:		data,
+		timestamps:	timestamps,
+		sums:		sums,
+		npoints:	npoints,
+	}, nil
 }
