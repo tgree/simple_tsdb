@@ -1,23 +1,26 @@
 import React, { ChangeEvent } from 'react';
-import { InlineField, Input, Stack } from '@grafana/ui';
+import { InlineField, Input } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import { DataSource } from '../datasource';
 import { MyDataSourceOptions, MyQuery } from '../types';
 
 type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
 
-export function QueryEditor({ query, onChange, onRunQuery }: Props) {
+export function QueryEditor(props: Props) {
+
   const onMeasurementChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...query, measurement: event.target.value });
-  };
-  const onSeriesChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...query, series: event.target.value });
-  };
-  const onFieldChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange({ ...query, field: event.target.value });
+    props.onChange({ ...props.query, measurement: event.target.value });
   };
 
-  const { measurement, series, field } = query;
+  const onSeriesChange = (event: ChangeEvent<HTMLInputElement>) => {
+    props.onChange({ ...props.query, series: event.target.value });
+  };
+
+  const onFieldChange = (event: ChangeEvent<HTMLInputElement>) => {
+    props.onChange({ ...props.query, field: event.target.value });
+  };
+
+  const { measurement, series, field } = props.query;
 
   return (
     <div>
@@ -25,7 +28,7 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
         <Input
           id="query-editor-measurement"
           onChange={onMeasurementChange}
-          value={measurement || ''}
+          value={measurement || props.datasource.getMeasurements(props.datasource.database).measurements[0] || ''}
           required
           placeholder="Enter a measurement"
         />
