@@ -15,6 +15,10 @@ CT_SELECT_POINTS_LIMIT  = 0x7446C560
 CT_SELECT_POINTS_LAST   = 0x76CF2220
 CT_DELETE_POINTS        = 0xD9082F2C
 CT_GET_SCHEMA           = 0x87E5A959
+CT_LIST_DATABASES       = 0x29200D6D
+CT_LIST_MEASUREMENTS    = 0x0FEB1399
+CT_LIST_SERIES          = 0x7B8238D6
+CT_NOP                  = 0x22CF1296
 
 # Data tokens
 DT_DATABASE             = 0x39385A4F
@@ -327,6 +331,9 @@ class Client:
             data += new_data
         return data
 
+    def _recv_u16(self):
+        return struct.unpack('<H', self._recvall(2))[0]
+
     def _recv_u32(self):
         return struct.unpack('<I', self._recvall(4))[0]
 
@@ -365,6 +372,70 @@ class Client:
                           DT_TYPED_FIELDS, len(typed_fields), typed_fields,
                           DT_END)
         self._transact(cmd)
+
+    def list_databases(self):
+        cmd = struct.pack('<II',
+                          CT_LIST_DATABASES,
+                          DT_END)
+        self._sendall(cmd)
+        databases = []
+        while True:
+            dt = self._recv_u32()
+            if dt == DT_STATUS_CODE:
+                sc = self._recv_i32()
+                if sc != 0:
+                    raise StatusException(sc)
+                return databases
+
+            assert dt == DT_DATABASE
+            size = self._recv_u16()
+            name = self._recvall(size)
+            databases.append(name.decode())
+
+    def list_measurements(self, database):
+        database = database.encode()
+        cmd = struct.pack('<IIH%usI' % len(database),
+                          CT_LIST_MEASUREMENTS,
+                          DT_DATABASE, len(database), database,
+                          DT_END)
+        self._sendall(cmd)
+        measurements = []
+        while True:
+            dt = self._recv_u32()
+            if dt == DT_STATUS_CODE:
+                sc = self._recv_i32()
+                if sc != 0:
+                    raise StatusException(sc)
+                return measurements
+
+            assert dt == DT_MEASUREMENT
+            size = self._recv_u16()
+            name = self._recvall(size)
+            measurements.append(name.decode())
+
+    def list_series(self, database, measurement):
+        database = database.encode()
+        measurement = measurement.encode()
+        cmd = struct.pack('<IIH%usIH%usI' % (len(database),
+                                             len(measurement)),
+                          CT_LIST_SERIES,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_END)
+        self._sendall(cmd)
+        series = []
+        while True:
+            dt = self._recv_u32()
+            if dt == DT_STATUS_CODE:
+                sc = self._recv_i32()
+                if sc != 0:
+                    raise StatusException(sc)
+                return series
+
+            assert dt == DT_SERIES
+            size = self._recv_u16()
+            name = self._recvall(size)
+            series.append(name.decode())
 
     def get_schema(self, database, measurement):
         database = database.encode()
