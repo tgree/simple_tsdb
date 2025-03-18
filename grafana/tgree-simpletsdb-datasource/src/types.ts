@@ -27,3 +27,7 @@ export type DatabasesResponse = {
 export type MeasurementsResponse = {
   measurements: string[];
 };
+
+export type SeriesResponse = {
+  series: string[];
+};
