@@ -1,47 +1,29 @@
 import React, { ReactElement } from 'react';
-import { css } from '@emotion/css';
-import { InlineFieldRow, InlineField, Select, CodeEditor, useStyles2 } from '@grafana/ui';
-import { GrafanaTheme2 } from '@grafana/data';
-import { useQueryTypes } from './useQueryTypes';
+import { InlineFieldRow, InlineField, Select } from '@grafana/ui';
+import { useMeasurements } from './useMeasurements';
 import { useSelectableValue } from './useSelectableValue';
 import { useChangeSelectableValue } from './useChangeSelectableValue';
 import type { EditorProps } from './types';
-import { useChangeString } from './useChangeString';
 
 export function QueryEditor(props: EditorProps): ReactElement {
   const { datasource, query } = props;
-  const styles = useStyles2(getStyles);
 
-  const { loading, queryTypes, error } = useQueryTypes(datasource);
+  const { loading, measurements, error } = useMeasurements(datasource);
   const queryType = useSelectableValue(query.queryType);
 
-  const onChangeQueryType = useChangeSelectableValue(props, {
-    propertyName: 'queryType',
-    runQuery: true,
-  });
-
-  const onChangeRawQuery = useChangeString(props, {
-    propertyName: 'rawQuery',
+  const onChangeMeasurement = useChangeSelectableValue(props, {
+    propertyName: 'measurement',
     runQuery: true,
   });
 
   return (
     <>
-      <div className={styles.editor}>
-        <CodeEditor
-          height="200px"
-          showLineNumbers={true}
-          language="sql"
-          onBlur={onChangeRawQuery}
-          value={query.rawQuery}
-        />
-      </div>
       <InlineFieldRow>
-        <InlineField label="Query type" grow>
+        <InlineField label="Measurement" grow>
           <Select
-            inputId="editor-query-type"
-            options={queryTypes}
-            onChange={onChangeQueryType}
+            inputId="editor-databases"
+            options={measurements}
+            onChange={onChangeMeasurement}
             isLoading={loading}
             disabled={!!error}
             value={queryType}
@@ -50,12 +32,4 @@ export function QueryEditor(props: EditorProps): ReactElement {
       </InlineFieldRow>
     </>
   );
-}
-
-function getStyles(theme: GrafanaTheme2) {
-  return {
-    editor: css`
-      margin: ${theme.spacing(0, 0.5, 0.5, 0)};
-    `,
-  };
 }

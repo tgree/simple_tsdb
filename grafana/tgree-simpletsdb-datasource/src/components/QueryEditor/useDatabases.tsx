@@ -2,13 +2,13 @@ import { useAsync } from 'react-use';
 import type { SelectableValue } from '@grafana/data';
 import type { BasicDataSource } from '../../datasource';
 
-type AsyncQueryTypeState = {
+type AsyncDatabasesState = {
   loading: boolean;
-  queryTypes: Array<SelectableValue<string>>;
+  databases: Array<SelectableValue<string>>;
   error: Error | undefined;
 };
 
-export function useQueryTypes(datasource: BasicDataSource): AsyncQueryTypeState {
+export function useDatabases(datasource: BasicDataSource): AsyncDatabasesState {
   const result = useAsync(async () => {
     const { databases } = await datasource.getDatabases();
 
@@ -20,7 +20,7 @@ export function useQueryTypes(datasource: BasicDataSource): AsyncQueryTypeState 
 
   return {
     loading: result.loading,
-    queryTypes: result.value ?? [],
+    databases: result.value ?? [],
     error: result.error,
   };
 }
