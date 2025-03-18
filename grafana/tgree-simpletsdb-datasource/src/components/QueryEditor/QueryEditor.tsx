@@ -1,56 +1,61 @@
-import React, { ChangeEvent } from 'react';
-import { InlineField, Input } from '@grafana/ui';
-import { QueryEditorProps } from '@grafana/data';
-import { DataSource } from '../datasource';
-import { MyDataSourceOptions, MyQuery } from '../types';
+import React, { ReactElement } from 'react';
+import { css } from '@emotion/css';
+import { InlineFieldRow, InlineField, Select, CodeEditor, useStyles2 } from '@grafana/ui';
+import { GrafanaTheme2 } from '@grafana/data';
+import { useQueryTypes } from './useQueryTypes';
+import { useSelectableValue } from './useSelectableValue';
+import { useChangeSelectableValue } from './useChangeSelectableValue';
+import type { EditorProps } from './types';
+import { useChangeString } from './useChangeString';
 
-type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
+export function QueryEditor(props: EditorProps): ReactElement {
+  const { datasource, query } = props;
+  const styles = useStyles2(getStyles);
 
-export function QueryEditor(props: Props) {
+  const { loading, queryTypes, error } = useQueryTypes(datasource);
+  const queryType = useSelectableValue(query.queryType);
 
-  const onMeasurementChange = (event: ChangeEvent<HTMLInputElement>) => {
-    props.onChange({ ...props.query, measurement: event.target.value });
-  };
+  const onChangeQueryType = useChangeSelectableValue(props, {
+    propertyName: 'queryType',
+    runQuery: true,
+  });
 
-  const onSeriesChange = (event: ChangeEvent<HTMLInputElement>) => {
-    props.onChange({ ...props.query, series: event.target.value });
-  };
-
-  const onFieldChange = (event: ChangeEvent<HTMLInputElement>) => {
-    props.onChange({ ...props.query, field: event.target.value });
-  };
-
-  const { measurement, series, field } = props.query;
+  const onChangeRawQuery = useChangeString(props, {
+    propertyName: 'rawQuery',
+    runQuery: true,
+  });
 
   return (
-    <div>
-      <InlineField label="Measurement" labelWidth={16} tooltip="Not used yet">
-        <Input
-          id="query-editor-measurement"
-          onChange={onMeasurementChange}
-          value={measurement || props.datasource.getMeasurements(props.datasource.database).measurements[0] || ''}
-          required
-          placeholder="Enter a measurement"
+    <>
+      <div className={styles.editor}>
+        <CodeEditor
+          height="200px"
+          showLineNumbers={true}
+          language="sql"
+          onBlur={onChangeRawQuery}
+          value={query.rawQuery}
         />
-      </InlineField>
-      <InlineField label="Series" labelWidth={16} tooltip="Not used yet">
-        <Input
-          id="query-editor-series"
-          onChange={onSeriesChange}
-          value={series || ''}
-          required
-          placeholder="Enter a series"
-        />
-      </InlineField>
-      <InlineField label="Field" labelWidth={16} tooltip="Not used yet">
-        <Input
-          id="query-editor-field"
-          onChange={onFieldChange}
-          value={field || ''}
-          required
-          placeholder="Enter a field"
-        />
-      </InlineField>
-    </div>
+      </div>
+      <InlineFieldRow>
+        <InlineField label="Query type" grow>
+          <Select
+            inputId="editor-query-type"
+            options={queryTypes}
+            onChange={onChangeQueryType}
+            isLoading={loading}
+            disabled={!!error}
+            value={queryType}
+          />
+        </InlineField>
+      </InlineFieldRow>
+    </>
   );
+}
+
+function getStyles(theme: GrafanaTheme2) {
+  return {
+    editor: css`
+      margin: ${theme.spacing(0, 0.5, 0.5, 0)};
+    `,
+  };
 }
