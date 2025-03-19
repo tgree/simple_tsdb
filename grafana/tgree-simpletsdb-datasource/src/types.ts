@@ -31,3 +31,7 @@ export type MeasurementList = {
 export type SeriesList = {
   series: string[];
 };
+
+export type FieldsList = {
+  fields: string[];
+};
