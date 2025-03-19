@@ -1,47 +1,60 @@
-import React, { ReactElement, useCallback } from 'react';
+import React, { ReactElement } from 'react';
+import { useAsync } from 'react-use';
 import { InlineField, Select } from '@grafana/ui';
 import type { SelectableValue } from '@grafana/data';
-import { useMeasurements } from './useMeasurements';
 import type { EditorProps } from './types';
+import type { BasicDataSource } from '../../datasource';
+
+type AsyncMeasurementsState = {
+  loading: boolean;
+  measurements: Array<SelectableValue<string>>;
+  error: Error | undefined;
+};
+
+export function useMeasurements(datasource: BasicDataSource): AsyncMeasurementsState {
+  const result = useAsync(async () => {
+    const { measurements } = await datasource.getMeasurementList(datasource.database);
+
+    return measurements.map((measurement) => ({
+      label: measurement,
+      value: measurement,
+    }));
+  }, [datasource]);
+
+  return {
+    loading: result.loading,
+    measurements: result.value ?? [],
+    error: result.error,
+  };
+}
+
+function OnChangeMeasurement(selectable: SelectableValue<string>, props: EditorProps) {
+  if (!selectable?.value) {
+    return;
+  }
+
+  props.onChange({
+    ...props.query,
+    measurement: selectable.value,
+  });
+}
+
+function OnChangeSeries(selectable: SelectableValue<string>, props: EditorProps) {
+}
+
+function OnChangeField(selectable: SelectableValue<string>, props: EditorProps) {
+}
 
 export function QueryEditor(props: EditorProps): ReactElement {
-  const { datasource } = props;
-
-  const asyncMeasurementsState = useMeasurements(datasource);
-
-  const onChangeMeasurement = useCallback(
-    (selectable: SelectableValue<string>) => {
-      if (!selectable?.value) {
-        return;
-      }
-
-      props.onChange({
-        ...props.query,
-        measurement: selectable.value,
-      });
-    },
-    [props]
-  );
-
-  const onChangeSeries = useCallback(
-    (selectable: SelectableValue<string>) => {
-    },
-    []
-  );
-
-  const onChangeField = useCallback(
-    (selectable: SelectableValue<string>) => {
-    },
-    []
-  );
+  const asyncMeasurementsState = useMeasurements(props.datasource);
 
   return (
     <>
       <InlineField label="Measurement" labelWidth={16}>
         <Select
-          inputId="editor-databases"
+          inputId="editor-measurements"
           options={asyncMeasurementsState.measurements}
-          onChange={onChangeMeasurement}
+          onChange={(selectable) => OnChangeMeasurement(selectable, props)}
           isLoading={asyncMeasurementsState.loading}
           disabled={!!asyncMeasurementsState.error}
         />
@@ -49,14 +62,16 @@ export function QueryEditor(props: EditorProps): ReactElement {
       <InlineField label="Series" labelWidth={16}>
         <Select
           inputId="editor-series"
-          onChange={onChangeSeries}
+          options={[] as Array<SelectableValue<string>>}
+          onChange={(selectable) => OnChangeSeries(selectable, props)}
           disabled={true}
         />
       </InlineField>
       <InlineField label="Field" labelWidth={16}>
         <Select
-          inputId="editor-field"
-          onChange={onChangeField}
+          inputId="editor-fields"
+          options={[] as Array<SelectableValue<string>>}
+          onChange={(selectable) => OnChangeField(selectable, props)}
           disabled={true}
         />
       </InlineField>
