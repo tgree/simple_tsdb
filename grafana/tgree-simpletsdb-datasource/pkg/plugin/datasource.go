@@ -86,6 +86,7 @@ func NewDatasource(ctx context.Context, _ backend.DataSourceInstanceSettings) (i
 	mux.HandleFunc("/databases", d.handleDatabases)
 	mux.HandleFunc("/measurements", d.handleMeasurements)
 	mux.HandleFunc("/series", d.handleSeries)
+	mux.HandleFunc("/fields", d.handleFields)
 	d.resourceHandler = httpadapter.New(mux)
 	return d, nil
 }
@@ -355,6 +356,47 @@ func (d *Datasource) handleSeries(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		panic("Error marshalling response!")
 		return
+	}
+
+	rw.Header().Add("Content-Type", "application/json")
+	_, err = rw.Write(bytes)
+	if err != nil {
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
+}
+
+type fieldsResponse struct {
+	Fields		[]string	`json:"fields"`
+}
+
+func (d *Datasource) handleFields(rw http.ResponseWriter, req *http.Request) {
+	tc, err := NewTSDBClient()
+	if err != nil {
+		return
+	}
+	defer tc.Close()
+
+	database := req.URL.Query().Get("database")
+	if database == "" {
+		return
+	}
+
+	measurement := req.URL.Query().Get("measurement")
+	if measurement == "" {
+		return
+	}
+
+	schema, err := tc.GetSchema(database, measurement)
+	if err != nil {
+		return
+	}
+
+	rsp := fieldsResponse{}
+	rsp.Fields = schema.fields
+	bytes, err := json.Marshal(rsp)
+	if err != nil {
+		panic("Error marshalling response!")
 	}
 
 	rw.Header().Add("Content-Type", "application/json")
