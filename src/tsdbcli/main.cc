@@ -43,6 +43,7 @@ enum command_token
     CT_STR_DATABASES,
     CT_STR_MEASUREMENTS,
     CT_STR_SCHEMA,
+    CT_STR_COUNT,
 
     // Other types.
     CT_DATABASE_SPECIFIER,      // <database>
@@ -77,6 +78,7 @@ constexpr const char* const keyword_strings[] =
     [CT_STR_DATABASES]      = "databases",
     [CT_STR_MEASUREMENTS]   = "measurements",
     [CT_STR_SCHEMA]         = "schema",
+    [CT_STR_COUNT]          = "count",
 };
 
 struct command_syntax
@@ -111,6 +113,7 @@ struct command_syntax
                 case CT_STR_DATABASES:
                 case CT_STR_MEASUREMENTS:
                 case CT_STR_SCHEMA:
+                case CT_STR_COUNT:
                     if (strcasecmp(cmd[i].c_str(),keyword_strings[tokens[i]]))
                         return false;
                 break;
@@ -180,6 +183,7 @@ static void handle_select_series_one_op_last(
     const std::vector<std::string>& cmd);
 static void handle_select_series_two_op_last(
     const std::vector<std::string>& cmd);
+static void handle_count_from_series(const std::vector<std::string>& cmd);
 static void handle_delete_from_series(const std::vector<std::string>& cmd);
 static void handle_write_series(const std::vector<std::string>& cmd);
 static void handle_list_series(const std::vector<std::string>& cmd);
@@ -259,6 +263,12 @@ static const command_syntax commands[] =
         {CT_STR_SELECT, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
          CT_STR_WHERE, CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS,
          CT_COMPARISON_LEFT, CT_UINT64, CT_STR_LAST, CT_UINT64},
+    },
+    {
+        handle_count_from_series,
+        {CT_STR_COUNT, CT_STR_FROM, CT_SERIES_SPECIFIER, CT_STR_WHERE, 
+         CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS, CT_COMPARISON_LEFT,
+         CT_UINT64},
     },
     {
         handle_delete_from_series,
@@ -496,6 +506,32 @@ handle_select_series_two_op_last(const std::vector<std::string>& cmd)
         t1 = T1;
 
     _handle_select_series_last(cmd[3],cmd[1],t0,t1,N);
+}
+
+static void
+handle_count_from_series(const std::vector<std::string>& cmd)
+{
+    // Handles a command such as:
+    //
+    //  count from <series> where T0 <= time_ns <= T1
+    uint64_t t0 = std::stoul(cmd[4]);
+    uint64_t t1 = std::stoul(cmd[8]);
+    if (cmd[5] == "<")
+        ++t0;
+    if (cmd[7] == "<")
+    {
+        if (t1 == 0)
+        {
+            printf("Invalid end time.\n");
+            return;
+        }
+        --t1;
+    }
+    auto components = futil::path(cmd[2]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::series_read_lock read_lock(m,components[2]);
+    printf("%zu\n",tsdb::count_points(read_lock,t0,t1));
 }
 
 static void
