@@ -44,6 +44,8 @@ enum command_token
     CT_STR_MEASUREMENTS,
     CT_STR_SCHEMA,
     CT_STR_COUNT,
+    CT_STR_MEAN,
+    CT_STR_WINDOW_NS,
 
     // Other types.
     CT_DATABASE_SPECIFIER,      // <database>
@@ -79,6 +81,8 @@ constexpr const char* const keyword_strings[] =
     [CT_STR_MEASUREMENTS]   = "measurements",
     [CT_STR_SCHEMA]         = "schema",
     [CT_STR_COUNT]          = "count",
+    [CT_STR_MEAN]           = "mean",
+    [CT_STR_WINDOW_NS]      = "window_ns",
 };
 
 struct command_syntax
@@ -114,6 +118,8 @@ struct command_syntax
                 case CT_STR_MEASUREMENTS:
                 case CT_STR_SCHEMA:
                 case CT_STR_COUNT:
+                case CT_STR_MEAN:
+                case CT_STR_WINDOW_NS:
                     if (strcasecmp(cmd[i].c_str(),keyword_strings[tokens[i]]))
                         return false;
                 break;
@@ -184,6 +190,7 @@ static void handle_select_series_one_op_last(
 static void handle_select_series_two_op_last(
     const std::vector<std::string>& cmd);
 static void handle_count_from_series(const std::vector<std::string>& cmd);
+static void handle_mean_from_series(const std::vector<std::string>& cmd);
 static void handle_delete_from_series(const std::vector<std::string>& cmd);
 static void handle_write_series(const std::vector<std::string>& cmd);
 static void handle_list_series(const std::vector<std::string>& cmd);
@@ -269,6 +276,12 @@ static const command_syntax commands[] =
         {CT_STR_COUNT, CT_STR_FROM, CT_SERIES_SPECIFIER, CT_STR_WHERE, 
          CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS, CT_COMPARISON_LEFT,
          CT_UINT64},
+    },
+    {
+        handle_mean_from_series,
+        {CT_STR_MEAN, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
+         CT_STR_WHERE, CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS,
+         CT_COMPARISON_LEFT, CT_UINT64, CT_STR_WINDOW_NS, CT_UINT64},
     },
     {
         handle_delete_from_series,
@@ -532,6 +545,152 @@ handle_count_from_series(const std::vector<std::string>& cmd)
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
     printf("%zu\n",tsdb::count_points(read_lock,t0,t1));
+}
+
+static void
+handle_mean_from_series(const std::vector<std::string>& cmd)
+{
+    // Handles a command such as:
+    //
+    //  mean <fields> from <series> where T0 <= tims_ns <= T1 window_ns DT
+    uint64_t t0 = std::stoul(cmd[5]);
+    uint64_t t1 = std::stoul(cmd[9]);
+    uint64_t dt = std::stoul(cmd[11]);
+    if (cmd[5] == "<")
+        ++t0;
+    if (cmd[7] == "<")
+    {
+        if (t1 == 0)
+        {
+            printf("Invalid end time.\n");
+            return;
+        }
+        --t1;
+    }
+    t0 = round_up_to_nearest_multiple(t0,dt);
+    t1 = round_down_to_nearest_multiple(t1,dt);
+    if (t0 >= t1)
+    {
+        printf("Empty time range.\n");
+        return;
+    }
+
+    std::vector<std::string> fields;
+    if (cmd[1] != "*")
+        fields = str::split(cmd[1],",");
+
+    auto components = futil::path(cmd[3]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::series_read_lock read_lock(m,components[2]);
+    tsdb::select_op_first op(read_lock,components[2],fields,t0,t1,-1);
+
+    if (!op.npoints)
+    {
+        printf("No points in time range.\n");
+        return;
+    }
+
+    printf("%20s ","time_ns");
+    for (const auto& f : op.fields)
+        printf("%20s ",f.name);
+    printf("\n");
+    for (size_t i=0; i<op.fields.size() + 1; ++i)
+        printf("-------------------- ");
+    printf("\n");
+
+    size_t nranges = (t1 - t0) / dt;
+    uint64_t range_t0 = t0;
+    uint64_t range_t1 = t0 + dt - 1;
+    size_t op_index = 0;
+    std::vector<double> sums;
+    std::vector<uint64_t> nmeasurements;
+    for (size_t i=0; i<nranges; ++i)
+    {
+        // Zero the sums.
+        sums.clear();
+        sums.resize(op.fields.size());
+        nmeasurements.clear();
+        nmeasurements.resize(op.fields.size());
+
+        // Compute this range.
+        for (;;)
+        {
+            // Advance the op if needed.
+            if (op_index == op.npoints)
+            {
+                if (op.is_last)
+                    break;
+                op.advance();
+                op_index = 0;
+            }
+
+            // If we haven't reached the start of this range, break.
+            if (range_t0 > op.timestamp_data[op_index])
+                break;
+
+            // If we have gone past the end of this range, break.
+            if (range_t1 < op.timestamp_data[op_index])
+                break;
+
+            // Average points.
+            for (size_t j=0; j<op.fields.size(); ++j)
+            {
+                if (op.is_field_null(j,op_index))
+                    continue;
+
+                switch (op.fields[j].type)
+                {
+                    case tsdb::FT_BOOL:
+                        sums[j] += ((uint8_t*)op.field_data[j])[op_index];
+                    break;
+
+                    case tsdb::FT_U32:
+                        sums[j] += ((uint32_t*)op.field_data[j])[op_index];
+                    break;
+
+                    case tsdb::FT_U64:
+                        sums[j] += ((uint64_t*)op.field_data[j])[op_index];
+                    break;
+
+                    case tsdb::FT_F32:
+                        sums[j] += ((float*)op.field_data[j])[op_index];
+                    break;
+
+                    case tsdb::FT_F64:
+                        sums[j] += ((double*)op.field_data[j])[op_index];
+                    break;
+
+                    case tsdb::FT_I32:
+                        sums[j] += ((int32_t*)op.field_data[j])[op_index];
+                    break;
+
+                    case tsdb::FT_I64:
+                        sums[j] += ((int64_t*)op.field_data[j])[op_index];
+                    break;
+                }
+                ++nmeasurements[j];
+            }
+
+            ++op_index;
+        }
+
+        printf("%20llu ",range_t0);
+        for (size_t j=0; j<op.fields.size(); ++j)
+        {
+            if (nmeasurements[j] > 0)
+                printf("%20f ",sums[j]/nmeasurements[j]);
+            else
+                printf("%20s ","-");
+        }
+        printf("\n");
+
+        range_t0 += dt;
+        range_t1 += dt;
+    }
+
+    if (!op.is_last || op_index != op.npoints)
+        printf("Extra points\n");
 }
 
 static void
