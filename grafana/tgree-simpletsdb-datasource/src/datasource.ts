@@ -1,7 +1,7 @@
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
 import type { DataSourceInstanceSettings, ScopedVars } from '@grafana/data';
 import type { BasicQuery, BasicDataSourceOptions, DatabaseList, MeasurementList,
-              SeriesList } from './types';
+              SeriesList, FieldsList } from './types';
 
 export class BasicDataSource extends DataSourceWithBackend<BasicQuery, BasicDataSourceOptions> {
   database: string;
@@ -35,5 +35,9 @@ export class BasicDataSource extends DataSourceWithBackend<BasicQuery, BasicData
 
   getSeriesList(database: string, measurement: string): Promise<SeriesList> {
     return this.getResource('/measurements?database=' + database + '&measurement=' + measurement);
+  }
+
+  getFieldsList(database: string, measurement: string): Promise<FieldsList> {
+    return this.getResource('/fields?database=' + database + '&measurement=' + measurement);
   }
 }
