@@ -381,6 +381,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 bitmap_fds[i].truncate(CHUNK_NPOINTS/8);
                 bitmap_fds[i].fsync();
             }
+            // TODO: fsync() fields_dir.
+            // TODO: fsync() bitmaps_dir.
 
             // Create the new timestamp file.  As when first creating the
             // series, it is possible that someone got this far when growing
@@ -390,6 +392,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                          0660);
             avail_points = CHUNK_NPOINTS;
             pos = 0;
+            // TODO: fsync() time_ns_dir.
 
             // TODO: If we crash here, there is now a dangling, empty timestamp
             // file.  It isn't in the index, so will never be accessed, but it
@@ -455,12 +458,12 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             bitmap_fds[i].fsync();
         }
 
-        // Update the timestamp file.
+        // Update the timestamp file and issue a barrier before updating
+        // time_last.
         tail_fd.write_all(time_data,write_points*sizeof(uint64_t));
-        tail_fd.fsync();
+        tail_fd.fcntl(F_BARRIERFSYNC);
 
-        // Issue a barrier and write the end timestamp.
-        write_lock.time_last_fd.fcntl(F_BARRIERFSYNC);
+        // Finally, update time_last.
         write_lock.time_last = time_data[write_points - 1];
         write_lock.time_last_fd.lseek(0,SEEK_SET);
         write_lock.time_last_fd.write_all(&write_lock.time_last,
@@ -476,5 +479,6 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     }
 
     // Fully synchronize everything.
+    // TODO: Check if battery is above 25% and just do a barrier instead?
     write_lock.time_last_fd.fcntl(F_FULLFSYNC);
 }
