@@ -1,6 +1,8 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
-#include "tsdb.h"
+#include "delete.h"
+#include "measurement.h"
+#include "series.h"
 #include <algorithm>
 
 void

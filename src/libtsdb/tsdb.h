@@ -10,6 +10,7 @@
 #include "select_op.h"
 #include "count.h"
 #include "write.h"
+#include "delete.h"
 
 // Constants defining how the database is stored in disk.
 #define CHUNK_FILE_SIZE     (2*1024*1024)
@@ -18,10 +19,6 @@
 
 namespace tsdb
 {
-    // Deletes points from the series, up to and including timestamp t.
-    void delete_points(const measurement& m, const futil::path& series,
-                       uint64_t t);
-
     // Creates a new TSDB instance rooted at the current working directory.
     void init();
 }
