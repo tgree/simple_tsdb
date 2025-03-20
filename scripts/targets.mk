@@ -5,7 +5,7 @@
 # 	$(1) - the name of the target
 define define_target_rule
 -include $$($(1).OBJ:%.o=%.d)
-$$(BIN_DIR)/$(1).map $$(BIN_DIR)/$(1): $$($(1).LIB) $$($(1).OBJ) $$($(1).MK) \
+$$(BIN_DIR)/$(1).map $$(BIN_DIR)/$(1): $$($(1).LIB:%.a=$$(LIB_DIR)/%.a) $$($(1).OBJ) $$($(1).MK) \
 				       scripts/targets.mk
 	@echo Linking $$@...
 	@mkdir -p $$(BIN_DIR)
