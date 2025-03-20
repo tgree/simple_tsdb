@@ -4,6 +4,7 @@
 #define __SRC_LIBTSDB_TSDB_H
 
 #include "exception.h"
+#include "database.h"
 #include <futil/futil.h>
 #include <hdr/fixed_vector.h>
 #include <hdr/kmath.h>
@@ -55,19 +56,6 @@ namespace tsdb
         char        name[124];
     };
     KASSERT(sizeof(schema_entry) == 128);
-
-    struct database
-    {
-        futil::directory    dir;
-
-        // Lists all the measurements in the database.
-        std::vector<std::string> list_measurements() const
-        {
-            return dir.listdirs();
-        }
-
-        database(const futil::path& path);
-    };
 
     struct measurement
     {
@@ -324,13 +312,6 @@ namespace tsdb
     // Creates a new measurement in the specified database.
     void create_measurement(const database& db, const futil::path& name,
                             const std::vector<schema_entry>& fields);
-
-    // Creates a new database in the TSDB instance rooted at the current working
-    // directory.
-    void create_database(const char* name);
-
-    // Returns a list of all databases.
-    std::vector<std::string> list_databases();
 
     // Creates a new TSDB instance rooted at the current working directory.
     void init();

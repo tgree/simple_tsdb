@@ -1,6 +1,7 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
-#include "tsdb.h"
+#include "database.h"
+#include "exception.h"
 
 tsdb::database::database(const futil::path& path) try:
     dir(futil::path("databases",path))
