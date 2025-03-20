@@ -9,12 +9,6 @@ tsdb::list_series(const measurement& m)
 }
 
 std::vector<std::string>
-tsdb::list_measurements(const database& db)
-{
-    return db.dir.listdirs();
-}
-
-std::vector<std::string>
 tsdb::list_databases()
 {
     return futil::directory("databases").listdirs();

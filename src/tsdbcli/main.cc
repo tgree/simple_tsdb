@@ -835,7 +835,7 @@ handle_list_measurements(const std::vector<std::string>& v)
     //
     //  list measurements from pt-1
     tsdb::database db(v[3]);
-    auto ms = tsdb::list_measurements(db);
+    auto ms = db.list_measurements();
     for (const auto& s : ms)
         printf("%s\n",s.c_str());
 }
