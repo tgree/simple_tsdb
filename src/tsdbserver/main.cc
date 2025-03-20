@@ -283,7 +283,7 @@ handle_list_measurements(tcp::socket4& s,
     std::string db_name(tokens[0].data,tokens[0].len);
     printf("LIST MEASUREMENTS FROM %s\n",db_name.c_str());
     auto db = tsdb::database(db_name);
-    auto ms = tsdb::list_measurements(db);
+    auto ms = db.list_measurements();
     for (const auto& m_name : ms)
     {
         uint32_t dt  = DT_MEASUREMENT;

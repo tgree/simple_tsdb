@@ -367,6 +367,12 @@ namespace tsdb
     {
         futil::directory    dir;
 
+        // Lists all the measurements in the database.
+        std::vector<std::string> list_measurements() const
+        {
+            return dir.listdirs();
+        }
+
         database(const futil::path& path);
     };
 
@@ -623,9 +629,6 @@ namespace tsdb
     // Creates a new measurement in the specified database.
     void create_measurement(const database& db, const futil::path& name,
                             const std::vector<schema_entry>& fields);
-
-    // Lists all the measurements in the specified database.
-    std::vector<std::string> list_measurements(const database& db);
 
     // Creates a new database in the TSDB instance rooted at the current working
     // directory.
