@@ -567,13 +567,6 @@ handle_mean_from_series(const std::vector<std::string>& cmd)
         }
         --t1;
     }
-    t0 = round_up_to_nearest_multiple(t0,dt);
-    t1 = round_down_to_nearest_multiple(t1,dt);
-    if (t0 >= t1)
-    {
-        printf("Empty time range.\n");
-        return;
-    }
 
     std::vector<std::string> fields;
     if (cmd[1] != "*")
@@ -583,114 +576,28 @@ handle_mean_from_series(const std::vector<std::string>& cmd)
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
-    tsdb::select_op_first op(read_lock,components[2],fields,t0,t1,-1);
-
-    if (!op.npoints)
-    {
-        printf("No points in time range.\n");
-        return;
-    }
+    tsdb::sum_op op(read_lock,components[2],fields,t0,t1,dt);
 
     printf("%20s ","time_ns");
-    for (const auto& f : op.fields)
+    for (const auto& f : op.op.fields)
         printf("%20s ",f.name);
     printf("\n");
-    for (size_t i=0; i<op.fields.size() + 1; ++i)
+    for (size_t i=0; i<op.op.fields.size() + 1; ++i)
         printf("-------------------- ");
     printf("\n");
 
-    size_t nranges = (t1 - t0) / dt;
-    uint64_t range_t0 = t0;
-    uint64_t range_t1 = t0 + dt - 1;
-    size_t op_index = 0;
-    std::vector<double> sums;
-    std::vector<uint64_t> nmeasurements;
-    for (size_t i=0; i<nranges; ++i)
+    while (op.next())
     {
-        // Zero the sums.
-        sums.clear();
-        sums.resize(op.fields.size());
-        nmeasurements.clear();
-        nmeasurements.resize(op.fields.size());
-
-        // Compute this range.
-        for (;;)
+        printf("%20llu ",op.range_t0);
+        for (size_t j=0; j<op.op.fields.size(); ++j)
         {
-            // Advance the op if needed.
-            if (op_index == op.npoints)
-            {
-                if (op.is_last)
-                    break;
-                op.advance();
-                op_index = 0;
-            }
-
-            // If we haven't reached the start of this range, break.
-            if (range_t0 > op.timestamp_data[op_index])
-                break;
-
-            // If we have gone past the end of this range, break.
-            if (range_t1 < op.timestamp_data[op_index])
-                break;
-
-            // Average points.
-            for (size_t j=0; j<op.fields.size(); ++j)
-            {
-                if (op.is_field_null(j,op_index))
-                    continue;
-
-                switch (op.fields[j].type)
-                {
-                    case tsdb::FT_BOOL:
-                        sums[j] += ((uint8_t*)op.field_data[j])[op_index];
-                    break;
-
-                    case tsdb::FT_U32:
-                        sums[j] += ((uint32_t*)op.field_data[j])[op_index];
-                    break;
-
-                    case tsdb::FT_U64:
-                        sums[j] += ((uint64_t*)op.field_data[j])[op_index];
-                    break;
-
-                    case tsdb::FT_F32:
-                        sums[j] += ((float*)op.field_data[j])[op_index];
-                    break;
-
-                    case tsdb::FT_F64:
-                        sums[j] += ((double*)op.field_data[j])[op_index];
-                    break;
-
-                    case tsdb::FT_I32:
-                        sums[j] += ((int32_t*)op.field_data[j])[op_index];
-                    break;
-
-                    case tsdb::FT_I64:
-                        sums[j] += ((int64_t*)op.field_data[j])[op_index];
-                    break;
-                }
-                ++nmeasurements[j];
-            }
-
-            ++op_index;
-        }
-
-        printf("%20llu ",range_t0);
-        for (size_t j=0; j<op.fields.size(); ++j)
-        {
-            if (nmeasurements[j] > 0)
-                printf("%20f ",sums[j]/nmeasurements[j]);
+            if (op.npoints[j] > 0)
+                printf("%20f ",op.sums[j]/op.npoints[j]);
             else
                 printf("%20s ","-");
         }
         printf("\n");
-
-        range_t0 += dt;
-        range_t1 += dt;
     }
-
-    if (!op.is_last || op_index != op.npoints)
-        printf("Extra points\n");
 }
 
 static void
