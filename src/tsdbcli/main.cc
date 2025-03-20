@@ -734,7 +734,7 @@ handle_list_series(const std::vector<std::string>& v)
     auto components = futil::path(v[3]).decompose();
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
-    auto ss = tsdb::list_series(m);
+    auto ss = m.list_series();
     for (const auto& s : ss)
         printf("%s\n",s.c_str());
 }

@@ -303,7 +303,7 @@ handle_list_series(tcp::socket4& s,
     printf("LIST SERIES FROM %s/%s\n",db_name.c_str(),m_name.c_str());
     auto db = tsdb::database(db_name);
     auto m = tsdb::measurement(db,m_name);
-    auto ss = tsdb::list_series(m);
+    auto ss = m.list_series();
     for (const auto& s_name : ss)
     {
         uint32_t dt  = DT_SERIES;

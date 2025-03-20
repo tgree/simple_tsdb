@@ -383,6 +383,11 @@ namespace tsdb
         futil::mapping                  schema_mapping;
         std::span<const schema_entry>   fields;
 
+        std::vector<std::string> list_series() const
+        {
+            return dir.listdirs();
+        }
+
         measurement(const database& db, const futil::path& path);
     };
 
@@ -622,9 +627,6 @@ namespace tsdb
     //      Total: 360 bytes
     void write_series(series_write_lock& write_lock, size_t npoints,
                       size_t bitmap_offset, size_t data_len, const void* data);
-
-    // Lists all the series in the specified measurement.
-    std::vector<std::string> list_series(const measurement& m);
 
     // Creates a new measurement in the specified database.
     void create_measurement(const database& db, const futil::path& name,
