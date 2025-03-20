@@ -1,5 +1,6 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
+#include "count.h"
 #include "tsdb.h"
 #include <algorithm>
 

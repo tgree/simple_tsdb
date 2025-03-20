@@ -8,6 +8,7 @@
 #include "measurement.h"
 #include "series.h"
 #include "select_op.h"
+#include "count.h"
 
 // Constants defining how the database is stored in disk.
 #define CHUNK_FILE_SIZE     (2*1024*1024)
@@ -16,10 +17,6 @@
 
 namespace tsdb
 {
-    // Counts the number of points between t0 and t1, inclusive.
-    size_t count_points(const series_read_lock& read_lock, uint64_t t0,
-                        uint64_t t1);
-
     // Deletes points from the series, up to and including timestamp t.
     void delete_points(const measurement& m, const futil::path& series,
                        uint64_t t);
