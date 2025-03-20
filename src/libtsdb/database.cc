@@ -22,3 +22,9 @@ catch (const futil::errno_exception& e)
 {
     throw tsdb::create_database_io_error_exception(e.errnov);
 }
+
+std::vector<std::string>
+tsdb::list_databases()
+{
+    return futil::directory("databases").listdirs();
+}

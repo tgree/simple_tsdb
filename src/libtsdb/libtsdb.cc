@@ -2,12 +2,6 @@
 // All rights reserved.
 #include "tsdb.h"
 
-std::vector<std::string>
-tsdb::list_databases()
-{
-    return futil::directory("databases").listdirs();
-}
-
 void
 tsdb::init() try
 {
