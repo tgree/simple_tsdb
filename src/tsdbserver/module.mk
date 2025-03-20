@@ -3,8 +3,7 @@
 SUBMODULES :=
 
 tsdbserver.MK  := $(MODULE_MK)
-tsdbserver.LIB :=
+tsdbserver.LIB := libtsdb.a
 tsdbserver.OBJ := \
 	$(MODULE_BUILD_DIR)/main.o \
-	$(BUILD_O_DIR)/floor/kassert.o \
-	$(BUILD_O_DIR)/libtsdb/libtsdb.o
+	$(BUILD_O_DIR)/floor/kassert.o
