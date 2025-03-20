@@ -1,6 +1,8 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
-#include "tsdb.h"
+#include "measurement.h"
+#include "database.h"
+#include "exception.h"
 
 tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     dir(db.dir,path),

@@ -5,6 +5,7 @@
 
 #include "exception.h"
 #include "database.h"
+#include "measurement.h"
 #include <futil/futil.h>
 #include <hdr/fixed_vector.h>
 #include <hdr/kmath.h>
@@ -18,60 +19,6 @@
 
 namespace tsdb
 {
-    enum field_type : uint8_t
-    {
-        FT_BOOL = 1,
-        FT_U32  = 2,
-        FT_U64  = 3,
-        FT_F32  = 4,
-        FT_F64  = 5,
-        FT_I32  = 6,
-        FT_I64  = 7,
-    };
-#define LAST_FIELD_TYPE     7
-
-    struct field_type_info
-    {
-        field_type  type;
-        uint8_t     nbytes;
-        char        name[5];
-    };
-
-    constexpr const field_type_info ftinfos[] =
-    {
-        [0]             = {(field_type)0,0,""},
-        [tsdb::FT_BOOL] = {tsdb::FT_BOOL,1,"bool"},
-        [tsdb::FT_U32]  = {tsdb::FT_U32,4,"u32"},
-        [tsdb::FT_U64]  = {tsdb::FT_U64,8,"u64"},
-        [tsdb::FT_F32]  = {tsdb::FT_F32,4,"f32"},
-        [tsdb::FT_F64]  = {tsdb::FT_F64,8,"f64"},
-        [tsdb::FT_I32]  = {tsdb::FT_I32,4,"i32"},
-        [tsdb::FT_I64]  = {tsdb::FT_I64,8,"i64"},
-    };
-
-    struct schema_entry
-    {
-        field_type  type;
-        uint8_t     rsrv[3];
-        char        name[124];
-    };
-    KASSERT(sizeof(schema_entry) == 128);
-
-    struct measurement
-    {
-        futil::directory                dir;
-        futil::file                     schema_fd;
-        futil::mapping                  schema_mapping;
-        std::span<const schema_entry>   fields;
-
-        std::vector<std::string> list_series() const
-        {
-            return dir.listdirs();
-        }
-
-        measurement(const database& db, const futil::path& path);
-    };
-
     struct index_entry
     {
         uint64_t    time_ns;
@@ -308,10 +255,6 @@ namespace tsdb
     //      Total: 360 bytes
     void write_series(series_write_lock& write_lock, size_t npoints,
                       size_t bitmap_offset, size_t data_len, const void* data);
-
-    // Creates a new measurement in the specified database.
-    void create_measurement(const database& db, const futil::path& name,
-                            const std::vector<schema_entry>& fields);
 
     // Creates a new TSDB instance rooted at the current working directory.
     void init();
