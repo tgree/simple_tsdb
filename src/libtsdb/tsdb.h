@@ -11,6 +11,7 @@
 #include "count.h"
 #include "write.h"
 #include "delete.h"
+#include "sum_op.h"
 
 // Constants defining how the database is stored in disk.
 #define CHUNK_FILE_SIZE     (2*1024*1024)
