@@ -8,10 +8,10 @@
 # each included object file.  I.e. "floor.o".
 define define_lib
 -include $$($(1).OBJ:.o=.d)
-$$(LIB_DIR)/$(1).a: $(1).OBJ $$(MODULE_MK)
+$$(LIB_DIR)/$(1).a: $$($(1).OBJ) $$(MODULE_MK)
 	@echo Archiving $$@...
 	@mkdir -p $$(LIB_DIR)
-	$$(GCC_AR) $$(ARFLAGS) $$@ $(1).OBJ
+	$$(GCC_AR) $$(ARFLAGS) $$@ $$($(1).OBJ)
 endef
 
 define define_standard_lib
