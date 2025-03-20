@@ -3,12 +3,6 @@
 #include "tsdb.h"
 
 std::vector<std::string>
-tsdb::list_series(const measurement& m)
-{
-    return m.dir.listdirs();
-}
-
-std::vector<std::string>
 tsdb::list_databases()
 {
     return futil::directory("databases").listdirs();
