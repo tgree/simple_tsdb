@@ -141,6 +141,7 @@ export function QueryEditor(props: EditorProps): ReactElement {
           onChange={(selectable) => OnChangeMeasurement(selectable, props)}
           isLoading={asyncMeasurementsState.loading}
           disabled={!!asyncMeasurementsState.error}
+          value={props.query.measurement}
         />
       </InlineField>
       <InlineField label="Series" labelWidth={16}>
@@ -148,7 +149,7 @@ export function QueryEditor(props: EditorProps): ReactElement {
           inputId="editor-series"
           options={asyncSeriesState.series}
           onChange={(selectable) => OnChangeSeries(selectable, props)}
-          disabled={true}
+          value={props.query.series}
         />
       </InlineField>
       <InlineField label="Field" labelWidth={16}>
@@ -156,7 +157,7 @@ export function QueryEditor(props: EditorProps): ReactElement {
           inputId="editor-fields"
           options={asyncFieldsState.fields}
           onChange={(selectable) => OnChangeField(selectable, props)}
-          disabled={true}
+          value={props.query.field}
         />
       </InlineField>
     </>
