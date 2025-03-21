@@ -34,7 +34,7 @@ export class BasicDataSource extends DataSourceWithBackend<BasicQuery, BasicData
   }
 
   getSeriesList(database: string, measurement: string): Promise<SeriesList> {
-    return this.getResource('/measurements?database=' + database + '&measurement=' + measurement);
+    return this.getResource('/series?database=' + database + '&measurement=' + measurement);
   }
 
   getFieldsList(database: string, measurement: string): Promise<FieldsList> {

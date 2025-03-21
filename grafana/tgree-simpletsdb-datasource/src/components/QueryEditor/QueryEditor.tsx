@@ -4,6 +4,7 @@ import { InlineField, Select } from '@grafana/ui';
 import type { SelectableValue } from '@grafana/data';
 import type { EditorProps } from './types';
 import type { BasicDataSource } from '../../datasource';
+import type { BasicQuery } from '../../types';
 
 type AsyncMeasurementsState = {
   loading: boolean;
@@ -11,7 +12,7 @@ type AsyncMeasurementsState = {
   error: Error | undefined;
 };
 
-export function useMeasurements(datasource: BasicDataSource): AsyncMeasurementsState {
+function useMeasurements(datasource: BasicDataSource): AsyncMeasurementsState {
   const result = useAsync(async () => {
     const { measurements } = await datasource.getMeasurementList(datasource.database);
 
@@ -39,14 +40,97 @@ function OnChangeMeasurement(selectable: SelectableValue<string>, props: EditorP
   });
 }
 
+type AsyncSeriesState = {
+  loading: boolean;
+  series: Array<SelectableValue<string>>;
+  error: Error | undefined;
+};
+
+function useSeries(datasource: BasicDataSource, query: BasicQuery): AsyncSeriesState {
+  const result = useAsync(async () => {
+    if (query.measurement == null) {
+      return [];
+    }
+
+    const { series } = await datasource.getSeriesList(datasource.database, query.measurement!);
+
+    return series.map((s) => ({
+      label: s,
+      value: s,
+    }));
+  }, [datasource, query]);
+
+  return {
+    loading: result.loading,
+    series: result.value ?? [],
+    error: result.error,
+  };
+}
+
 function OnChangeSeries(selectable: SelectableValue<string>, props: EditorProps) {
+  if (!selectable?.value) {
+    return;
+  }
+
+  props.onChange({
+    ...props.query,
+    series: selectable.value,
+  });
+}
+
+type AsyncFieldsState = {
+  loading: boolean;
+  fields: Array<SelectableValue<string>>;
+  error: Error | undefined;
+};
+
+function useField(datasource: BasicDataSource, query: BasicQuery): AsyncFieldsState {
+  const result = useAsync(async () => {
+    console.log("useField", datasource, query);
+    if (query.measurement == null) {
+      console.log("null measurement");
+      return [];
+    }
+
+    const { fields } = await datasource.getFieldsList(datasource.database, query.measurement!);
+    console.log("await fields", fields);
+
+    return fields.map((fields) => ({
+      label: fields,
+      value: fields,
+    }));
+  }, [datasource, query]);
+
+  return {
+    loading: result.loading,
+    fields: result.value ?? [],
+    error: result.error,
+  };
 }
 
 function OnChangeField(selectable: SelectableValue<string>, props: EditorProps) {
+  if (!selectable?.value) {
+    return;
+  }
+
+  props.onChange({
+    ...props.query,
+    field: selectable.value,
+  });
 }
 
 export function QueryEditor(props: EditorProps): ReactElement {
+  /*
+   * In case it isn't obvious, because it really wasn't obvious to me.  Every time the query
+   * changes (because we called props.onChange(), this function runs again and generates a
+   * whole new snipped of HTML which completely replaces whatever was being displayed before!
+   */
+  console.log("QueryEditor constructor!")
+  console.log(props.query)
+
   const asyncMeasurementsState = useMeasurements(props.datasource);
+  const asyncSeriesState = useSeries(props.datasource, props.query);
+  const asyncFieldsState = useField(props.datasource, props.query);
 
   return (
     <>
@@ -62,7 +146,7 @@ export function QueryEditor(props: EditorProps): ReactElement {
       <InlineField label="Series" labelWidth={16}>
         <Select
           inputId="editor-series"
-          options={[] as Array<SelectableValue<string>>}
+          options={asyncSeriesState.series}
           onChange={(selectable) => OnChangeSeries(selectable, props)}
           disabled={true}
         />
@@ -70,7 +154,7 @@ export function QueryEditor(props: EditorProps): ReactElement {
       <InlineField label="Field" labelWidth={16}>
         <Select
           inputId="editor-fields"
-          options={[] as Array<SelectableValue<string>>}
+          options={asyncFieldsState.fields}
           onChange={(selectable) => OnChangeField(selectable, props)}
           disabled={true}
         />
