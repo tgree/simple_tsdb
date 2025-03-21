@@ -86,14 +86,11 @@ type AsyncFieldsState = {
 
 function useField(datasource: BasicDataSource, query: BasicQuery): AsyncFieldsState {
   const result = useAsync(async () => {
-    console.log("useField", datasource, query);
     if (query.measurement == null) {
-      console.log("null measurement");
       return [];
     }
 
     const { fields } = await datasource.getFieldsList(datasource.database, query.measurement!);
-    console.log("await fields", fields);
 
     return fields.map((fields) => ({
       label: fields,
@@ -125,9 +122,6 @@ export function QueryEditor(props: EditorProps): ReactElement {
    * changes (because we called props.onChange(), this function runs again and generates a
    * whole new snipped of HTML which completely replaces whatever was being displayed before!
    */
-  console.log("QueryEditor constructor!")
-  console.log(props.query)
-
   const asyncMeasurementsState = useMeasurements(props.datasource);
   const asyncSeriesState = useSeries(props.datasource, props.query);
   const asyncFieldsState = useField(props.datasource, props.query);
