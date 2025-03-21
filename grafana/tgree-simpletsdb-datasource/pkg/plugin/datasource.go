@@ -195,7 +195,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			data.NewFrame(
 				"response",
 				data.NewField("time", nil, timestamps),
-				data.NewField(qm.Field, nil, value),
+				data.NewField(qm.Series + "." + qm.Field, nil, value),
 			),
 		},
 	}
