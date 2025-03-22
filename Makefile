@@ -36,10 +36,13 @@ TESTS_DIR    := $(BUILD_DIR)/unittests
 # Architecture flags.
 ARCH_FLAGS :=
 
+# -isysroot /usr/local/opt/llvm@16/Toolchains/LLVM16.0.6.xctoolchain \
+# -I/usr/local/opt/llvm@16/lib/clang/16/include \
+# -I/usr/local/opt/llvm@16/include
 # Target C++ flags.
 COMMON_CXXFLAGS := \
 	$(OPT_LEVEL) \
-	-std=gnu++23 \
+	-std=gnu++20 \
 	-ggdb \
 	-gstrict-dwarf \
 	-fno-math-errno \
@@ -50,6 +53,7 @@ COMMON_CXXFLAGS := \
 	-Werror \
 	-Wundef \
 	-Wno-invalid-offsetof \
+	-Wno-c99-designator \
 	-fno-use-cxa-atexit \
 	-ffunction-sections \
 	-fdata-sections \
@@ -60,7 +64,7 @@ COMMON_CXXFLAGS := \
 # Unittest C++ flags.
 TEST_CXXFLAGS := \
 	$(OPT_LEVEL) \
-	-std=gnu++23 \
+	-std=gnu++20 \
 	-Wall \
 	-Werror \
 	-Wno-invalid-offsetof \
@@ -111,7 +115,7 @@ clean:
 $(BUILD_O_DIR)/%.o: $(SRC_DIR)/%.cc Makefile | version headers
 	@echo Compiling object $(SRC_DIR)/$*.cc...
 	@mkdir -p $(dir $@)
-	@$(GCC_CXX) \
+	$(GCC_CXX) \
 		-MMD \
 		-MP \
 		-MF $(BUILD_O_DIR)/$*.d \
