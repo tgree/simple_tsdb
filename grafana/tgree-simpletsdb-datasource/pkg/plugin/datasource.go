@@ -172,7 +172,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 
 	// Pull chunks of data from the server and append them to our running data.
 	timestamps := []time.Time{}
-	value := schema.MakeArray(qm.Field)
+	ptrs := schema.MakePtrArray(qm.Field)
 	for {
 		rxc, err := op.ReadChunk()
 		if err != nil {
@@ -186,7 +186,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			timestamps = append(timestamps, time.Unix(0, int64(time_ns)))
 		}
 
-		value = rxc.AppendToArray(value)
+		ptrs = rxc.AppendToArray(ptrs)
 	}
 
 	// Return the response.
@@ -195,7 +195,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			data.NewFrame(
 				"response",
 				data.NewField("time", nil, timestamps),
-				data.NewField(qm.Series + "." + qm.Field, nil, value),
+				data.NewField(qm.Series + "." + qm.Field, nil, ptrs),
 			),
 		},
 	}
@@ -825,6 +825,34 @@ func (self *Schema) MakeArray(field string) interface{} {
 	}
 }
 
+func (self *Schema) MakePtrArray(field string) interface{} {
+	switch self.fields_map[field].field_type {
+	case FT_BOOL:
+		return []*uint8{}
+
+	case FT_U32:
+		return []*uint32{}
+
+	case FT_U64:
+		return []*uint64{}
+
+	case FT_F32:
+		return []*float32{}
+
+	case FT_F64:
+		return []*float64{}
+
+	case FT_I32:
+		return []*int32{}
+
+	case FT_I64:
+		return []*int64{}
+
+	default:
+		panic("Unknown field type!");
+	}
+}
+
 func (sf *SchemaField) String() string {
 	return fmt.Sprintf("<%v : %v>", sf.name, FT_MAP[sf.field_type])
 }
@@ -999,34 +1027,57 @@ func NewChunk(op *SelectOp, npoints uint32, bitmap_offset uint32, data []byte) (
 	}, nil
 }
 
-func (self *RXChunk) AppendToArray(arr interface{}) interface{} {
+func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 	p := unsafe.Pointer(&self.data[self.data_offset])
-	switch arr.(type) {
-	case []float64:
-		return append(arr.([]float64), unsafe.Slice((*float64)(p), self.npoints)...)
+	switch ptrs.(type) {
+	case []*float64:
+		vf64 := unsafe.Slice((*float64)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			ptrs = append(ptrs.([]*float64), &vf64[i])
+		}
 
-	case []float32:
-		return append(arr.([]float32), unsafe.Slice((*float32)(p), self.npoints)...)
+	case []*float32:
+		vf32 := unsafe.Slice((*float32)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			ptrs = append(ptrs.([]*float32), &vf32[i])
+		}
 
-	case []uint64:
-		return append(arr.([]uint64), unsafe.Slice((*uint64)(p), self.npoints)...)
+	case []*uint64:
+		vu64 := unsafe.Slice((*uint64)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			ptrs = append(ptrs.([]*uint64), &vu64[i])
+		}
 
-	case []uint32:
-		return append(arr.([]uint32), unsafe.Slice((*uint32)(p), self.npoints)...)
+	case []*uint32:
+		vu32 := unsafe.Slice((*uint32)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			ptrs = append(ptrs.([]*uint32), &vu32[i])
+		}
 
-	case []int64:
-		return append(arr.([]int64), unsafe.Slice((*int64)(p), self.npoints)...)
+	case []*int64:
+		vi64 := unsafe.Slice((*int64)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			ptrs = append(ptrs.([]*int64), &vi64[i])
+		}
 
-	case []int32:
-		return append(arr.([]int32), unsafe.Slice((*int32)(p), self.npoints)...)
+	case []*int32:
+		vi32 := unsafe.Slice((*int32)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			ptrs = append(ptrs.([]*int32), &vi32[i])
+		}
 
-	case []uint8:
-		return append(arr.([]uint8), unsafe.Slice((*uint8)(p), self.npoints)...)
+	case []*uint8:
+		vu8 := unsafe.Slice((*uint8)(p), self.npoints)
+		for i := uint32(0); i < self.npoints; i++ {
+			ptrs = append(ptrs.([]*uint8), &vu8[i])
+		}
 
 	default:
 		backend.Logger.Debug("Unknown field type!")
 		panic("Unknown field type!")
 	}
+
+	return ptrs
 }
 
 func (self *RXChunk) String() string {
