@@ -540,6 +540,17 @@ namespace futil
             }
         }
 
+        void fcntl_barrier()
+        {
+            //fcntl(F_BARRIERFSYNC);
+            fcntl(F_FULLFSYNC);
+        }
+
+        void fcntl_fullfsync()
+        {
+            fcntl(F_FULLFSYNC);
+        }
+
         void flock(int operation)
         {
             if (::flock(fd,operation) == -1)
