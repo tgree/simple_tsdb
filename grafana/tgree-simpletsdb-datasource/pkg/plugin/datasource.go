@@ -1027,49 +1027,83 @@ func NewChunk(op *SelectOp, npoints uint32, bitmap_offset uint32, data []byte) (
 	}, nil
 }
 
+func (self *RXChunk) IsNull(i uint32) bool {
+	bitmap_index := (self.bitmap_offset + i) / 64
+	shift := (self.bitmap_offset + i) % 64
+	return (self.bitmap[bitmap_index] & (1 << shift)) == 0
+}
+
 func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 	p := unsafe.Pointer(&self.data[self.data_offset])
 	switch ptrs.(type) {
 	case []*float64:
 		vf64 := unsafe.Slice((*float64)(p), self.npoints)
 		for i := uint32(0); i < self.npoints; i++ {
-			ptrs = append(ptrs.([]*float64), &vf64[i])
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*float64), nil)
+			} else {
+				ptrs = append(ptrs.([]*float64), &vf64[i])
+			}
 		}
 
 	case []*float32:
 		vf32 := unsafe.Slice((*float32)(p), self.npoints)
 		for i := uint32(0); i < self.npoints; i++ {
-			ptrs = append(ptrs.([]*float32), &vf32[i])
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*float32), nil)
+			} else {
+				ptrs = append(ptrs.([]*float32), &vf32[i])
+			}
 		}
 
 	case []*uint64:
 		vu64 := unsafe.Slice((*uint64)(p), self.npoints)
 		for i := uint32(0); i < self.npoints; i++ {
-			ptrs = append(ptrs.([]*uint64), &vu64[i])
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*uint64), nil)
+			} else {
+				ptrs = append(ptrs.([]*uint64), &vu64[i])
+			}
 		}
 
 	case []*uint32:
 		vu32 := unsafe.Slice((*uint32)(p), self.npoints)
 		for i := uint32(0); i < self.npoints; i++ {
-			ptrs = append(ptrs.([]*uint32), &vu32[i])
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*uint32), nil)
+			} else {
+				ptrs = append(ptrs.([]*uint32), &vu32[i])
+			}
 		}
 
 	case []*int64:
 		vi64 := unsafe.Slice((*int64)(p), self.npoints)
 		for i := uint32(0); i < self.npoints; i++ {
-			ptrs = append(ptrs.([]*int64), &vi64[i])
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*int64), nil)
+			} else {
+				ptrs = append(ptrs.([]*int64), &vi64[i])
+			}
 		}
 
 	case []*int32:
 		vi32 := unsafe.Slice((*int32)(p), self.npoints)
 		for i := uint32(0); i < self.npoints; i++ {
-			ptrs = append(ptrs.([]*int32), &vi32[i])
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*int32), nil)
+			} else {
+				ptrs = append(ptrs.([]*int32), &vi32[i])
+			}
 		}
 
 	case []*uint8:
 		vu8 := unsafe.Slice((*uint8)(p), self.npoints)
 		for i := uint32(0); i < self.npoints; i++ {
-			ptrs = append(ptrs.([]*uint8), &vu8[i])
+			if self.IsNull(i) {
+				ptrs = append(ptrs.([]*uint8), nil)
+			} else {
+				ptrs = append(ptrs.([]*uint8), &vu8[i])
+			}
 		}
 
 	default:
