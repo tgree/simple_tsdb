@@ -4,6 +4,9 @@
 #include "tsdb.h"
 #include <algorithm>
 
+#define WITH_GZFILEOP
+#include <zlib-ng/zlib-ng.h>
+
 // TODO: This sets index_begin as the start of the index file.  Instead, it
 // should search for the first slot that could hold time_first since a delete
 // operation could have incremented time_first and then crashed before deleting
@@ -153,33 +156,71 @@ tsdb::select_op::_advance(bool is_first)
     npoints = MIN(npoints,rem_limit);
     rem_limit -= npoints;
 
-    // Map the data points.
+    // Map or decompress the data points.
     futil::directory fields_dir(read_lock.series_dir,"fields");
     for (size_t i=0; i<fields.size(); ++i)
     {
         const auto& f = fields[i];
-        // TODO: Decompression.  If an uncompressed version of the file exists,
-        // use that (it could indicate that we crashed during a compression
-        // operation so an compressed file should be ignored).  If no
-        // uncompressed version exists, a compressed version must exist and
-        // we should use that.
-        futil::path field_path(f.name,index_slot->timestamp_file);
-        futil::file field_fd(fields_dir,field_path,O_RDONLY);
         const auto* fti = &ftinfos[f.type];
         size_t len = (timestamp_fd_size/8)*fti->nbytes;
+
+        //  Try opening an uncompressed file first.  If one exists, we must use
+        //  it; any compressed file that exists could be the result of a
+        //  partial compression operation that then crashed before completing.
+        try
+        {
+            futil::file field_fd(fields_dir,
+                                 futil::path(f.name,index_slot->timestamp_file),
+                                 O_RDONLY);
+
+            if (is_first)
+            {
+                field_mappings.emplace_back((void*)NULL,len,PROT_READ,
+                                            MAP_SHARED,field_fd.fd,0);
+                field_data.emplace_back((const char*)field_mappings[i].addr +
+                                        start_index*fti->nbytes);
+            }
+            else
+            {
+                futil::mmap(field_mappings[i].addr,len,PROT_READ,
+                            MAP_SHARED | MAP_FIXED,field_fd.fd,0);
+                field_data[i] = field_mappings[i].addr;
+            }
+
+            continue;
+        }
+        catch (const futil::errno_exception& e)
+        {
+            if (e.errnov != ENOENT)
+                throw;
+        }
+
+        // No uncompressed file exists.  Try with a compressed file.  First,
+        // make an anonymous backing region to hold the uncompressed data.
         if (is_first)
         {
-            field_mappings.emplace_back((void*)NULL,len,PROT_READ,MAP_SHARED,
-                                        field_fd.fd,0);
-            field_data.emplace_back(
-                (const char*)field_mappings[i].addr + start_index*fti->nbytes);
+            field_mappings.emplace_back((void*)NULL,len,PROT_READ | PROT_WRITE,
+                                        MAP_ANONYMOUS | MAP_PRIVATE,-1,0);
+            field_data.emplace_back((const char*)field_mappings[i].addr +
+                                    start_index*fti->nbytes);
         }
         else
         {
-            futil::mmap(field_mappings[i].addr,len,PROT_READ,
-                        MAP_SHARED | MAP_FIXED,field_fd.fd,0);
+            futil::mmap(field_mappings[i].addr,len,PROT_READ | PROT_WRITE,
+                        MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,-1,0);
             field_data[i] = field_mappings[i].addr;
         }
+
+        // Now, try and open the file and unzip it into the backing region.
+        char gz_name[TIMESTAMP_FILE_NAME_LEN + 3];
+        strlcpy(gz_name,index_slot->timestamp_file,sizeof(gz_name));
+        strlcat(gz_name,".gz",sizeof(gz_name));
+        int field_fd = futil::openat(fields_dir,futil::path(f.name,gz_name),
+                                     O_RDONLY);
+        gzFile gzf = zng_gzdopen(field_fd,"rb");
+        int32_t zlen = zng_gzread(gzf,field_mappings[i].addr,len);
+        kassert(zlen == len);
+        zng_gzclose_r(gzf);
     }
 
     // Map the bitmap points.  Bitmap files are always fixed size.
