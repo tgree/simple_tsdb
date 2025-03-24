@@ -236,6 +236,17 @@ namespace futil
         }
     };
 
+    inline void fsync(int fd)
+    {
+        for (;;)
+        {
+            if (::fsync(fd) != -1)
+                return;
+            if (errno != EINTR)
+                throw futil::errno_exception(errno);
+        }
+    }
+
     struct file_descriptor
     {
         int fd;
@@ -273,6 +284,39 @@ namespace futil
                 if (errno != EINTR)
                     return;
             }
+        }
+
+        int fcntl(int cmd)
+        {
+            for (;;)
+            {
+                int val = ::fcntl(fd,cmd);
+                if (val != -1)
+                    return val;
+                if (errno != EINTR)
+                    throw futil::errno_exception(errno);
+            }
+        }
+
+        template<typename T>
+        int fcntl(int cmd, T arg)
+        {
+            for (;;)
+            {
+                int val = ::fcntl(fd,cmd,arg);
+                if (val != -1)
+                    return val;
+                if (errno != EINTR)
+                    throw futil::errno_exception(errno);
+            }
+        }
+
+        void fsync()
+        {
+            // Pushes dirty data out to the disk controller.  On macOS, this
+            // doesn't flush to the disk itself; the dirty data could sit in
+            // disk buffers.
+            futil::fsync(fd);
         }
 
         constexpr file_descriptor():fd(-1) {}
@@ -369,17 +413,6 @@ namespace futil
             }
         }
     };
-
-    inline void fsync(int fd)
-    {
-        for (;;)
-        {
-            if (::fsync(fd) != -1)
-                return;
-            if (errno != EINTR)
-                throw futil::errno_exception(errno);
-        }
-    }
 
     struct file : public file_descriptor
     {
@@ -510,36 +543,6 @@ namespace futil
                 off_t pos = ::lseek(fd,offset,whence);
                 if (pos != -1)
                     return pos;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
-        }
-
-        void fsync()
-        {
-            futil::fsync(fd);
-        }
-
-        int fcntl(int cmd)
-        {
-            for (;;)
-            {
-                int val = ::fcntl(fd,cmd);
-                if (val != -1)
-                    return val;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
-        }
-
-        template<typename T>
-        int fcntl(int cmd, T arg)
-        {
-            for (;;)
-            {
-                int val = ::fcntl(fd,cmd,arg);
-                if (val != -1)
-                    return val;
                 if (errno != EINTR)
                     throw futil::errno_exception(errno);
             }
