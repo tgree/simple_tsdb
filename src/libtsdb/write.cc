@@ -455,12 +455,12 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             bitmap_fds[i].fsync();
         }
 
-        // Update the timestamp file.
+        // Update the timestamp file and issue a barrier before updating
+        // time_last.
         tail_fd.write_all(time_data,write_points*sizeof(uint64_t));
-        tail_fd.fsync();
+        tail_fd.fcntl(F_BARRIERFSYNC);
 
-        // Issue a barrier and write the end timestamp.
-        write_lock.time_last_fd.fcntl(F_BARRIERFSYNC);
+        // Finally, update time_last.
         write_lock.time_last = time_data[write_points - 1];
         write_lock.time_last_fd.lseek(0,SEEK_SET);
         write_lock.time_last_fd.write_all(&write_lock.time_last,
