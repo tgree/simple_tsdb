@@ -14,7 +14,7 @@
 #include "sum_op.h"
 
 // Constants defining how the database is stored in disk.
-#define CHUNK_FILE_SIZE     (2*1024*1024)
+#define CHUNK_FILE_SIZE     (32*1024*1024)
 #define CHUNK_NPOINTS       (CHUNK_FILE_SIZE/8)
 #define BITMAP_FILE_SIZE    (CHUNK_NPOINTS/8)
 
