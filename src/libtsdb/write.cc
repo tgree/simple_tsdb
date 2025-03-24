@@ -191,10 +191,10 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     futil::directory fields_dir(write_lock.series_dir,"fields");
     futil::directory bitmaps_dir(write_lock.series_dir,"bitmaps");
     futil::file tail_fd;
-    std::vector<futil::path> field_file_paths;
-    std::vector<futil::file> field_fds(write_lock.m.fields.size());
-    std::vector<futil::path> bitmap_file_paths;
-    std::vector<futil::file> bitmap_fds(write_lock.m.fields.size());
+    fixed_vector<futil::path> field_file_paths(write_lock.m.fields.size());
+    fixed_vector<futil::file> field_fds(write_lock.m.fields.size());
+    fixed_vector<futil::path> bitmap_file_paths(write_lock.m.fields.size());
+    fixed_vector<futil::file> bitmap_fds(write_lock.m.fields.size());
     off_t index_len = index_fd.lseek(0,SEEK_END);
     size_t nindices = index_len / sizeof(index_entry);
     size_t avail_points = 0;
@@ -249,10 +249,12 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 // Open all of the field and bitmap files with the same name as
                 // the timestamp file.  They are guaranteed to exist and should
                 // not be compressed.
-                for (size_t j=0; j<field_fds.size(); ++j)
+                for (size_t j=0; j<write_lock.m.fields.size(); ++j)
                 {
-                    field_fds[j].open(fields_dir,field_file_paths[j],O_WRONLY);
-                    bitmap_fds[j].open(bitmaps_dir,bitmap_file_paths[j],O_RDWR);
+                    field_fds.emplace_back(fields_dir,field_file_paths[j],
+                                           O_WRONLY);
+                    bitmap_fds.emplace_back(bitmaps_dir,bitmap_file_paths[j],
+                                            O_RDWR);
                 }
                 avail_points = (CHUNK_FILE_SIZE - pos) / sizeof(uint64_t);
                 break;
@@ -375,20 +377,20 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             // populate the bitmap files with zeroes even though they don't
             // have any data yet.  This barely wastes any space and makes
             // bitmap accounting via mmap() much simpler.
-            field_file_paths.clear();
-            bitmap_file_paths.clear();
+            field_fds.clear();
+            bitmap_fds.clear();
             for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
-                field_file_paths.emplace_back(write_lock.m.fields[i].name,
-                                              time_data_str);
-                field_fds[i].open(fields_dir,field_file_paths[i],
-                                  O_CREAT | O_TRUNC | O_WRONLY,0660);
+                field_fds.emplace_back(fields_dir,
+                                       futil::path(write_lock.m.fields[i].name,
+                                                   time_data_str),
+                                       O_CREAT | O_TRUNC | O_WRONLY,0660);
                 field_fds[i].fsync();
 
-                bitmap_file_paths.emplace_back(write_lock.m.fields[i].name,
-                                               time_data_str);
-                bitmap_fds[i].open(bitmaps_dir,bitmap_file_paths[i],
-                                   O_CREAT | O_TRUNC | O_RDWR,0660);
+                bitmap_fds.emplace_back(bitmaps_dir,
+                                        futil::path(write_lock.m.fields[i].name,
+                                                    time_data_str),
+                                        O_CREAT | O_TRUNC | O_RDWR,0660);
                 bitmap_fds[i].truncate(CHUNK_NPOINTS/8);
                 bitmap_fds[i].fsync();
             }
