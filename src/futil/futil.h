@@ -158,18 +158,18 @@ namespace futil
             return futil::path(_path + "/" + rhs._path);
         }
 
-        constexpr path(const char* _path):
+        path(const char* _path):
             _path(_path)
         {
         }
 
-        constexpr path(const std::string& _path):
+        path(const std::string& _path):
             _path(_path)
         {
         }
 
         template<typename ...T>
-        constexpr path(const path& _path, T... tail):
+        path(const path& _path, T... tail):
             _path((_path + ... + tail))
         {
         }
@@ -349,7 +349,7 @@ namespace futil
         {
             for (;;)
             {
-                fd = ::open(p,O_DIRECTORY | O_SEARCH);
+                fd = ::open(p,O_DIRECTORY | O_RDONLY);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
@@ -361,7 +361,7 @@ namespace futil
         {
             for (;;)
             {
-                fd = ::openat(d.fd,p,O_DIRECTORY | O_SEARCH);
+                fd = ::openat(d.fd,p,O_DIRECTORY | O_RDONLY);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
@@ -543,6 +543,29 @@ namespace futil
                 if (errno != EINTR)
                     throw futil::errno_exception(errno);
             }
+        }
+
+        void fcntl_barrier_fsync()
+        {
+            // Try F_BARRIERFSYNC first.  This is not supported everywhere and
+            // may generate an error.  Instead of throwing an exception, we
+            // will eat the error and then fall through to an F_FULLSYNC
+            // attempt, which can throw as usual.
+            for (;;)
+            {
+                int val = ::fcntl(fd,F_BARRIERFSYNC);
+                if (val != -1)
+                    return;
+                if (errno != EINTR)
+                    break;
+            }
+
+            fcntl_full_fsync();
+        }
+
+        void fcntl_full_fsync()
+        {
+            fcntl(F_FULLFSYNC);
         }
 
         void flock(int operation)

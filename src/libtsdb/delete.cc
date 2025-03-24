@@ -72,7 +72,7 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     // Update time_first.
     time_first_fd.lseek(0,SEEK_SET);
     time_first_fd.write_all(&time_first,8);
-    time_first_fd.fcntl(F_BARRIERFSYNC);
+    time_first_fd.fcntl_barrier_fsync();
 
     // Delete all orphaned chunks.
     futil::directory fields_dir(series_dir,"fields");
@@ -97,7 +97,7 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
             (index_end - index_slot)*sizeof(index_entry));
     index_m.msync();
     index_fd.truncate((index_end - index_slot)*sizeof(index_entry));
-    index_fd.fcntl(F_BARRIERFSYNC);
+    index_fd.fcntl_barrier_fsync();
     printf("Deleted %zu slots from the start of the index file.\n",
            index_slot - index_begin);
 }

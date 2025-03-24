@@ -40,7 +40,7 @@ ARCH_FLAGS :=
 # Target C++ flags.
 COMMON_CXXFLAGS := \
 	$(OPT_LEVEL) \
-	-std=gnu++23 \
+	-std=gnu++20 \
 	-ggdb \
 	-gstrict-dwarf \
 	-fno-math-errno \
@@ -51,6 +51,7 @@ COMMON_CXXFLAGS := \
 	-Werror \
 	-Wundef \
 	-Wno-invalid-offsetof \
+	-Wno-c99-designator \
 	-fno-use-cxa-atexit \
 	-ffunction-sections \
 	-fdata-sections \
@@ -62,7 +63,7 @@ COMMON_CXXFLAGS := \
 # Unittest C++ flags.
 TEST_CXXFLAGS := \
 	$(OPT_LEVEL) \
-	-std=gnu++23 \
+	-std=gnu++20 \
 	-Wall \
 	-Werror \
 	-Wno-invalid-offsetof \
