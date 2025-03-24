@@ -585,6 +585,18 @@ namespace futil
         }
     };
 
+    struct file_write_watcher
+    {
+        const int fd;
+        const int kqueue_fd;
+
+        void wait_for_write() const;
+
+        file_write_watcher(int fd);
+        file_write_watcher(const file& f):file_write_watcher(f.fd) {}
+        ~file_write_watcher();
+    };
+
     inline void mkdir(const char* path, mode_t mode)
     {
         // mkdir() doesn't seem to return EINTR.
