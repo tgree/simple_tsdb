@@ -370,6 +370,17 @@ namespace futil
         }
     };
 
+    inline void fsync(int fd)
+    {
+        for (;;)
+        {
+            if (::fsync(fd) != -1)
+                return;
+            if (errno != EINTR)
+                throw futil::errno_exception(errno);
+        }
+    }
+
     struct file : public file_descriptor
     {
         void openat(int dir_fd, const path& p, int oflag)
@@ -506,13 +517,7 @@ namespace futil
 
         void fsync()
         {
-            for (;;)
-            {
-                if (::fsync(fd) != -1)
-                    return;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
+            futil::fsync(fd);
         }
 
         int fcntl(int cmd)
