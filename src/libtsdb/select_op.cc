@@ -158,6 +158,11 @@ tsdb::select_op::_advance(bool is_first)
     for (size_t i=0; i<fields.size(); ++i)
     {
         const auto& f = fields[i];
+        // TODO: Decompression.  If an uncompressed version of the file exists,
+        // use that (it could indicate that we crashed during a compression
+        // operation so an compressed file should be ignored).  If no
+        // uncompressed version exists, a compressed version must exist and
+        // we should use that.
         futil::path field_path(f.name,index_slot->timestamp_file);
         futil::file field_fd(fields_dir,field_path,O_RDONLY);
         const auto* fti = &ftinfos[f.type];
