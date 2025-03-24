@@ -694,6 +694,21 @@ namespace futil
         }
     }
 
+    inline int openat(const directory& d, const path& p, int oflag,
+                       mode_t mode)
+    {
+        if (!(oflag & O_CREAT))
+            throw inconsistent_file_params();
+        for (;;)
+        {
+            int fd = ::openat(d.fd,p,oflag,mode);
+            if (fd != -1)
+                return fd;
+            if (errno != EINTR)
+                throw errno_exception(errno);
+        }
+    }
+
     inline futil::path
     operator+(const std::string& lhs, const futil::path& rhs)
     {
