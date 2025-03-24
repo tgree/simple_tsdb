@@ -18,6 +18,7 @@ CT_GET_SCHEMA           = 0x87E5A959
 CT_LIST_DATABASES       = 0x29200D6D
 CT_LIST_MEASUREMENTS    = 0x0FEB1399
 CT_LIST_SERIES          = 0x7B8238D6
+CT_COUNT_POINTS         = 0x0E329B19
 CT_NOP                  = 0x22CF1296
 
 # Data tokens
@@ -36,6 +37,7 @@ DT_STATUS_CODE          = 0x8C8C07D9
 DT_FIELD_TYPE           = 0x7DB40C2A
 DT_FIELD_NAME           = 0x5C0D45C1
 DT_READY_FOR_CHUNK      = 0x6000531C
+DT_NPOINTS              = 0x5F469D08
 
 
 # Status codes.
@@ -314,6 +316,18 @@ class SelectOP:
         return RXChunk(self.schema, self.fields, npoints, bitmap_offset, data)
 
 
+class CountResult:
+    def __init__(self, time_first, time_last, npoints):
+        self.time_first = time_first
+        self.time_last  = time_last
+        self.npoints    = npoints
+
+    def __repr__(self):
+        return 'CountResult(%u, %u, %u)' % (self.time_first,
+                                            self.time_last,
+                                            self.npoints)
+
+
 class Client:
     def __init__(self, host='127.0.0.1', port=4000):
         self.addr = (host, port)
@@ -336,6 +350,9 @@ class Client:
 
     def _recv_u32(self):
         return struct.unpack('<I', self._recvall(4))[0]
+
+    def _recv_u64(self):
+        return struct.unpack('<Q', self._recvall(8))[0]
 
     def _recv_i32(self):
         return struct.unpack('<i', self._recvall(4))[0]
@@ -541,3 +558,41 @@ class Client:
                            N=0xFFFFFFFFFFFFFFFF):
         return SelectOP(self, CT_SELECT_POINTS_LAST, database, measurement,
                         series, schema, fields, t0, t1, N)
+
+    def count_points(self, database, measurement, series, t0=0,
+                     t1=0xFFFFFFFFFFFFFFFF):
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIQIQI' % (len(database),
+                                                      len(measurement),
+                                                      len(series)),
+                          CT_COUNT_POINTS,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          DT_END)
+        self._sendall(cmd)
+
+        dt = self._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self._recv_i32())
+
+        assert dt == DT_TIME_FIRST
+        time_first = self._recv_u64()
+
+        dt = self._recv_u32()
+        assert dt == DT_TIME_LAST
+        time_last = self._recv_u64()
+
+        dt = self._recv_u32()
+        assert dt == DT_NPOINTS
+        npoints = self._recv_u64()
+
+        dt = self._recv_u32()
+        assert dt == DT_STATUS_CODE
+        assert self._recv_i32() == 0
+
+        return CountResult(time_first, time_last, npoints)
