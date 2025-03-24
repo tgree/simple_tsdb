@@ -320,11 +320,18 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 pos = (const char*)iter - (const char*)iter_first + 8;
                 tail_fd.lseek(pos,SEEK_SET);
                 tail_fd.truncate(pos);
-                avail_points = (CHUNK_FILE_SIZE - pos) / sizeof(uint64_t);
 
-                // TODO: field_fds and bitmap_fds aren't open here?  They
-                // should be if avail_points > 0!
-                kabort();
+                // Open all of the field and bitmap files with the same name as
+                // the timestamp file.  They are guaranteed to exist and should
+                // not be compressed.
+                for (size_t j=0; j<write_lock.m.fields.size(); ++j)
+                {
+                    field_fds.emplace_back(fields_dir,field_file_paths[j],
+                                           O_WRONLY);
+                    bitmap_fds.emplace_back(bitmaps_dir,bitmap_file_paths[j],
+                                            O_RDWR);
+                }
+                avail_points = (CHUNK_FILE_SIZE - pos) / sizeof(uint64_t);
                 break;
             }
 
@@ -336,12 +343,6 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // Slow path - the index entry points to an empty file, or we
         // determined that it is entirely full of timestamp values that haven't
         // gone live yet.  Delete the file and remove the index entry.
-        //
-        // TODO: field_fds and bitmap_fds aren't even open here!
-        for (auto& fd : field_fds)
-            fd.close();
-        for (auto& fd : bitmap_fds)
-            fd.close();
         for (const auto& field_file_path : field_file_paths)
             futil::unlink_if_exists(fields_dir,field_file_path);
         for (const auto& bitmap_file_path : bitmap_file_paths)
