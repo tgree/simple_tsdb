@@ -3,7 +3,7 @@
 SUBMODULES :=
 
 tsdbcli.MK  := $(MODULE_MK)
-tsdbcli.LIB := libtsdb.a
+tsdbcli.LIB := libtsdb.a libfutil.a
 tsdbcli.OBJ := \
 	$(MODULE_BUILD_DIR)/main.o \
 	$(BUILD_O_DIR)/floor/kassert.o
