@@ -15,9 +15,10 @@ TARGETS := \
 OPT_LEVEL := -O2
 
 # Standard directories.
-SRC_DIR   := src
-BIN_DIR   := bin
-BUILD_DIR := build
+SRC_DIR     := src
+BIN_DIR     := bin
+BUILD_DIR   := build
+THIRD_PARTY := third_party
 
 # Root modules.
 MODULES := $(sort $(wildcard $(SRC_DIR)/*))
@@ -55,7 +56,8 @@ COMMON_CXXFLAGS := \
 	-fdata-sections \
 	-D_GNU_SOURCE \
 	-I$(SRC_DIR) \
-	-I$(INCLUDE_DIR)
+	-I$(INCLUDE_DIR) \
+	-I$(THIRD_PARTY)
 
 # Unittest C++ flags.
 TEST_CXXFLAGS := \
@@ -70,7 +72,8 @@ TEST_CXXFLAGS := \
 	-fdata-sections \
 	-DUNITTEST \
 	-I$(SRC_DIR) \
-	-I$(INCLUDE_DIR)
+	-I$(INCLUDE_DIR) \
+	-I$(THIRD_PARTY)
 
 # Flags for archive tool
 ARFLAGS = rc
@@ -123,6 +126,9 @@ $(BUILD_O_DIR)/%.o: $(SRC_DIR)/%.cc Makefile | version headers
 ifneq ($(MAKECMDGOALS),clean)
 # Defines for building libraries.
 -include scripts/libs.mk
+
+# Rules for third-party code.
+-include scripts/third_party.mk
 
 # Pull in all of the defined modules.
 -include scripts/modules.mk
