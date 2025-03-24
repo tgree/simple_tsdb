@@ -544,7 +544,12 @@ handle_count_from_series(const std::vector<std::string>& cmd)
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
-    printf("%zu\n",tsdb::count_points(read_lock,t0,t1));
+    auto cr = tsdb::count_points(read_lock,t0,t1);
+    printf("%20s %20s %20s\n","time_first","time_last","num_points");
+    printf("-------------------- "
+           "-------------------- "
+           "--------------------\n");
+    printf("%20llu %20llu %20zu\n",cr.time_first,cr.time_last,cr.npoints);
 }
 
 static void
