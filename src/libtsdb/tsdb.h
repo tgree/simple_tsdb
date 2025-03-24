@@ -13,6 +13,9 @@
 #include "delete.h"
 #include "sum_op.h"
 
+// Whether or not to enable compression.
+#define ENABLE_COMPRESSION  1
+
 // Constants defining how the database is stored in disk.
 #define CHUNK_FILE_SIZE     (32*1024*1024)
 #define CHUNK_NPOINTS       (CHUNK_FILE_SIZE/8)

@@ -367,13 +367,16 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     // field sizes.
     size_t rem_points = npoints;
     size_t src_bitmap_offset = bitmap_offset + n_overlap_points;
+#if ENABLE_COMPRESSION
     fixed_vector<futil::path> unlink_field_paths(write_lock.m.fields.size());
+#endif
     while (rem_points)
     {
         // If we have overflowed the timestamp file, or we have an empty index,
         // we need to grow into a new timestamp file.
         if (!avail_points)
         {
+#if ENABLE_COMPRESSION
             // If we have open file descriptors, then we are done with them and
             // they are now full.  Compress them.
             if (!field_fds.empty())
@@ -408,6 +411,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                     printf("Done.\n");
                 }
             }
+#endif
 
             // Figure out what to name the new files.
             std::string time_data_str = std::to_string(time_data[0]);
@@ -520,6 +524,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         write_lock.time_last_fd.lseek(0,SEEK_SET);
         write_lock.time_last_fd.write_all(&write_lock.time_last,
                                               sizeof(uint64_t));
+#if ENABLE_COMPRESSION
         if (!unlink_field_paths.empty())
         {
             write_lock.time_last_fd.fcntl(F_BARRIERFSYNC);
@@ -531,6 +536,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             // TODO: fsync() fields dir.
         }
         else
+#endif
             write_lock.time_last_fd.fsync();
 
         // Advance to the next set of points.
