@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"time"
 	"net"
+	"net/http"
 	"io"
 	"unsafe"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	//"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	//"github.com/tgree/simple-tsdb/pkg/models"
@@ -25,6 +27,10 @@ const (
 	CT_SELECT_POINTS_LAST   uint32 = 0x76CF2220
 	CT_DELETE_POINTS        uint32 = 0xD9082F2C
 	CT_GET_SCHEMA           uint32 = 0x87E5A959
+	CT_LIST_DATABASES       uint32 = 0x29200D6D
+	CT_LIST_MEASUREMENTS    uint32 = 0x0FEB1399
+	CT_LIST_SERIES          uint32 = 0x7B8238D6
+	CT_NOP                  uint32 = 0x22CF1296
 
 	DT_DATABASE             uint32 = 0x39385A4F   // <database>
 	DT_MEASUREMENT          uint32 = 0xDC1F48F3   // <measurement>
@@ -70,16 +76,25 @@ var (
 	_ backend.QueryDataHandler      = (*Datasource)(nil)
 	_ backend.CheckHealthHandler    = (*Datasource)(nil)
 	_ instancemgmt.InstanceDisposer = (*Datasource)(nil)
+	_ backend.CallResourceHandler   = (*Datasource)(nil)
 )
 
 // NewDatasource creates a new datasource instance.
 func NewDatasource(ctx context.Context, _ backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	return &Datasource{}, nil
+	d := &Datasource{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/databases", d.handleDatabases)
+	mux.HandleFunc("/measurements", d.handleMeasurements)
+	mux.HandleFunc("/series", d.handleSeries)
+	d.resourceHandler = httpadapter.New(mux)
+	return d, nil
 }
 
 // Datasource is an example datasource which can respond to data queries, reports
 // its health and has streaming skills.
-type Datasource struct{}
+type Datasource struct {
+	resourceHandler		backend.CallResourceHandler
+}
 
 // Dispose here tells plugin SDK that plugin wants to clean up resources when a new instance
 // created. As soon as datasource settings change detected by SDK old datasource instance will
@@ -207,10 +222,147 @@ func (d *Datasource) CheckHealth(_ context.Context, req *backend.CheckHealthRequ
 	}
 	*/
 
+	// Open a connection to the TSDB server.
+	tc, err := NewTSDBClient()
+	if err != nil {
+		return &backend.CheckHealthResult{
+			Status:  backend.HealthStatusError,
+			Message: "Unable to connect to TSDB server",
+		}, nil
+	}
+	defer tc.Close()
+
+	// Issue a NOP command.
+	err = tc.NOP()
+	if err != nil {
+		return &backend.CheckHealthResult{
+			Status:  backend.HealthStatusError,
+			Message: "TSDB server didn't handle NOP command",
+		}, nil
+	}
+
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
 		Message: "Data source is working",
 	}, nil
+}
+
+func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	return d.resourceHandler.CallResource(ctx, req, sender)
+}
+
+type databasesResponse struct {
+	Databases	[]string	`json:"databases"`
+}
+
+func (d *Datasource) handleDatabases(rw http.ResponseWriter, req *http.Request) {
+	tc, err := NewTSDBClient()
+	if err != nil {
+		return
+	}
+	defer tc.Close()
+
+	rsp := databasesResponse{}
+	rsp.Databases, err = tc.ListDatabases()
+	if err != nil {
+		panic("Error listing databases!")
+		return
+	}
+	backend.Logger.Debug("Databases", "databases", rsp.Databases)
+
+	bytes, err := json.Marshal(rsp)
+	if err != nil {
+		panic("Error marshalling response!")
+		return
+	}
+
+	rw.Header().Add("Content-Type", "application/json")
+	_, err = rw.Write(bytes)
+	if err != nil {
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
+}
+
+type measurementsResponse struct {
+	Measurements	[]string	`json:"measurements"`
+}
+
+func (d *Datasource) handleMeasurements(rw http.ResponseWriter, req *http.Request) {
+	tc, err := NewTSDBClient()
+	if err != nil {
+		return
+	}
+	defer tc.Close()
+
+	database := req.URL.Query().Get("database")
+	if database == "" {
+		return
+	}
+
+	rsp := measurementsResponse{}
+	rsp.Measurements, err = tc.ListMeasurements(database)
+	if err != nil {
+		panic("Error listing measurements!")
+		return
+	}
+	backend.Logger.Debug("Measurements", "measurements", rsp.Measurements)
+
+	bytes, err := json.Marshal(rsp)
+	if err != nil {
+		panic("Error marshalling response!")
+		return
+	}
+
+	rw.Header().Add("Content-Type", "application/json")
+	_, err = rw.Write(bytes)
+	if err != nil {
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
+}
+
+type seriesResponse struct {
+	Series		[]string	`json:"series"`
+}
+
+func (d *Datasource) handleSeries(rw http.ResponseWriter, req *http.Request) {
+	tc, err := NewTSDBClient()
+	if err != nil {
+		return
+	}
+	defer tc.Close()
+
+	database := req.URL.Query().Get("database")
+	if database == "" {
+		return
+	}
+
+	measurement := req.URL.Query().Get("measurement")
+	if measurement == "" {
+		return
+	}
+
+	rsp := seriesResponse{}
+	rsp.Series, err = tc.ListSeries(database, measurement)
+	if err != nil {
+		panic("Error listing series!")
+		return
+	}
+	backend.Logger.Debug("Series", "series", rsp.Series)
+
+	bytes, err := json.Marshal(rsp)
+	if err != nil {
+		panic("Error marshalling response!")
+		return
+	}
+
+	rw.Header().Add("Content-Type", "application/json")
+	_, err = rw.Write(bytes)
+	if err != nil {
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
 }
 
 type TSDBClient struct {
@@ -324,6 +476,192 @@ func (self *TSDBClient) ReadString(size uint16) (string, error) {
 		panic("Unexpected read length!")
 	}
 	return string(buf), nil
+}
+
+func (self *TSDBClient) NOP() error {
+	err := self.WriteU32(CT_NOP)
+	if err != nil {
+		return err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return err
+	}
+
+	dt, err := self.ReadU32()
+	if err != nil {
+		return err
+	}
+	if dt != DT_STATUS_CODE {
+		panic("Expected DT_STATUS_CODE.")
+	}
+	sc, err := self.ReadI32()
+	if err != nil {
+		return err
+	}
+	if sc != 0 {
+		backend.Logger.Debug("Status", "status", sc)
+		panic("Unexpected NOP status")
+	}
+
+	return nil
+}
+
+func (self *TSDBClient) ListDatabases() ([]string, error) {
+	err := self.WriteU32(CT_LIST_DATABASES)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	databases := []string{}
+	for {
+		dt, err := self.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt == DT_STATUS_CODE {
+			sc, err := self.ReadI32()
+			if err != nil {
+				return nil, err
+			}
+			if sc != 0 {
+				backend.Logger.Debug("Status", "status", sc)
+				panic("Unexpected status")
+			}
+
+			return databases, nil
+		}
+
+		if dt != DT_DATABASE {
+			panic("Expected DT_DATABASE")
+		}
+		size, err := self.ReadU16()
+		if err != nil {
+			return nil, err
+		}
+		name, err := self.ReadString(size)
+		if err != nil {
+			return nil, err
+		}
+
+		backend.Logger.Debug("Got Database", "database", name)
+		databases = append(databases, name)
+	}
+}
+
+func (self *TSDBClient) ListMeasurements(database string) ([]string, error) {
+	err := self.WriteU32(CT_LIST_MEASUREMENTS)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	measurements := []string{}
+	for {
+		dt, err := self.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt == DT_STATUS_CODE {
+			sc, err := self.ReadI32()
+			if err != nil {
+				return nil, err
+			}
+			if sc != 0 {
+				backend.Logger.Debug("Status", "status", sc)
+				panic("Unexpected status")
+			}
+
+			return measurements, nil
+		}
+
+		if dt != DT_MEASUREMENT {
+			panic("Expected DT_MEASUREMENT")
+		}
+		size, err := self.ReadU16()
+		if err != nil {
+			return nil, err
+		}
+		name, err := self.ReadString(size)
+		if err != nil {
+			return nil, err
+		}
+
+		backend.Logger.Debug("Got Measurement", "measurement", name)
+		measurements = append(measurements, name)
+	}
+}
+
+func (self *TSDBClient) ListSeries(database string, measurement string) ([]string, error) {
+	err := self.WriteU32(CT_LIST_SERIES)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	series := []string{}
+	for {
+		dt, err := self.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt == DT_STATUS_CODE {
+			sc, err := self.ReadI32()
+			if err != nil {
+				return nil, err
+			}
+			if sc != 0 {
+				backend.Logger.Debug("Status", "status", sc)
+				panic("Unexpected status")
+			}
+
+			return series, nil
+		}
+
+		if dt != DT_SERIES {
+			panic("Expected DT_SERIES")
+		}
+		size, err := self.ReadU16()
+		if err != nil {
+			return nil, err
+		}
+		name, err := self.ReadString(size)
+		if err != nil {
+			return nil, err
+		}
+
+		backend.Logger.Debug("Got Series", "series", name)
+		series = append(series, name)
+	}
 }
 
 func (self *TSDBClient) GetSchema(database string, measurement string) (*Schema, error) {

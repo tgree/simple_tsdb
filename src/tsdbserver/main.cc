@@ -2,6 +2,7 @@
 // All rights reserved.
 #include <version.h>
 #include <hdr/kmath.h>
+#include <hdr/auto_buf.h>
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <libtsdb/tsdb.h>
@@ -21,6 +22,10 @@ enum command_token : uint32_t
     CT_SELECT_POINTS_LAST   = 0x76CF2220,
     CT_DELETE_POINTS        = 0xD9082F2C,
     CT_GET_SCHEMA           = 0x87E5A959,
+    CT_LIST_DATABASES       = 0x29200D6D,
+    CT_LIST_MEASUREMENTS    = 0x0FEB1399,
+    CT_LIST_SERIES          = 0x7B8238D6,
+    CT_NOP                  = 0x22CF1296,
 };
 
 enum data_token : uint32_t
@@ -63,27 +68,6 @@ struct chunk_header
     uint8_t     data[];
 };
 
-struct auto_buf
-{
-    void* const data;
-
-    operator void*() const
-    {
-        return data;
-    }
-
-    auto_buf(size_t len):
-        data(malloc(len))
-    {
-        if (!data)
-            throw futil::errno_exception(ENOMEM);
-    }
-    ~auto_buf()
-    {
-        free(data);
-    }
-};
-
 struct command_syntax
 {
     void (* const handler)(tcp::socket4& s,
@@ -94,7 +78,13 @@ struct command_syntax
 
 static void handle_create_database(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+static void handle_list_databases(
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_create_measurement(
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+static void handle_list_measurements(
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+static void handle_list_series(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_get_schema(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
@@ -106,6 +96,8 @@ static void handle_select_points_limit(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_last(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+static void handle_nop(
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 
 static const command_syntax commands[] =
 {
@@ -115,6 +107,11 @@ static const command_syntax commands[] =
         {DT_DATABASE, DT_END},
     },
     {
+        handle_list_databases,
+        CT_LIST_DATABASES,
+        {DT_END},
+    },
+    {
         handle_create_measurement,
         CT_CREATE_MEASUREMENT,
         {DT_DATABASE, DT_MEASUREMENT, DT_TYPED_FIELDS, DT_END},
@@ -122,6 +119,16 @@ static const command_syntax commands[] =
     {
         handle_get_schema,
         CT_GET_SCHEMA,
+        {DT_DATABASE, DT_MEASUREMENT, DT_END},
+    },
+    {
+        handle_list_measurements,
+        CT_LIST_MEASUREMENTS,
+        {DT_DATABASE, DT_END},
+    },
+    {
+        handle_list_series,
+        CT_LIST_SERIES,
         {DT_DATABASE, DT_MEASUREMENT, DT_END},
     },
     {
@@ -146,6 +153,11 @@ static const command_syntax commands[] =
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
          DT_TIME_LAST, DT_NLAST, DT_END},
     },
+    {
+        handle_nop,
+        CT_NOP,
+        {DT_END},
+    },
 };
 
 static const uint8_t pad_bytes[8] = {};
@@ -158,6 +170,22 @@ handle_create_database(tcp::socket4& s,
     std::string database(tokens[0].data,tokens[0].len);
     printf("CREATE DATABASE %s\n",database.c_str());
     tsdb::create_database(database.c_str());
+}
+
+static void
+handle_list_databases(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
+{
+    auto dbs = tsdb::list_databases();
+    printf("LIST DATABASES\n");
+    for (const auto& d_name : dbs)
+    {
+        uint32_t dt  = DT_DATABASE;
+        uint16_t len = d_name.size();
+        s.send_all(&dt,sizeof(dt));
+        s.send_all(&len,sizeof(len));
+        s.send_all(d_name.c_str(),len);
+    }
 }
 
 static void
@@ -225,6 +253,44 @@ handle_get_schema(tcp::socket4& s,
         uint16_t len = strlen(f.name);
         s.send_all(&len,sizeof(len));
         s.send_all(f.name,len);
+    }
+}
+
+static void
+handle_list_measurements(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
+{
+    std::string db_name(tokens[0].data,tokens[0].len);
+    printf("LIST MEASUREMENTS FROM %s\n",db_name.c_str());
+    auto db = tsdb::database(db_name);
+    auto ms = db.list_measurements();
+    for (const auto& m_name : ms)
+    {
+        uint32_t dt  = DT_MEASUREMENT;
+        uint16_t len = m_name.size();
+        s.send_all(&dt,sizeof(dt));
+        s.send_all(&len,sizeof(len));
+        s.send_all(m_name.c_str(),len);
+    }
+}
+
+static void
+handle_list_series(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
+{
+    std::string db_name(tokens[0].data,tokens[0].len);
+    std::string m_name(tokens[1].data,tokens[1].len);
+    printf("LIST SERIES FROM %s/%s\n",db_name.c_str(),m_name.c_str());
+    auto db = tsdb::database(db_name);
+    auto m = tsdb::measurement(db,m_name);
+    auto ss = m.list_series();
+    for (const auto& s_name : ss)
+    {
+        uint32_t dt  = DT_SERIES;
+        uint16_t len = s_name.size();
+        s.send_all(&dt,sizeof(dt));
+        s.send_all(&len,sizeof(len));
+        s.send_all(s_name.c_str(),len);
     }
 }
 
@@ -382,6 +448,12 @@ handle_select_points_last(tcp::socket4& s,
 }
 
 static void
+handle_nop(tcp::socket4& s, const std::vector<parsed_data_token>& tokens)
+{
+    // Do nothing.
+}
+
+static void
 parse_cmd(tcp::socket4& s, const command_syntax& cs)
 {
     printf("Got command 0x%08X.\n",cs.cmd_token);
@@ -444,17 +516,10 @@ parse_cmd(tcp::socket4& s, const command_syntax& cs)
             }
         }
 
-        // TODO: We need real tsdb exceptions to know what type of error code
-        // to send back.
         uint32_t status[2] = {DT_STATUS_CODE, 0};
         try
         {
             cs.handler(s,tokens);
-        }
-        catch (const tsdb::errno_exception& e)
-        {
-            printf("TSDB exception: %s\n",strerror(e.errnov));
-            status[1] = e.sc;
         }
         catch (const tsdb::exception& e)
         {
@@ -508,9 +573,9 @@ parse_cmd(tcp::socket4& s)
             }
         }
     }
-    catch (const futil::errno_exception& e)
+    catch (const std::exception& e)
     {
-        printf("Error: %s\n",e.c_str());
+        printf("Error: %s\n",e.what());
     }
     catch (...)
     {

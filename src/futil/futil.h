@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <dirent.h>
 #include <string>
 #include <vector>
 
@@ -21,11 +22,7 @@ namespace futil
     {
         int errnov;
 
-        operator const char*() const
-        {
-            return strerror(errnov);
-        }
-        const char* c_str() const
+        virtual const char* what() const noexcept override
         {
             return strerror(errnov);
         }
@@ -41,16 +38,12 @@ namespace futil
     // case if the second path is an absolute path, for instance.
     struct invalid_join_exception : public exception
     {
-        invalid_join_exception():
-            exception()
+        virtual const char* what() const noexcept override
         {
+            return "Cannot join paths.";
         }
-    };
 
-    // Exception thrown if trying to access a character past the end of a path.
-    struct out_of_range_exception : public exception
-    {
-        out_of_range_exception():
+        invalid_join_exception():
             exception()
         {
         }
@@ -60,6 +53,11 @@ namespace futil
     // (i.e. O_CREAT without a mode or a mode without O_CREAT).
     struct inconsistent_file_params : public exception
     {
+        virtual const char* what() const noexcept override
+        {
+            return "Inconsistent arguments passed to file::file().";
+        }
+
         inconsistent_file_params():
             exception()
         {
@@ -73,13 +71,9 @@ namespace futil
         size_t size() const {return _path.size();}
         bool empty() const  {return _path.empty();}
 
-        char operator[](size_t offset) const try
+        char operator[](size_t offset) const
         {
             return _path.at(offset);
-        }
-        catch (const std::out_of_range&)
-        {
-            throw out_of_range_exception();
         }
 
         const char* c_str() const
@@ -301,6 +295,56 @@ namespace futil
 
     struct directory : public file_descriptor
     {
+        std::vector<std::string> _listdir(uint32_t mask) const
+        {
+            int search_fd;
+            for (;;)
+            {
+                search_fd = ::openat(fd,".",O_DIRECTORY);
+                if (search_fd != -1)
+                    break;
+                if (errno != EINTR)
+                    throw errno_exception(errno);
+            }
+
+            std::vector<std::string> dirs;
+            auto* dirp = ::fdopendir(search_fd);
+            if (dirp == NULL)
+            {
+                printf("fdopendir returned NULL.\n");
+                throw errno_exception(EBADF);
+            }
+            struct dirent* dp;
+            while ((dp = ::readdir(dirp)) != NULL)
+            {
+                if (!(mask & (1ULL << dp->d_type)))
+                    continue;
+                if (dp->d_name[0] == '.')
+                {
+                    if (dp->d_namlen == 1)
+                        continue;
+                    if (dp->d_name[1] == '.' && dp->d_namlen == 2)
+                        continue;
+                }
+
+                dirs.push_back(dp->d_name);
+            }
+
+            ::closedir(dirp);
+
+            return dirs;
+        }
+
+        inline std::vector<std::string> listdirs() const
+        {
+            return _listdir(1 << DT_DIR);
+        }
+
+        inline std::vector<std::string> listall() const
+        {
+            return _listdir(-1);
+        }
+
         directory(const path& p)
         {
             for (;;)
@@ -325,6 +369,17 @@ namespace futil
             }
         }
     };
+
+    inline void fsync(int fd)
+    {
+        for (;;)
+        {
+            if (::fsync(fd) != -1)
+                return;
+            if (errno != EINTR)
+                throw futil::errno_exception(errno);
+        }
+    }
 
     struct file : public file_descriptor
     {
@@ -462,13 +517,7 @@ namespace futil
 
         void fsync()
         {
-            for (;;)
-            {
-                if (::fsync(fd) != -1)
-                    return;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
+            futil::fsync(fd);
         }
 
         int fcntl(int cmd)
@@ -539,6 +588,18 @@ namespace futil
         {
             open(d,p,oflag,mode);
         }
+    };
+
+    struct file_write_watcher
+    {
+        const int fd;
+        const int kqueue_fd;
+
+        void wait_for_write() const;
+
+        file_write_watcher(int fd);
+        file_write_watcher(const file& f):file_write_watcher(f.fd) {}
+        ~file_write_watcher();
     };
 
     inline void mkdir(const char* path, mode_t mode)
@@ -617,6 +678,35 @@ namespace futil
     {
         if (::chdir(path) == -1)
             throw errno_exception(errno);
+    }
+
+    inline int openat(const directory& d, const path& p, int oflag)
+    {
+        if (oflag & O_CREAT)
+            throw inconsistent_file_params();
+        for (;;)
+        {
+            int fd = ::openat(d.fd,p,oflag);
+            if (fd != -1)
+                return fd;
+            if (errno != EINTR)
+                throw errno_exception(errno);
+        }
+    }
+
+    inline int openat(const directory& d, const path& p, int oflag,
+                       mode_t mode)
+    {
+        if (!(oflag & O_CREAT))
+            throw inconsistent_file_params();
+        for (;;)
+        {
+            int fd = ::openat(d.fd,p,oflag,mode);
+            if (fd != -1)
+                return fd;
+            if (errno != EINTR)
+                throw errno_exception(errno);
+        }
     }
 
     inline futil::path
