@@ -39,6 +39,14 @@ enum command_token
     CT_STR_LIMIT,
     CT_STR_LAST,
     CT_STR_DELETE,
+    CT_STR_LIST,
+    CT_STR_DATABASES,
+    CT_STR_MEASUREMENTS,
+    CT_STR_SCHEMA,
+    CT_STR_COUNT,
+    CT_STR_MEAN,
+    CT_STR_WINDOW_NS,
+    CT_STR_WATCH,
 
     // Other types.
     CT_DATABASE_SPECIFIER,      // <database>
@@ -69,6 +77,14 @@ constexpr const char* const keyword_strings[] =
     [CT_STR_LIMIT]          = "limit",
     [CT_STR_LAST]           = "last",
     [CT_STR_DELETE]         = "delete",
+    [CT_STR_LIST]           = "list",
+    [CT_STR_DATABASES]      = "databases",
+    [CT_STR_MEASUREMENTS]   = "measurements",
+    [CT_STR_SCHEMA]         = "schema",
+    [CT_STR_COUNT]          = "count",
+    [CT_STR_MEAN]           = "mean",
+    [CT_STR_WINDOW_NS]      = "window_ns",
+    [CT_STR_WATCH]          = "watch",
 };
 
 struct command_syntax
@@ -99,12 +115,20 @@ struct command_syntax
                 case CT_STR_LIMIT:
                 case CT_STR_LAST:
                 case CT_STR_DELETE:
+                case CT_STR_LIST:
+                case CT_STR_DATABASES:
+                case CT_STR_MEASUREMENTS:
+                case CT_STR_SCHEMA:
+                case CT_STR_COUNT:
+                case CT_STR_MEAN:
+                case CT_STR_WINDOW_NS:
+                case CT_STR_WATCH:
                     if (strcasecmp(cmd[i].c_str(),keyword_strings[tokens[i]]))
                         return false;
                 break;
 
                 case CT_DATABASE_SPECIFIER:
-                    if (std::count(cmd[i].begin(),cmd[i].end(),'/') != 0)
+                    if (cmd[i].find('/') != std::string::npos)
                         return false;
                 break;
 
@@ -168,10 +192,17 @@ static void handle_select_series_one_op_last(
     const std::vector<std::string>& cmd);
 static void handle_select_series_two_op_last(
     const std::vector<std::string>& cmd);
+static void handle_count_from_series(const std::vector<std::string>& cmd);
+static void handle_mean_from_series(const std::vector<std::string>& cmd);
 static void handle_delete_from_series(const std::vector<std::string>& cmd);
 static void handle_write_series(const std::vector<std::string>& cmd);
+static void handle_list_series(const std::vector<std::string>& cmd);
+static void handle_watch_series(const std::vector<std::string>& cmd);
+static void handle_list_schema(const std::vector<std::string>& cmd);
 static void handle_create_measurement(const std::vector<std::string>& cmd);
+static void handle_list_measurements(const std::vector<std::string>& cmd);
 static void handle_create_database(const std::vector<std::string>& cmd);
+static void handle_list_databases(const std::vector<std::string>& cmd);
 static void handle_init(const std::vector<std::string>& cmd);
 
 static const command_syntax commands[] =
@@ -185,13 +216,33 @@ static const command_syntax commands[] =
         {CT_STR_CREATE, CT_STR_DATABASE, CT_DATABASE_SPECIFIER},
     },
     {
+        handle_list_databases,
+        {CT_STR_LIST, CT_STR_DATABASES},
+    },
+    {
         handle_create_measurement,
         {CT_STR_CREATE, CT_STR_MEASUREMENT, CT_MEASUREMENT_SPECIFIER,
          CT_STR_WITH, CT_STR_FIELDS, CT_TYPED_FIELDS},
     },
     {
+        handle_list_measurements,
+        {CT_STR_LIST, CT_STR_MEASUREMENTS, CT_STR_FROM, CT_DATABASE_SPECIFIER},
+    },
+    {
         handle_write_series,
         {CT_STR_WRITE, CT_STR_SERIES, CT_SERIES_SPECIFIER, CT_UINT64},
+    },
+    {
+        handle_list_series,
+        {CT_STR_LIST, CT_STR_SERIES, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
+    },
+    {
+        handle_watch_series,
+        {CT_STR_WATCH, CT_STR_SERIES, CT_SERIES_SPECIFIER},
+    },
+    {
+        handle_list_schema,
+        {CT_STR_LIST, CT_STR_SCHEMA, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
     },
     {
         handle_select_series_one_op,
@@ -227,6 +278,18 @@ static const command_syntax commands[] =
         {CT_STR_SELECT, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
          CT_STR_WHERE, CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS,
          CT_COMPARISON_LEFT, CT_UINT64, CT_STR_LAST, CT_UINT64},
+    },
+    {
+        handle_count_from_series,
+        {CT_STR_COUNT, CT_STR_FROM, CT_SERIES_SPECIFIER, CT_STR_WHERE, 
+         CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS, CT_COMPARISON_LEFT,
+         CT_UINT64},
+    },
+    {
+        handle_mean_from_series,
+        {CT_STR_MEAN, CT_FIELD_SPECIFIER, CT_STR_FROM, CT_SERIES_SPECIFIER,
+         CT_STR_WHERE, CT_UINT64, CT_COMPARISON_LEFT, CT_STR_TIME_NS,
+         CT_COMPARISON_LEFT, CT_UINT64, CT_STR_WINDOW_NS, CT_UINT64},
     },
     {
         handle_delete_from_series,
@@ -286,7 +349,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
 }
 
 static void
-_handle_select_series(tsdb::select_op& op) try
+_handle_select_series(tsdb::select_op& op)
 {
     if (!op.npoints)
         return;
@@ -317,25 +380,16 @@ _handle_select_series(tsdb::select_op& op) try
         op.advance();
     }
 }
-catch (const futil::errno_exception& e)
-{
-    printf("Error fetching points: %s\n",e.c_str());
-}
 
 static void
 _handle_select_series_limit(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    auto components = futil::path(series).decompose();
-    if (components.size() != 3)
-    {
-        printf("Invalid series: %s\n",series.c_str());
-        return;
-    }
     std::vector<std::string> fields;
     if (field_specifier != "*")
         fields = str::split(field_specifier,",");
+    auto components = futil::path(series).decompose();
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
@@ -417,15 +471,10 @@ _handle_select_series_last(const std::string& series,
     const std::string& field_specifier, uint64_t t0, uint64_t t1,
     uint64_t N)
 {
-    auto components = futil::path(series).decompose();
-    if (components.size() != 3)
-    {
-        printf("Invalid series: %s\n",series.c_str());
-        return;
-    }
     std::vector<std::string> fields;
     if (field_specifier != "*")
         fields = str::split(field_specifier,",");
+    auto components = futil::path(series).decompose();
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::series_read_lock read_lock(m,components[2]);
@@ -481,6 +530,90 @@ handle_select_series_two_op_last(const std::vector<std::string>& cmd)
 }
 
 static void
+handle_count_from_series(const std::vector<std::string>& cmd)
+{
+    // Handles a command such as:
+    //
+    //  count from <series> where T0 <= time_ns <= T1
+    uint64_t t0 = std::stoul(cmd[4]);
+    uint64_t t1 = std::stoul(cmd[8]);
+    if (cmd[5] == "<")
+        ++t0;
+    if (cmd[7] == "<")
+    {
+        if (t1 == 0)
+        {
+            printf("Invalid end time.\n");
+            return;
+        }
+        --t1;
+    }
+    auto components = futil::path(cmd[2]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::series_read_lock read_lock(m,components[2]);
+    auto cr = tsdb::count_points(read_lock,t0,t1);
+    printf("%20s %20s %20s\n","time_first","time_last","num_points");
+    printf("-------------------- "
+           "-------------------- "
+           "--------------------\n");
+    printf("%20llu %20llu %20zu\n",cr.time_first,cr.time_last,cr.npoints);
+}
+
+static void
+handle_mean_from_series(const std::vector<std::string>& cmd)
+{
+    // Handles a command such as:
+    //
+    //  mean <fields> from <series> where T0 <= tims_ns <= T1 window_ns DT
+    uint64_t t0 = std::stoul(cmd[5]);
+    uint64_t t1 = std::stoul(cmd[9]);
+    uint64_t dt = std::stoul(cmd[11]);
+    if (cmd[5] == "<")
+        ++t0;
+    if (cmd[7] == "<")
+    {
+        if (t1 == 0)
+        {
+            printf("Invalid end time.\n");
+            return;
+        }
+        --t1;
+    }
+
+    std::vector<std::string> fields;
+    if (cmd[1] != "*")
+        fields = str::split(cmd[1],",");
+
+    auto components = futil::path(cmd[3]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    tsdb::series_read_lock read_lock(m,components[2]);
+    tsdb::sum_op op(read_lock,components[2],fields,t0,t1,dt);
+
+    printf("%20s ","time_ns");
+    for (const auto& f : op.op.fields)
+        printf("%20s ",f.name);
+    printf("\n");
+    for (size_t i=0; i<op.op.fields.size() + 1; ++i)
+        printf("-------------------- ");
+    printf("\n");
+
+    while (op.next())
+    {
+        printf("%20llu ",op.range_t0);
+        for (size_t j=0; j<op.op.fields.size(); ++j)
+        {
+            if (op.npoints[j] > 0)
+                printf("%20f ",op.sums[j]/op.npoints[j]);
+            else
+                printf("%20s ","-");
+        }
+        printf("\n");
+    }
+}
+
+static void
 handle_delete_from_series(const std::vector<std::string>& cmd)
 {
     // Handles a command such as:
@@ -494,15 +627,61 @@ handle_delete_from_series(const std::vector<std::string>& cmd)
         --t;
     }
     auto components = futil::path(cmd[2]).decompose();
-    if (components.size() != 3)
-    {
-        printf("Invalid series: %s\n",cmd[2].c_str());
-        return;
-    }
-
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
     tsdb::delete_points(m,components[2],t);
+}
+
+static void
+handle_list_schema(const std::vector<std::string>& v)
+{
+    // Handles a command such as
+    //
+    //  list schema from pt-1/xtalx_data
+    auto components = futil::path(v[3]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    for (const auto& se : m.fields)
+        printf("%4s %s\n",tsdb::ftinfos[se.type].name,se.name);
+}
+
+static void
+handle_list_series(const std::vector<std::string>& v)
+{
+    // Handles a command such as
+    //
+    //  list series from pt-1/xtalx_data
+    auto components = futil::path(v[3]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    auto ss = m.list_series();
+    for (const auto& s : ss)
+        printf("%s\n",s.c_str());
+}
+
+static void
+handle_watch_series(const std::vector<std::string>& v)
+{
+    // Handle a command such as
+    //
+    //  watch series pt-1/xtalx_data/XTI-1-1000000
+    //
+    // This does not return.
+    auto components = futil::path(v[2]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    futil::directory series_dir(m.dir,components[2]);
+    futil::file time_last_fd(series_dir,"time_last",O_RDONLY);
+    auto map = time_last_fd.mmap(0,time_last_fd.lseek(SEEK_END,0),PROT_READ,
+                                 MAP_SHARED,0);
+    auto* time_last_ptr = (volatile uint64_t*)map.addr;
+    futil::file_write_watcher watcher(time_last_fd);
+    printf("WATCH %s INITIAL %llu\n",v[2].c_str(),*time_last_ptr);
+    for (;;)
+    {
+        watcher.wait_for_write();
+        printf("WATCH %s UPDATE %llu\n",v[2].c_str(),*time_last_ptr);
+    }
 }
 
 static void
@@ -513,12 +692,6 @@ handle_write_series(const std::vector<std::string>& v)
     //  write series pt-1/xtalx_data/XTI-10-1000000 N
     uint32_t n = std::stoul(v[3]);
     auto components = futil::path(v[2]).decompose();
-    if (components.size() != 3)
-    {
-        printf("Invalid series: %s\n",v[2].c_str());
-        return;
-    }
-
     tsdb::database db(components[0]);
     tsdb::measurement m(db,components[1]);
 
@@ -596,19 +769,20 @@ handle_write_series(const std::vector<std::string>& v)
         }
     }
 
-#if 0
-    try
-#endif
-    {
-        tsdb::write_series(write_lock,n,0,data_points.size()*sizeof(uint64_t),
-                           &data_points[0]);
-    }
-#if 0
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
-#endif
+    tsdb::write_series(write_lock,n,0,data_points.size()*sizeof(uint64_t),
+                       &data_points[0]);
+}
+
+static void
+handle_list_measurements(const std::vector<std::string>& v)
+{
+    // Handles a command such as
+    //
+    //  list measurements from pt-1
+    tsdb::database db(v[3]);
+    auto ms = db.list_measurements();
+    for (const auto& s : ms)
+        printf("%s\n",s.c_str());
 }
 
 static void
@@ -618,13 +792,6 @@ handle_create_measurement(const std::vector<std::string>& v)
     //
     //  create measurement pt-1/xtalx_data with fields \
     //      pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
-    auto components = futil::path(v[2]).decompose();
-    if (components.size() != 2)
-    {
-        printf("Invalid measurement path.\n");
-        return;
-    }
-
     std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(v[5],",");
     for (const auto& fs : field_specifiers)
@@ -668,44 +835,31 @@ handle_create_measurement(const std::vector<std::string>& v)
         fields.push_back(se);
     }
 
-    try
-    {
-        tsdb::database db(components[0]);
-        tsdb::create_measurement(db,components[1],fields);
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    auto components = futil::path(v[2]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::create_measurement(db,components[1],fields);
+}
+
+static void
+handle_list_databases(const std::vector<std::string>& cmd)
+{
+    auto dbs = tsdb::list_databases();
+    for (const auto& s : dbs)
+        printf("%s\n",s.c_str());
 }
 
 static void
 handle_create_database(const std::vector<std::string>& cmd)
 {
-    kassert(cmd.size() == 3);
     printf("Creating database \"%s\"...\n",cmd[2].c_str());
-    try
-    {
-        tsdb::create_database(cmd[2].c_str());
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    tsdb::create_database(cmd[2].c_str());
 }
 
 static void
 handle_init(const std::vector<std::string>&)
 {
     printf("Initializing TSDB directories...\n");
-    try
-    {
-        tsdb::init();
-    }
-    catch (const futil::errno_exception& e)
-    {
-        printf("Error: %s\n",e.c_str());
-    }
+    tsdb::init();
 }
 
 int
@@ -740,31 +894,25 @@ main(int argc, const char* argv[])
         }
 
         auto v = str::split(cmd);
-#if 0
-        if (cmd == "init")
-            tsdb_init();
-        else if (cmd.starts_with("create database "))
-            handle_create_database(v);
-        else if (cmd.starts_with("create measurement "))
-            tsdb_create_measurement(cmd);
-        else if (cmd.starts_with("write series "))
-            tsdb_write_series(cmd);
-        else
-            printf("Syntax error\n");
-#else
         bool handled = false;
         for (const auto& c : commands)
         {
             if (c.parse(v))
             {
                 handled = true;
-                c.handler(v);
+                try
+                {
+                    c.handler(v);
+                }
+                catch (const std::exception& e)
+                {
+                    printf("Error: %s\n",e.what());
+                }
                 break;
             }
         }
 
         if (!handled)
             printf("Syntax error.\n");
-#endif
     }
 }
