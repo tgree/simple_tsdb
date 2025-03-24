@@ -34,10 +34,12 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     //     This garbage data will eventually be overwritten if new points come
     //     in, but we will never access it otherwise.
 
-    // Compute the expected data length, starting with the timestamps and then
-    // each field.
+    // ********************** Data Input Validation *************************
+    // Build a table of pointers to the timestamps, field bitmaps and field
+    // data, and then validate the data length.
     std::vector<const uint64_t*> field_bitmap_ptrs;
     std::vector<const char*> field_data_ptrs;
+    const auto* time_data = (const uint64_t*)data;
     auto* data_ptr = (const char*)data + npoints*8;
     for (auto& f : write_lock.m.fields)
     {
@@ -60,7 +62,6 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
     // Find the first and last time stamps and ensure that the timestamps are
     // in strictly-increasing order.
-    const auto* time_data   = (const uint64_t*)data;
     uint64_t chunk_first_ns = time_data[0];
     uint64_t chunk_last_ns  = time_data[npoints-1];
     for (size_t i=1; i<npoints; ++i)
