@@ -2,6 +2,7 @@
 // All rights reserved.
 #include <version.h>
 #include <hdr/kmath.h>
+#include <hdr/auto_buf.h>
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <libtsdb/tsdb.h>
@@ -65,27 +66,6 @@ struct chunk_header
     uint32_t    bitmap_offset;
     uint32_t    data_len;
     uint8_t     data[];
-};
-
-struct auto_buf
-{
-    void* const data;
-
-    operator void*() const
-    {
-        return data;
-    }
-
-    auto_buf(size_t len):
-        data(malloc(len))
-    {
-        if (!data)
-            throw futil::errno_exception(ENOMEM);
-    }
-    ~auto_buf()
-    {
-        free(data);
-    }
 };
 
 struct command_syntax
