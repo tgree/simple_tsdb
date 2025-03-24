@@ -8,10 +8,11 @@
 
 namespace tsdb
 {
+#define TIMESTAMP_FILE_NAME_LEN 24
     struct index_entry
     {
         uint64_t    time_ns;
-        char        timestamp_file[24];
+        char        timestamp_file[TIMESTAMP_FILE_NAME_LEN];
     };
     inline bool operator<(const index_entry& lhs, const index_entry& rhs)
     {
