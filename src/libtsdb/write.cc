@@ -247,7 +247,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             if (tail_fd_last_entry == write_lock.time_last)
             {
                 // Open all of the field and bitmap files with the same name as
-                // the timestamp file.  They are guaranteed to exist.
+                // the timestamp file.  They are guaranteed to exist and should
+                // not be compressed.
                 for (size_t j=0; j<field_fds.size(); ++j)
                 {
                     field_fds[j].open(fields_dir,field_file_paths[j],O_WRONLY);
@@ -318,6 +319,10 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 tail_fd.lseek(pos,SEEK_SET);
                 tail_fd.truncate(pos);
                 avail_points = (CHUNK_FILE_SIZE - pos) / sizeof(uint64_t);
+
+                // TODO: field_fds and bitmap_fds aren't open here?  They
+                // should be if avail_points > 0!
+                kabort();
                 break;
             }
 
@@ -329,6 +334,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // Slow path - the index entry points to an empty file, or we
         // determined that it is entirely full of timestamp values that haven't
         // gone live yet.  Delete the file and remove the index entry.
+        //
+        // TODO: field_fds and bitmap_fds aren't even open here!
         for (auto& fd : field_fds)
             fd.close();
         for (auto& fd : bitmap_fds)
@@ -337,6 +344,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             futil::unlink_if_exists(fields_dir,field_file_path);
         for (const auto& bitmap_file_path : bitmap_file_paths)
             futil::unlink_if_exists(bitmaps_dir,bitmap_file_path);
+        // TODO: Probably need to sync fields_dir and bitmaps_dir.
         tail_fd.fcntl(F_BARRIERFSYNC);
         tail_fd.close();
         futil::unlink(time_ns_dir,ie.timestamp_file);
@@ -358,6 +366,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // we need to grow into a new timestamp file.
         if (!avail_points)
         {
+            // TODO: Compress old field fds here.
+
             // Figure out what to name the new files.
             std::string time_data_str = std::to_string(time_data[0]);
 
@@ -470,6 +480,9 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         write_lock.time_last_fd.write_all(&write_lock.time_last,
                                               sizeof(uint64_t));
         write_lock.time_last_fd.fsync();
+
+        // TODO: Barrier and then unlink all full field files that were just
+        // compressed.
 
         // Advance to the next set of points.
         time_data         += write_points;
