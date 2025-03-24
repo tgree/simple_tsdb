@@ -2,7 +2,11 @@
 // All rights reserved.
 #include "write.h"
 #include "tsdb.h"
+#include <hdr/auto_buf.h>
 #include <algorithm>
+
+#define WITH_GZFILEOP
+#include <zlib-ng/zlib-ng.h>
 
 void
 tsdb::write_series(series_write_lock& write_lock, size_t npoints,
@@ -198,6 +202,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     off_t index_len = index_fd.lseek(0,SEEK_END);
     size_t nindices = index_len / sizeof(index_entry);
     size_t avail_points = 0;
+    index_entry ie;
     off_t pos;
     for (size_t i=0; i<nindices; ++i)
     {
@@ -205,7 +210,6 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         size_t index = nindices - i - 1;
 
         // Open the file pointed to by the last entry in the index.
-        index_entry ie;
         index_fd.lseek(index*sizeof(index_entry),SEEK_SET);
         index_fd.read_all(&ie,sizeof(ie));
 
@@ -252,7 +256,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 for (size_t j=0; j<write_lock.m.fields.size(); ++j)
                 {
                     field_fds.emplace_back(fields_dir,field_file_paths[j],
-                                           O_WRONLY);
+                                           O_RDWR);
                     bitmap_fds.emplace_back(bitmaps_dir,bitmap_file_paths[j],
                                             O_RDWR);
                 }
@@ -327,7 +331,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 for (size_t j=0; j<write_lock.m.fields.size(); ++j)
                 {
                     field_fds.emplace_back(fields_dir,field_file_paths[j],
-                                           O_WRONLY);
+                                           O_RDWR);
                     bitmap_fds.emplace_back(bitmaps_dir,bitmap_file_paths[j],
                                             O_RDWR);
                 }
@@ -363,13 +367,47 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     // field sizes.
     size_t rem_points = npoints;
     size_t src_bitmap_offset = bitmap_offset + n_overlap_points;
+    fixed_vector<futil::path> unlink_field_paths(write_lock.m.fields.size());
     while (rem_points)
     {
         // If we have overflowed the timestamp file, or we have an empty index,
         // we need to grow into a new timestamp file.
         if (!avail_points)
         {
-            // TODO: Compress old field fds here.
+            // If we have open file descriptors, then we are done with them and
+            // they are now full.  Compress them.
+            if (!field_fds.empty())
+            {
+                auto_buf file_buf(CHUNK_FILE_SIZE);
+                for (size_t i=0; i<write_lock.m.fields.size(); ++i)
+                {
+                    const auto* fti = &ftinfos[write_lock.m.fields[i].type];
+                    size_t chunk_len = CHUNK_NPOINTS*fti->nbytes;
+
+                    // Read the source file.
+                    std::string src_name(ie.timestamp_file);
+                    field_fds[i].lseek(SEEK_SET,0);
+                    field_fds[i].read_all(file_buf,chunk_len);
+                    unlink_field_paths.emplace_back(
+                        futil::path(write_lock.m.fields[i].name,
+                                    src_name));
+
+                    // Create the destination file and write it out.
+                    printf("Compressing %s...\n",unlink_field_paths[i].c_str());
+                    int gz_fd = futil::openat(
+                        fields_dir,
+                        futil::path(write_lock.m.fields[i].name,
+                                    src_name + ".gz"),
+                        O_CREAT | O_TRUNC | O_RDWR,0660);
+                    gzFile gz_file = zng_gzdopen(gz_fd,"wb");
+                    int32_t gz_len = zng_gzwrite(gz_file,file_buf,chunk_len);
+                    kassert(gz_len == chunk_len);
+                    zng_gzflush(gz_file,Z_FINISH);
+                    futil::fsync(gz_fd);
+                    zng_gzclose(gz_file);
+                    printf("Done.\n");
+                }
+            }
 
             // Figure out what to name the new files.
             std::string time_data_str = std::to_string(time_data[0]);
@@ -385,7 +423,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 field_fds.emplace_back(fields_dir,
                                        futil::path(write_lock.m.fields[i].name,
                                                    time_data_str),
-                                       O_CREAT | O_TRUNC | O_WRONLY,0660);
+                                       O_CREAT | O_TRUNC | O_RDWR,0660);
                 field_fds[i].fsync();
 
                 bitmap_fds.emplace_back(bitmaps_dir,
@@ -433,7 +471,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             tail_fd.fcntl(F_BARRIERFSYNC);
 
             // Add the timestamp file to the index.
-            index_entry ie;
+            memset(&ie,0,sizeof(ie));
             ie.time_ns = time_data[0];
             strcpy(ie.timestamp_file,time_data_str.c_str());
             index_fd.write_all(&ie,sizeof(ie));
@@ -482,10 +520,18 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         write_lock.time_last_fd.lseek(0,SEEK_SET);
         write_lock.time_last_fd.write_all(&write_lock.time_last,
                                               sizeof(uint64_t));
-        write_lock.time_last_fd.fsync();
+        if (!unlink_field_paths.empty())
+        {
+            write_lock.time_last_fd.fcntl(F_BARRIERFSYNC);
+            for (const auto& ufp : unlink_field_paths)
+                futil::unlink_if_exists(fields_dir,ufp);
 
-        // TODO: Barrier and then unlink all full field files that were just
-        // compressed.
+            unlink_field_paths.clear();
+
+            // TODO: fsync() fields dir.
+        }
+        else
+            write_lock.time_last_fd.fsync();
 
         // Advance to the next set of points.
         time_data         += write_points;
@@ -493,6 +539,11 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         pos               += write_points*sizeof(uint64_t);
         avail_points      -= write_points;
         src_bitmap_offset += write_points;
+        if (rem_points)
+        {
+            kassert(avail_points == 0);
+            kassert(pos == CHUNK_NPOINTS*sizeof(uint64_t));
+        }
     }
 
     // Fully synchronize everything.
