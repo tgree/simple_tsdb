@@ -3,7 +3,7 @@
 SUBMODULES :=
 
 tsdbtest.MK  := $(MODULE_MK)
-tsdbtest.LIB := libtsdb.a
+tsdbtest.LIB := libtsdb.a libz-ng.a
 tsdbtest.OBJ := \
 	$(MODULE_BUILD_DIR)/main.o \
 	$(BUILD_O_DIR)/floor/kassert.o
