@@ -4,23 +4,23 @@
 #include "tsdb.h"
 #include <algorithm>
 
-size_t
+tsdb::count_result
 tsdb::count_points(const series_read_lock& read_lock, uint64_t t0, uint64_t t1)
 {
     // Validate the time and limit ranges.
     uint64_t time_last = futil::file(read_lock.series_dir,"time_last",
                                      O_RDONLY).read_u64();
     if (read_lock.time_first > time_last)
-        return 0;
+        return count_result{0,read_lock.time_first,time_last};
 
     t0 = MAX(t0,read_lock.time_first);
     t1 = MIN(t1,time_last);
     if (t0 > t1)
-        return 0;
+        return count_result{0,t0,t1};
     if (t1 < read_lock.time_first)
-        return 0;
+        return count_result{0,t0,read_lock.time_first};
     if (t0 > time_last)
-        return 0;
+        return count_result{0,time_last,t1};
 
     // Map the index.
     futil::file index_fd(read_lock.series_dir,"index",O_RDONLY);
@@ -51,10 +51,15 @@ tsdb::count_points(const series_read_lock& read_lock, uint64_t t0, uint64_t t1)
     auto* upper_begin = (const uint64_t*)upper_map.addr;
     auto* lower_end = lower_begin + lower_map.len / 8;
     auto* upper_end = upper_begin + upper_map.len / 8;
-    auto tslot_lower = std::lower_bound(lower_begin,lower_end,t0) - lower_begin;
-    auto tslot_upper = std::upper_bound(upper_begin,upper_end,t1) - upper_begin;
+    auto time_first_iter = std::lower_bound(lower_begin,lower_end,t0);
+    auto time_last_iter = std::upper_bound(upper_begin,upper_end,t1);
+    auto tslot_lower = time_first_iter - lower_begin;
+    auto tslot_upper = time_last_iter - upper_begin;
 
     // Compute the result.
     size_t n_chunks = index_upper - index_lower;
-    return n_chunks*CHUNK_NPOINTS + tslot_upper - tslot_lower;
+    size_t npoints = n_chunks*CHUNK_NPOINTS + tslot_upper - tslot_lower;
+    if (!npoints)
+        return count_result{0,t0,t1};
+    return count_result{npoints,*time_first_iter,*(time_last_iter - 1)};
 }
