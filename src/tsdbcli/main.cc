@@ -46,6 +46,7 @@ enum command_token
     CT_STR_COUNT,
     CT_STR_MEAN,
     CT_STR_WINDOW_NS,
+    CT_STR_WATCH,
 
     // Other types.
     CT_DATABASE_SPECIFIER,      // <database>
@@ -83,6 +84,7 @@ constexpr const char* const keyword_strings[] =
     [CT_STR_COUNT]          = "count",
     [CT_STR_MEAN]           = "mean",
     [CT_STR_WINDOW_NS]      = "window_ns",
+    [CT_STR_WATCH]          = "watch",
 };
 
 struct command_syntax
@@ -120,6 +122,7 @@ struct command_syntax
                 case CT_STR_COUNT:
                 case CT_STR_MEAN:
                 case CT_STR_WINDOW_NS:
+                case CT_STR_WATCH:
                     if (strcasecmp(cmd[i].c_str(),keyword_strings[tokens[i]]))
                         return false;
                 break;
@@ -194,6 +197,7 @@ static void handle_mean_from_series(const std::vector<std::string>& cmd);
 static void handle_delete_from_series(const std::vector<std::string>& cmd);
 static void handle_write_series(const std::vector<std::string>& cmd);
 static void handle_list_series(const std::vector<std::string>& cmd);
+static void handle_watch_series(const std::vector<std::string>& cmd);
 static void handle_list_schema(const std::vector<std::string>& cmd);
 static void handle_create_measurement(const std::vector<std::string>& cmd);
 static void handle_list_measurements(const std::vector<std::string>& cmd);
@@ -231,6 +235,10 @@ static const command_syntax commands[] =
     {
         handle_list_series,
         {CT_STR_LIST, CT_STR_SERIES, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
+    },
+    {
+        handle_watch_series,
+        {CT_STR_WATCH, CT_STR_SERIES, CT_SERIES_SPECIFIER},
     },
     {
         handle_list_schema,
@@ -649,6 +657,31 @@ handle_list_series(const std::vector<std::string>& v)
     auto ss = m.list_series();
     for (const auto& s : ss)
         printf("%s\n",s.c_str());
+}
+
+static void
+handle_watch_series(const std::vector<std::string>& v)
+{
+    // Handle a command such as
+    //
+    //  watch series pt-1/xtalx_data/XTI-1-1000000
+    //
+    // This does not return.
+    auto components = futil::path(v[2]).decompose();
+    tsdb::database db(components[0]);
+    tsdb::measurement m(db,components[1]);
+    futil::directory series_dir(m.dir,components[2]);
+    futil::file time_last_fd(series_dir,"time_last",O_RDONLY);
+    auto map = time_last_fd.mmap(0,time_last_fd.lseek(SEEK_END,0),PROT_READ,
+                                 MAP_SHARED,0);
+    auto* time_last_ptr = (volatile uint64_t*)map.addr;
+    futil::file_write_watcher watcher(time_last_fd);
+    printf("WATCH %s INITIAL %llu\n",v[2].c_str(),*time_last_ptr);
+    for (;;)
+    {
+        watcher.wait_for_write();
+        printf("WATCH %s UPDATE %llu\n",v[2].c_str(),*time_last_ptr);
+    }
 }
 
 static void
