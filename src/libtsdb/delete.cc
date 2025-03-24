@@ -89,6 +89,10 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     }
 
     // Shift the index file appropriately.
+    // TODO: This is unsafe.  If we crash in the middle of memmove, but the OS
+    // stays up, we will have corrupted the OS' page cache copy of the index
+    // file, which will eventually get flushed back to disk.  We need to make
+    // the shift appear atomic.
     memmove(index_begin,index_slot,
             (index_end - index_slot)*sizeof(index_entry));
     index_m.msync();
