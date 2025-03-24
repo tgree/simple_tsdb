@@ -9,7 +9,7 @@ $$(BIN_DIR)/$(1).map $$(BIN_DIR)/$(1): $$($(1).LIB:%.a=$$(LIB_DIR)/%.a) $$($(1).
 				       scripts/targets.mk
 	@echo Linking $$@...
 	@mkdir -p $$(BIN_DIR)
-	$$(GCC_CXX) \
+	@$$(GCC_CXX) \
 		-g \
 		-o $$@ \
 		$$($(1).LIB:%.a=$$(LIB_DIR)/%.a) \
