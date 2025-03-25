@@ -26,6 +26,7 @@ enum command_token : uint32_t
     CT_LIST_MEASUREMENTS    = 0x0FEB1399,
     CT_LIST_SERIES          = 0x7B8238D6,
     CT_COUNT_POINTS         = 0x0E329B19,
+    CT_SUM_POINTS           = 0x90305A39,
     CT_NOP                  = 0x22CF1296,
 };
 
@@ -47,6 +48,8 @@ enum data_token : uint32_t
     DT_FIELD_NAME       = 0x5C0D45C1,   // <name>
     DT_READY_FOR_CHUNK  = 0x6000531C,   // <max_data_len> (uint32_t)
     DT_NPOINTS          = 0x5F469D08,   // <npoints> (uint64_t)
+    DT_WINDOW_NS        = 0x76F0C374,   // <window_ns> (uint64_t)
+    DT_SUMS_CHUNK       = 0x53FC76FC,   // <chunk_npoints> (uint16_t)
 };
 
 struct parsed_data_token
@@ -99,6 +102,8 @@ static void handle_delete_points(
 static void handle_select_points_limit(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_last(
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+static void handle_sum_points(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_nop(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
@@ -162,6 +167,12 @@ static const command_syntax commands[] =
         CT_SELECT_POINTS_LAST,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
          DT_TIME_LAST, DT_NLAST, DT_END},
+    },
+    {
+        handle_sum_points,
+        CT_SUM_POINTS,
+        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
+         DT_TIME_LAST, DT_WINDOW_NS, DT_END},
     },
     {
         handle_nop,
@@ -489,6 +500,77 @@ handle_select_points_last(tcp::socket4& s,
 }
 
 static void
+handle_sum_points(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
+{
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
+    futil::path path(database,measurement,series);
+    std::string field_list(tokens[3].data,tokens[3].len);
+    uint64_t t0 = tokens[4].u64;
+    uint64_t t1 = tokens[5].u64;
+    uint64_t window_ns = tokens[6].u64;
+
+    printf("SUM %s FROM %s WHERE %llu <= time_ns <= %llu WINDOW_NS %llu\n",
+           field_list.c_str(),path.c_str(),t0,t1,window_ns);
+    tsdb::database db(database);
+    tsdb::measurement m(db,measurement);
+    tsdb::series_read_lock read_lock(m,series);
+    tsdb::sum_op op(read_lock,path,str::split(field_list,","),t0,t1,window_ns);
+
+    size_t rem_points = op.nranges;
+    const size_t nfields = op.op.fields.size();
+    fixed_vector<uint64_t> timestamps(1024);
+    fixed_vector<std::vector<double>> field_sums(nfields);
+    fixed_vector<std::vector<uint64_t>> field_npoints(nfields);
+    for (size_t i=0; i<nfields; ++i)
+    {
+        field_sums.emplace_back(std::vector<double>());
+        field_sums[i].reserve(1024);
+        field_npoints.emplace_back(std::vector<uint64_t>());
+        field_npoints[i].reserve(1024);
+    }
+
+    data_token dt;
+    while (rem_points)
+    {
+        uint16_t chunk_npoints = MIN(rem_points,1024);
+        for (size_t i=0; i<chunk_npoints; ++i)
+        {
+            kassert(op.next());
+            timestamps.emplace_back(op.range_t0);
+            for (size_t j=0; j<nfields; ++j)
+            {
+                field_sums[j].push_back(op.sums[j]);
+                field_npoints[j].push_back(op.npoints[j]);
+            }
+        }
+
+        dt = DT_SUMS_CHUNK;
+        s.send_all(&dt,sizeof(dt));
+        s.send_all(&chunk_npoints,sizeof(chunk_npoints));
+        s.send_all(&timestamps[0],chunk_npoints*sizeof(uint64_t));
+        for (size_t j=0; j<nfields; ++j)
+        {
+            s.send_all(&field_sums[j][0],chunk_npoints*sizeof(double));
+            field_sums[j].clear();
+        }
+        for (size_t j=0; j<nfields; ++j)
+        {
+            s.send_all(&field_npoints[j][0],chunk_npoints*sizeof(uint64_t));
+            field_npoints[j].clear();
+        }
+
+        rem_points -= chunk_npoints;
+    }
+
+    kassert(!op.next());
+    dt = DT_END;
+    s.send_all(&dt,sizeof(dt));
+}
+
+static void
 handle_nop(tcp::socket4& s, const std::vector<parsed_data_token>& tokens)
 {
     // Do nothing.
@@ -543,6 +625,7 @@ parse_cmd(tcp::socket4& s, const command_syntax& cs)
                 case DT_TIME_LAST:
                 case DT_NLIMIT:
                 case DT_NLAST:
+                case DT_WINDOW_NS:
                     pdt.u64 = s.pop<uint64_t>();
                     tokens.push_back(pdt);
                 break;
