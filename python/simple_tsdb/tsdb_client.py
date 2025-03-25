@@ -19,6 +19,7 @@ CT_LIST_DATABASES       = 0x29200D6D
 CT_LIST_MEASUREMENTS    = 0x0FEB1399
 CT_LIST_SERIES          = 0x7B8238D6
 CT_COUNT_POINTS         = 0x0E329B19
+CT_SUM_POINTS           = 0x90305A39
 CT_NOP                  = 0x22CF1296
 
 # Data tokens
@@ -38,6 +39,8 @@ DT_FIELD_TYPE           = 0x7DB40C2A
 DT_FIELD_NAME           = 0x5C0D45C1
 DT_READY_FOR_CHUNK      = 0x6000531C
 DT_NPOINTS              = 0x5F469D08
+DT_WINDOW_NS            = 0x76F0C374
+DT_SUMS_CHUNK           = 0x53FC76FC
 
 
 # Status codes.
@@ -314,6 +317,79 @@ class SelectOP:
         self.last_token = self.client._recv_u32()
 
         return RXChunk(self.schema, self.fields, npoints, bitmap_offset, data)
+
+
+class RXSumsChunk:
+    def __init__(self, fields, timestamps, sums, npoints):
+        self.fields     = fields
+        self.timestamps = timestamps
+        self.sums       = sums
+        self.npoints    = npoints
+
+
+class SumsOP:
+    def __init__(self, client, database, measurement, series, fields, t0, t1,
+                 window_ns):
+        self.client    = client
+        self.fields    = fields
+        self.window_ns = window_ns
+        self.sums      = []
+        self.npoints   = []
+
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        field_list = ','.join(self.fields).encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIH%usIQIQIQI' % (len(database),
+                                                             len(measurement),
+                                                             len(series),
+                                                             len(field_list)),
+                          CT_SUM_POINTS,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_FIELD_LIST, len(field_list), field_list,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          DT_WINDOW_NS, window_ns,
+                          DT_END)
+        self.client._sendall(cmd)
+
+        dt = self.client._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self.client._recv_i32())
+
+        self.last_token = dt
+
+    def read_chunk(self):
+        if self.last_token == DT_END:
+            assert self.client._recv_u32() == DT_STATUS_CODE
+            assert self.client._recv_i32() == 0
+            return None
+
+        assert self.last_token == DT_SUMS_CHUNK
+        chunk_npoints = self.client._recv_u16()
+        data_len      = chunk_npoints * (8 + len(self.fields) * 16)
+        data          = self.client._recvall(data_len)
+        data_view     = memoryview(data)
+        pos           = 0
+        sums          = []
+        npoints       = []
+        timestamps    = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.uint64)
+        pos          += 8 * chunk_npoints
+        for _ in range(len(self.fields)):
+            sums.append(np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.float64))
+            pos += 8 * chunk_npoints
+        for _ in range(len(self.fields)):
+            npoints.append(np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                         dtype=np.uint64))
+            pos += 8 * chunk_npoints
+
+        self.last_token = self.client._recv_u32()
+
+        return RXSumsChunk(self.fields, timestamps, sums, npoints)
 
 
 class CountResult:
@@ -596,3 +672,8 @@ class Client:
         assert self._recv_i32() == 0
 
         return CountResult(time_first, time_last, npoints)
+
+    def sum_points(self, database, measurement, series, fields, t0, t1,
+                   window_ns):
+        return SumsOP(self, database, measurement, series, fields, t0, t1,
+                      window_ns)
