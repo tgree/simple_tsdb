@@ -25,6 +25,7 @@ enum command_token : uint32_t
     CT_LIST_DATABASES       = 0x29200D6D,
     CT_LIST_MEASUREMENTS    = 0x0FEB1399,
     CT_LIST_SERIES          = 0x7B8238D6,
+    CT_COUNT_POINTS         = 0x0E329B19,
     CT_NOP                  = 0x22CF1296,
 };
 
@@ -45,6 +46,7 @@ enum data_token : uint32_t
     DT_FIELD_TYPE       = 0x7DB40C2A,   // <type> (uint32_t)
     DT_FIELD_NAME       = 0x5C0D45C1,   // <name>
     DT_READY_FOR_CHUNK  = 0x6000531C,   // <max_data_len> (uint32_t)
+    DT_NPOINTS          = 0x5F469D08,   // <npoints> (uint64_t)
 };
 
 struct parsed_data_token
@@ -88,6 +90,8 @@ static void handle_list_series(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_get_schema(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+static void handle_count_points(
+    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_write_points(
     tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
 static void handle_delete_points(
@@ -130,6 +134,12 @@ static const command_syntax commands[] =
         handle_list_series,
         CT_LIST_SERIES,
         {DT_DATABASE, DT_MEASUREMENT, DT_END},
+    },
+    {
+        handle_count_points,
+        CT_COUNT_POINTS,
+        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_TIME_FIRST, DT_TIME_LAST,
+         DT_END},
     },
     {
         handle_write_points,
@@ -292,6 +302,37 @@ handle_list_series(tcp::socket4& s,
         s.send_all(&len,sizeof(len));
         s.send_all(s_name.c_str(),len);
     }
+}
+
+static void
+handle_count_points(tcp::socket4& s,
+    const std::vector<parsed_data_token>& tokens)
+{
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
+    uint64_t t0 = tokens[3].u64;
+    uint64_t t1 = tokens[4].u64;
+
+    futil::path path(database,measurement,series);
+    printf("COUNT FROM %s\n",path.c_str());
+
+    tsdb::database db(database);
+    tsdb::measurement m(db,measurement);
+    tsdb::series_read_lock read_lock(m,series);
+    auto cr = tsdb::count_points(read_lock,t0,t1);
+
+    uint32_t dt = DT_TIME_FIRST;
+    s.send_all(&dt,sizeof(dt));
+    s.send_all(&cr.time_first,sizeof(cr.time_first));
+
+    dt = DT_TIME_LAST;
+    s.send_all(&dt,sizeof(dt));
+    s.send_all(&cr.time_last,sizeof(cr.time_last));
+
+    dt = DT_NPOINTS;
+    s.send_all(&dt,sizeof(dt));
+    s.send_all(&cr.npoints,sizeof(cr.npoints));
 }
 
 static void
