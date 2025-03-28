@@ -80,10 +80,13 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     for (auto* slot = index_begin; slot < index_slot; ++slot)
     {
         futil::unlink_if_exists(time_ns_dir,slot->timestamp_file);
+        std::string gz_file = std::string(slot->timestamp_file) + ".gz";
         for (const auto& f : m.fields)
         {
             futil::path sub_path(f.name,slot->timestamp_file);
+            futil::path gz_sub_path(f.name,gz_file);
             futil::unlink_if_exists(fields_dir,sub_path);
+            futil::unlink_if_exists(fields_dir,gz_sub_path);
             futil::unlink_if_exists(bitmaps_dir,sub_path);
         }
     }
