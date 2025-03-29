@@ -3,6 +3,7 @@
 #include "delete.h"
 #include "measurement.h"
 #include "series.h"
+#include <futil/xact.h>
 #include <algorithm>
 
 void
@@ -77,6 +78,10 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     if (index_slot == index_begin)
         return;
 
+    // TODO: A crash here leaves behind the orphaned files, which will no
+    // longer be tracked anywhere and will just waste disk space.  The database
+    // itself is consistent, they will just be extra files.
+
     // Delete all orphaned chunks.
     futil::directory fields_dir(series_dir,"fields");
     futil::directory bitmaps_dir(series_dir,"bitmaps");
@@ -95,15 +100,14 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     }
 
     // Shift the index file appropriately.
-    // TODO: This is unsafe.  If we crash in the middle of memmove, but the OS
-    // stays up, we will have corrupted the OS' page cache copy of the index
-    // file, which will eventually get flushed back to disk.  We need to make
-    // the shift appear atomic.
-    memmove(index_begin,index_slot,
-            (index_end - index_slot)*sizeof(index_entry));
-    index_m.msync();
-    index_fd.truncate((index_end - index_slot)*sizeof(index_entry));
-    index_fd.fcntl(F_BARRIERFSYNC);
+    futil::directory tmp_dir("tmp");
+    futil::xact_mktemp tmp_index_fd(tmp_dir,"index.XXXXXX",0770);
+    tmp_index_fd.write_all(index_slot,
+                           (index_end - index_slot)*sizeof(index_entry));
+    tmp_index_fd.fcntl(F_BARRIERFSYNC);
+    futil::rename(tmp_dir,tmp_index_fd.name,series_dir,"index");
+    // TODO: Do we need to fsync series_dir after the rename?
+    tmp_index_fd.commit();
     printf("Deleted %zu slots from the start of the index file.\n",
            index_slot - index_begin);
 }
