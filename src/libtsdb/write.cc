@@ -352,7 +352,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         for (const auto& bitmap_file_path : bitmap_file_paths)
             futil::unlink_if_exists(bitmaps_dir,bitmap_file_path);
         // TODO: Probably need to sync fields_dir and bitmaps_dir.
-        tail_fd.fcntl(F_BARRIERFSYNC);
+        tail_fd.fsync_and_barrier();
         tail_fd.close();
         futil::unlink(time_ns_dir,ie.timestamp_file);
         index_fd.flock(LOCK_EX);
@@ -474,7 +474,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             }
 
             // Barrier before we update the index file.
-            tail_fd.fcntl(F_BARRIERFSYNC);
+            tail_fd.fsync_and_barrier();
 
             // Add the timestamp file to the index.
             memset(&ie,0,sizeof(ie));
@@ -519,7 +519,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // Update the timestamp file and issue a barrier before updating
         // time_last.
         tail_fd.write_all(time_data,write_points*sizeof(uint64_t));
-        tail_fd.fcntl(F_BARRIERFSYNC);
+        tail_fd.fsync_and_barrier();
 
         // Finally, update time_last.
         write_lock.time_last = time_data[write_points - 1];
@@ -529,7 +529,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 #if ENABLE_COMPRESSION
         if (!unlink_field_paths.empty())
         {
-            write_lock.time_last_fd.fcntl(F_BARRIERFSYNC);
+            write_lock.time_last_fd.fsync_and_barrier();
             for (const auto& ufp : unlink_field_paths)
                 futil::unlink_if_exists(fields_dir,ufp);
 
@@ -556,5 +556,5 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
     // Fully synchronize everything.
     // TODO: Check if battery is above 25% and just do a barrier instead?
-    write_lock.time_last_fd.fcntl(F_FULLFSYNC);
+    write_lock.time_last_fd.fsync_and_flush();
 }

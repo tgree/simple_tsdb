@@ -72,7 +72,7 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     // Update time_first.
     time_first_fd.lseek(0,SEEK_SET);
     time_first_fd.write_all(&time_first,8);
-    time_first_fd.fcntl(F_BARRIERFSYNC);
+    time_first_fd.fsync_and_barrier();
 
     // If we are keeping all the index slots, then we are done now.
     if (index_slot == index_begin)
@@ -111,7 +111,7 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     futil::xact_mktemp tmp_index_fd(tmp_dir,"index.XXXXXX",0770);
     tmp_index_fd.write_all(index_slot,
                            (index_end - index_slot)*sizeof(index_entry));
-    tmp_index_fd.fcntl(F_BARRIERFSYNC);
+    tmp_index_fd.fsync_and_barrier();
     futil::rename(tmp_dir,tmp_index_fd.name,series_dir,"index");
     // TODO: Do we need to fsync series_dir after the rename?
     tmp_index_fd.commit();
