@@ -4,6 +4,7 @@
 #define __SRC_FUTIL_XACT_H
 
 #include "futil.h"
+#include <hdr/auto_buf.h>
 
 namespace futil
 {
@@ -50,6 +51,39 @@ namespace futil
             _xact_mkdir(AT_FDCWD,path,mode),
             directory(path)
         {
+        }
+    };
+
+    struct _xact_mkdtemp : public xact
+    {
+        const int at_fd;
+        auto_chrbuf name;
+
+    protected:
+        _xact_mkdtemp(int at_fd, const char* templ):
+            at_fd(at_fd),
+            name(strlen(templ) + 1)
+        {
+            strcpy(name,templ);
+            if (!::mkdtempat_np(at_fd,name))
+                throw futil::errno_exception(errno);
+        }
+
+        ~_xact_mkdtemp()
+        {
+            if (!committed)
+                ::unlinkat(at_fd,name,AT_REMOVEDIR);
+        }
+    };
+
+    struct xact_mkdtemp : public _xact_mkdtemp,
+                          public directory
+    {
+        xact_mkdtemp(const directory& dir, const char* templ, mode_t mode):
+            _xact_mkdtemp(dir.fd,templ),
+            directory(dir,(const char*)name)
+        {
+            futil::fchmod(dir.fd,mode);
         }
     };
 
