@@ -78,9 +78,10 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     if (index_slot == index_begin)
         return;
 
-    // TODO: A crash here leaves behind the orphaned files, which will no
-    // longer be tracked anywhere and will just waste disk space.  The database
-    // itself is consistent, they will just be extra files.
+    // A crash here leaves slots in the index file the precede time_first.  As
+    // long as code honors the time_first limit, then these extra slots won't
+    // hurt anything, and they will get cleaned up on the next delete
+    // operation.
 
     // Delete all orphaned chunks.
     futil::directory fields_dir(series_dir,"fields");
@@ -98,6 +99,12 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
             futil::unlink_if_exists(bitmaps_dir,sub_path);
         }
     }
+
+    // A crash here leaves the slots in the index file, after we have deleted
+    // the backing files for those slots.  Again, this should not cause any
+    // issue as long as time_first is honored everywhere.  It means that during
+    // cleanup on the next delete operation we need to consider that the target
+    // file being deleted might no longer exist.
 
     // Shift the index file appropriately.
     futil::directory tmp_dir("tmp");
