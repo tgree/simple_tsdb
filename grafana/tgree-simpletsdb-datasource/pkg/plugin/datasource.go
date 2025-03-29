@@ -30,6 +30,8 @@ const (
 	CT_LIST_DATABASES       uint32 = 0x29200D6D
 	CT_LIST_MEASUREMENTS    uint32 = 0x0FEB1399
 	CT_LIST_SERIES          uint32 = 0x7B8238D6
+	CT_COUNT_POINTS         uint32 = 0x0E329B19
+	CT_SUM_POINTS           uint32 = 0x90305A39
 	CT_NOP                  uint32 = 0x22CF1296
 
 	DT_DATABASE             uint32 = 0x39385A4F   // <database>
@@ -47,6 +49,9 @@ const (
 	DT_FIELD_TYPE           uint32 = 0x7DB40C2A   // <type> (uint32_t)
 	DT_FIELD_NAME           uint32 = 0x5C0D45C1   // <name>
 	DT_READY_FOR_CHUNK      uint32 = 0x6000531C   // <max_data_len> (uint32_t)
+	DT_NPOINTS              uint32 = 0x5F469D08   // <npoints> (uint64_t)
+	DT_WINDOW_NS            uint32 = 0x76F0C374   // <window_ns> (uint64_t)
+	DT_SUMS_CHUNK           uint32 = 0x53FC76FC   // <chunk_npoints> (uint16_t)
 
 	FT_BOOL uint8 = 1
 	FT_U32 uint8  = 2
@@ -1116,4 +1121,89 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 
 func (self *RXChunk) String() string {
 	return fmt.Sprintf("<npoints %v, bitmap_offset %v>", self.npoints, self.bitmap_offset)
+}
+
+type SumOp struct {
+	client		*TSDBClient
+	database	string
+	measurement	string
+	series		string
+	field		string
+	t0		uint64
+	t1		uint64
+	window_ns	uint64
+	last_token	uint32
+}
+
+func (self *TSDBClient) NewSumOp(database string, measurement string, series string, field string, t0 uint64, t1 uint64, window_ns uint64) (*SumOp, error) {
+	op := SumOp{
+		client:		self,
+		database:	database,
+		measurement:	measurement,
+		series:		series,
+		field:		field,
+		t0:		t0,
+		t1:		t1,
+		window_ns:	window_ns,
+	}
+
+	err := self.WriteU32(CT_SUM_POINTS)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_SERIES, series)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_FIELD_LIST, field)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_WINDOW_NS, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	op.last_token, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if op.last_token == DT_STATUS_CODE {
+		sc, err := self.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		backend.Logger.Debug("Status", "status", sc)
+		panic("Unexpected status")
+	}
+
+	return &op, nil
 }
