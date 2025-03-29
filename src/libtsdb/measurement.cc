@@ -37,26 +37,55 @@ tsdb::create_measurement(const database& db, const futil::path& name,
     if (name.empty() || name[0] == '/' || name.count_components() > 1)
         throw tsdb::invalid_measurement_exception();
 
-    // TODO: If the measurement already exists and matches exactly what we are
-    // trying to make, then we should quietly return success.
-
-    futil::directory tmp_dir("tmp");
-    futil::xact_mkdtemp m_dir(tmp_dir,"measurement.XXXXXX",0770);
-    futil::xact_creat csl_fd(m_dir,"create_series_lock",
-                             O_WRONLY | O_CREAT | O_EXCL,0660);
-    futil::xact_creat schema_fd(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL,
-                                0440);
-    
-    for (auto& se : fields)
-        schema_fd.write_all(&se,sizeof(se));
-
-    if (futil::rename_if_not_exists(tmp_dir,(const char*)m_dir.name,db.dir,
-                                    name))
+    for (;;)
     {
-        schema_fd.commit();
-        csl_fd.commit();
-        m_dir.commit();
-        return;
+        try
+        {
+            // Start by trying to open an existing measurement.
+            tsdb::measurement m(db,name);
+
+            // Validate that it is the same as what we are creating.
+            if (fields.size() != m.fields.size())
+                throw tsdb::measurement_exists_exception();
+            for (size_t i=0; i<fields.size(); ++i)
+            {
+                if (fields[i].type != m.fields[i].type)
+                    throw tsdb::measurement_exists_exception();
+                if (strcmp(fields[i].name,m.fields[i].name))
+                    throw tsdb::measurement_exists_exception();
+            }
+
+            // The measurement exists and is the same, so just exit.
+            return;
+        }
+        catch (const tsdb::no_such_measurement_exception&)
+        {
+        }
+
+        // The measurement doesn't exist.  Create it in the tmp directory first.
+        futil::directory tmp_dir("tmp");
+        futil::xact_mkdtemp m_dir(tmp_dir,"measurement.XXXXXX",0770);
+        futil::xact_creat csl_fd(m_dir,"create_series_lock",
+                                 O_WRONLY | O_CREAT | O_EXCL,0660);
+        futil::xact_creat schema_fd(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL,
+                                    0440);
+        
+        for (auto& se : fields)
+            schema_fd.write_all(&se,sizeof(se));
+
+        // Try to move the newly-created measurement into place.
+        if (futil::rename_if_not_exists(tmp_dir,(const char*)m_dir.name,db.dir,
+                                        name))
+        {
+            schema_fd.commit();
+            csl_fd.commit();
+            m_dir.commit();
+            return;
+        }
+
+        // The move operation failed.  This means that a directory now exists
+        // in the target measurement location, indicating that someone has just
+        // created the measurement.  Loop around and try again.
     }
 }
 catch (const futil::errno_exception& e)
