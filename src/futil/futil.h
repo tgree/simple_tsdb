@@ -588,6 +588,9 @@ namespace futil
         {
             open(d,p,oflag,mode);
         }
+
+    protected:
+        file(int fd):file_descriptor(fd) {}
     };
 
     struct file_write_watcher
