@@ -37,6 +37,18 @@ std::vector<tsdb::schema_entry> fields =
     {tsdb::FT_I64,{},"field_i64"},
 };
 
+std::vector<tsdb::schema_entry> bad_fields =
+{
+    {tsdb::FT_I64,{},"field_i64"},
+    {tsdb::FT_BOOL,{},"field_bool"},
+    {tsdb::FT_U32,{},"field_u32_1"},
+    {tsdb::FT_U32,{},"field_u32_2"},
+    {tsdb::FT_U64,{},"field_u64"},
+    {tsdb::FT_F32,{},"field_f32"},
+    {tsdb::FT_F64,{},"field_f64"},
+    {tsdb::FT_I32,{},"field_i32"},
+};
+
 struct data_point
 {
     uint64_t    time_ns;
@@ -207,7 +219,17 @@ main(int argc, const char* argv[])
         tsdb::create_database(db);
         tsdb::database _db(db);
         for (const auto* m : measurements)
+        {
             tsdb::create_measurement(_db,m,fields);
+            tsdb::create_measurement(_db,m,fields);
+            try
+            {
+                tsdb::create_measurement(_db,m,bad_fields);
+            }
+            catch (const tsdb::measurement_exists_exception&)
+            {
+            }
+        }
     }
 
     std::vector<std::string> field_names;
