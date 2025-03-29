@@ -25,4 +25,18 @@ struct auto_buf
     }
 };
 
+struct auto_chrbuf : public auto_buf
+{
+    operator char*()
+    {
+        return (char*)data;
+    }
+    operator const char*() const
+    {
+        return (const char*)data;
+    }
+
+    auto_chrbuf(size_t len):auto_buf(len) {}
+};
+
 #endif /* __HDR_AUTO_BUF_H */
