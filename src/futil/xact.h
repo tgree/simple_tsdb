@@ -87,6 +87,42 @@ namespace futil
         }
     };
 
+    struct _xact_mktemp : public xact
+    {
+        const int at_fd;
+        auto_chrbuf name;
+
+    protected:
+        int mk_fd;
+
+        _xact_mktemp(int at_fd, const char* templ):
+            at_fd(at_fd),
+            name(strlen(templ) + 1)
+        {
+            strcpy(name,templ);
+            mk_fd = ::mkstempsat_np(at_fd,name,0);
+            if (mk_fd == -1)
+                throw futil::errno_exception(errno);
+        }
+
+        ~_xact_mktemp()
+        {
+            if (!committed)
+                ::unlinkat(at_fd,name,0);
+        }
+    };
+
+    struct xact_mktemp : public _xact_mktemp,
+                         public file
+    {
+        xact_mktemp(const directory& dir, const char* templ, mode_t mode):
+            _xact_mktemp(dir.fd,templ),
+            file(mk_fd)
+        {
+            futil::fchmod(mk_fd,mode);
+        }
+    };
+
     class xact_creat : public xact,
                        public file
     {
