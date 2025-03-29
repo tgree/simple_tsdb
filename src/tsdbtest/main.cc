@@ -365,6 +365,59 @@ select_test()
     delete op;
 }
 
+void
+rotate_test()
+{
+    // Delete some points from the front and append them to the end.
+
+    // Get a random series.
+    size_t ss_index = rand() % states.size();
+    auto& ss = states[ss_index];
+
+    // Get a timestamp in the live range.
+    uint64_t t_min = ss.points.front().time_ns;
+    uint64_t t_max = ss.points.back().time_ns;
+    uint64_t t = std::uniform_int_distribution<uint64_t>(t_min,t_max)(mt);
+
+    // We will delete everything up to and including t.
+    auto fp = ss.points.begin();
+    auto mp = std::lower_bound(ss.points.begin(),ss.points.end(),t + 1);
+    size_t npoints = mp - fp;
+    if (!npoints)
+        return;
+
+    // Delete from the front of the database.
+    tsdb::database db(ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    printf("DELETE FROM %s WHERE time_ns < %llu\n",ss.dms_path.c_str(),t);
+    tsdb::delete_points(m,ss.series,t);
+
+    // Incrementing the timestamp for everything that will be rotated.
+    uint64_t dt = ss.points.back().time_ns - ss.points.front().time_ns + 1;
+    while (fp != mp)
+    {
+        fp->time_ns += dt;
+        ++fp;
+    }
+
+    // Write the points that we are about to rotate.
+    printf("WRITE %s T %llu NPOINTS %zu\n",
+           ss.dms_path.c_str(),ss.points.front().time_ns,npoints);
+    write_series(ss,0,npoints);
+
+    // Now rotate.
+    std::rotate(ss.points.begin(),mp,ss.points.end());
+
+    // Finally, validate the entire series.
+    tsdb::series_read_lock read_lock(m,ss.series);
+    auto cr = tsdb::count_points(read_lock,0,-1);
+    kassert(cr.npoints == ss.points.size());
+    kassert(cr.time_first == ss.points.front().time_ns);
+    kassert(cr.time_last == ss.points.back().time_ns);
+    tsdb::select_op_first op(read_lock,ss.dms_path,field_names,0,-1,-1);
+    validate_points(ss.points.begin(),&op,ss.points.size());
+}
+
 int
 main(int argc, const char* argv[])
 {
@@ -463,7 +516,9 @@ main(int argc, const char* argv[])
     {
         // Figure out what action to take.
         uint8_t p = std::uniform_int_distribution<uint8_t>(0,100)(mt);
-        if (p <= 100)
+        if (p <= 5)
+            rotate_test();
+        else if (p <= 100)
             select_test();
     }
 }
