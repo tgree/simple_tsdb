@@ -6,7 +6,7 @@
 
 tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     dir(db.dir,path),
-    schema_fd(dir,"schema",O_RDONLY),
+    schema_fd(dir,"schema",O_RDONLY | O_SHLOCK),
     schema_mapping(0,schema_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                    schema_fd.fd,0),
     fields((const schema_entry*)schema_mapping.addr,
