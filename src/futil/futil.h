@@ -673,6 +673,15 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void rename(const directory& old_dir, const char* old,
+                       const directory& new_dir, const char* _new)
+    {
+        // Renames to the target location, atomically overwriting whatever was
+        // there to begin with.
+        if (::renameat(old_dir.fd,old,new_dir.fd,_new) == -1)
+            throw errno_exception(errno);
+    }
+
     inline bool rename_if_not_exists(const directory& old_dir, const char* old,
                                      const directory& new_dir, const char* _new)
     {
