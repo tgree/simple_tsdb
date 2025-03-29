@@ -68,8 +68,7 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
             index_fd.fsync();
 
             // Write barrier so that time_last_fd is the last thing to go out.
-            // TODO: fsync() series_dir.
-            index_fd.fsync_and_barrier();
+            series_dir.fsync_and_barrier();
 
             // Create the time_last file and populate it with 0.
             time_last_fd.open(series_dir,"time_last",
@@ -77,7 +76,8 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
             uint64_t zero = 0;
             time_last_fd.write_all(&zero,sizeof(uint64_t));
             time_last_fd.lseek(0,SEEK_SET);
-            // TODO: fsync() series_dir.
+            time_last_fd.fsync();
+            series_dir.fsync_and_flush();
         }
     }
 
