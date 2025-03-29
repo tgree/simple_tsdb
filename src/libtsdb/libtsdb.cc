@@ -6,8 +6,10 @@
 void
 tsdb::init() try
 {
+    futil::xact_mkdir tmp_dir("tmp",0770);
     futil::xact_mkdir databases_dir("databases",0770);
     databases_dir.commit();
+    tmp_dir.commit();
 }
 catch (const futil::errno_exception& e)
 {
