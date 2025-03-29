@@ -73,6 +73,10 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     time_first_fd.write_all(&time_first,8);
     time_first_fd.fcntl(F_BARRIERFSYNC);
 
+    // If we are keeping all the index slots, then we are done now.
+    if (index_slot == index_begin)
+        return;
+
     // Delete all orphaned chunks.
     futil::directory fields_dir(series_dir,"fields");
     futil::directory bitmaps_dir(series_dir,"bitmaps");
