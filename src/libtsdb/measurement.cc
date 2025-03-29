@@ -7,7 +7,7 @@
 
 tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     dir(db.dir,path),
-    schema_fd(dir,"schema",O_RDONLY | O_SHLOCK),
+    schema_fd(dir,"schema",O_RDONLY),
     schema_mapping(0,schema_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                    schema_fd.fd,0),
     fields((const schema_entry*)schema_mapping.addr,
@@ -37,25 +37,27 @@ tsdb::create_measurement(const database& db, const futil::path& name,
     if (name.empty() || name[0] == '/' || name.count_components() > 1)
         throw tsdb::invalid_measurement_exception();
 
-    // TODO: If we crash we will have a partially-created measurement which we
-    // are then stuck with.  This should all be done in a temporary directory
-    // that then gets atomically renamed into place.
-
     // TODO: If the measurement already exists and matches exactly what we are
     // trying to make, then we should quietly return success.
 
-    futil::xact_mkdir m_dir(db.dir,name,0770);
-    futil::xact_creat csl_fd(m_dir,"create_series_lock",O_WRONLY | O_CREAT,
-                             0660);
-    futil::xact_creat schema_fd(m_dir,"schema",
-                                O_WRONLY | O_CREAT | O_EXCL | O_EXLOCK,0440);
+    futil::directory tmp_dir("tmp");
+    futil::xact_mkdtemp m_dir(tmp_dir,"measurement.XXXXXX",0770);
+    futil::xact_creat csl_fd(m_dir,"create_series_lock",
+                             O_WRONLY | O_CREAT | O_EXCL,0660);
+    futil::xact_creat schema_fd(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL,
+                                0440);
     
     for (auto& se : fields)
         schema_fd.write_all(&se,sizeof(se));
 
-    schema_fd.commit();
-    csl_fd.commit();
-    m_dir.commit();
+    if (futil::rename_if_not_exists(tmp_dir,(const char*)m_dir.name,db.dir,
+                                    name))
+    {
+        schema_fd.commit();
+        csl_fd.commit();
+        m_dir.commit();
+        return;
+    }
 }
 catch (const futil::errno_exception& e)
 {
