@@ -422,7 +422,7 @@ int
 main(int argc, const char* argv[])
 {
     // Create a temporary directory for our database.
-    char tmp[] = "/tmp/tsdbtest.XXXXXX";
+    char tmp[] = "/Volumes/ram_disk/tsdbtest.XXXXXX";
     futil::mkdtemp(tmp);
     futil::chdir(tmp);
 
