@@ -3,6 +3,7 @@
 #include "measurement.h"
 #include "database.h"
 #include "exception.h"
+#include <futil/xact.h>
 
 tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     dir(db.dir,path),
@@ -43,44 +44,18 @@ tsdb::create_measurement(const database& db, const futil::path& name,
     // TODO: If the measurement already exists and matches exactly what we are
     // trying to make, then we should quietly return success.
 
-    futil::mkdir(db.dir,name,0770);
-    futil::directory m_dir(db.dir,name);
-
-    futil::file fd;
-    try
-    {
-        fd.open(m_dir,"create_series_lock",O_WRONLY | O_CREAT | O_EXCL,0660);
-    }
-    catch (...)
-    {
-        unlinkat(db.dir.fd,name,AT_REMOVEDIR);
-        throw;
-    }
-    fd.close();
-
-    try
-    {
-        fd.open(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL | O_EXLOCK,0440);
-    }
-    catch (...)
-    {
-        unlinkat(m_dir.fd,"create_series_lock",0);
-        unlinkat(db.dir.fd,name,AT_REMOVEDIR);
-        throw;
-    }
+    futil::xact_mkdir m_dir(db.dir,name,0770);
+    futil::xact_creat csl_fd(m_dir,"create_series_lock",O_WRONLY | O_CREAT,
+                             0660);
+    futil::xact_creat schema_fd(m_dir,"schema",
+                                O_WRONLY | O_CREAT | O_EXCL | O_EXLOCK,0440);
     
-    try
-    {
-        for (auto& se : fields)
-            fd.write_all(&se,sizeof(se));
-    }
-    catch (...)
-    {
-        unlinkat(m_dir.fd,"schema",0);
-        unlinkat(m_dir.fd,"create_series_lock",0);
-        unlinkat(db.dir.fd,name,AT_REMOVEDIR);
-        throw;
-    }
+    for (auto& se : fields)
+        schema_fd.write_all(&se,sizeof(se));
+
+    schema_fd.commit();
+    csl_fd.commit();
+    m_dir.commit();
 }
 catch (const futil::errno_exception& e)
 {
