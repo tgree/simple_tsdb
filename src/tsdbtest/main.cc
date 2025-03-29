@@ -89,6 +89,10 @@ struct series_state
     std::vector<data_point> points;
 };
 
+std::mt19937_64 mt(std::mt19937_64::default_seed + 1);
+std::vector<series_state> states;
+std::vector<std::string> field_names;
+
 static void
 push_bitmap(std::vector<uint64_t>& data, const bool* is_null, size_t npoints)
 {
@@ -201,6 +205,166 @@ write_series(series_state& ss, size_t offset, size_t npoints)
     }
 }
 
+void
+validate_points(std::vector<data_point>::iterator fp, tsdb::select_op* op,
+    size_t npoints)
+{
+    size_t total_points = 0;
+    for (;;)
+    {
+        printf("CHUNK %zu\n",op->npoints);
+        total_points += op->npoints;
+        kassert(total_points <= npoints);
+        for (size_t i=0; i<op->npoints; ++i)
+        {
+            data_point p =
+            {
+                op->timestamp_data[i],
+                op->get_field<bool,0>(i),
+                op->get_field<uint32_t,1>(i),
+                op->get_field<uint32_t,2>(i),
+                op->get_field<uint64_t,3>(i),
+                op->get_field<float,4>(i),
+                op->get_field<double,5>(i),
+                op->get_field<int32_t,6>(i),
+                op->get_field<int64_t,7>(i),
+                op->is_field_null(0,i),
+                op->is_field_null(1,i),
+                op->is_field_null(2,i),
+                op->is_field_null(3,i),
+                op->is_field_null(4,i),
+                op->is_field_null(5,i),
+                op->is_field_null(6,i),
+                op->is_field_null(7,i),
+            };
+            kassert(p.time_ns             == fp->time_ns);
+            kassert(p.field_bool          == fp->field_bool);
+            kassert(p.field_u32_1         == fp->field_u32_1);
+            kassert(p.field_u32_2         == fp->field_u32_2);
+            kassert(p.field_u64           == fp->field_u64);
+            kassert(p.field_f32           == fp->field_f32);
+            kassert(p.field_f64           == fp->field_f64);
+            kassert(p.field_i32           == fp->field_i32);
+            kassert(p.field_i64           == fp->field_i64);
+            kassert(p.field_bool_is_null  == fp->field_bool_is_null);
+            kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
+            kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
+            kassert(p.field_u64_is_null   == fp->field_u64_is_null);
+            kassert(p.field_f32_is_null   == fp->field_f32_is_null);
+            kassert(p.field_f64_is_null   == fp->field_f64_is_null);
+            kassert(p.field_i32_is_null   == fp->field_i32_is_null);
+            kassert(p.field_i64_is_null   == fp->field_i64_is_null);
+            ++fp;
+        }
+
+        if (op->is_last)
+            break;
+
+        op->advance();
+    }
+    kassert(total_points == npoints);
+}
+
+void
+select_test()
+{
+    // Get a random series.
+    size_t ss_index = rand() % states.size();
+    auto& ss = states[ss_index];
+
+    // Get a random range.
+    uint64_t t[2];
+    uint32_t t_type[2];
+    for (size_t i=0; i<NELEMS(t); ++i)
+    {
+        t_type[i] = rand() % 3;
+        if (t_type[i] == 0 && ss.points.front().time_ns == 0)
+            t_type[i] = 1;
+        else if (t_type[i] == 2 && ss.points.back().time_ns == -1)
+            t_type[i] = 1;
+
+        uint64_t t_min;
+        uint64_t t_max;
+        if (t_type[i] == 0)
+        {
+            t_min = 0;
+            t_max = ss.points.front().time_ns - 1;
+        }
+        else if (t_type[i] == 1)
+        {
+            t_min = ss.points.front().time_ns;
+            t_max = ss.points.back().time_ns;
+        }
+        else
+        {
+            t_min = ss.points.back().time_ns + 1;
+            t_max = -1;
+        }
+        t[i] = std::uniform_int_distribution<uint64_t>(t_min,t_max)(mt);
+    }
+    uint64_t t0 = MIN(t[0],t[1]);
+    uint64_t t1 = MAX(t[0],t[1]);
+
+    // Find our expected first point.
+    auto fp = std::lower_bound(ss.points.begin(),ss.points.end(),t0);
+    auto lp = std::upper_bound(ss.points.begin(),ss.points.end(),t1);
+    size_t npoints = lp - fp;
+
+    // Perform the query.
+    tsdb::database db(ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    tsdb::series_read_lock read_lock(m,ss.series);
+    tsdb::select_op* op;
+    size_t N;
+    switch (rand() % 3)
+    {
+        case 0:
+            // No limit.
+            printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+                   "EXPECT %zu\n",
+                   ss.dms_path.c_str(),t0,t1,
+                   ss.points.front().time_ns,
+                   ss.points.back().time_ns,
+                   t_type[0],t_type[1],npoints);
+            op = new tsdb::select_op_first(read_lock,ss.dms_path,
+                                           field_names,t0,t1,-1);
+        break;
+
+        case 1:
+            // LIMIT N.
+            N = rand() % 1000000;
+            npoints = MIN(N,npoints);
+            printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+                   "LIMIT %zu EXPECT %zu\n",
+                   ss.dms_path.c_str(),t0,t1,
+                   ss.points.front().time_ns,
+                   ss.points.back().time_ns,
+                   t_type[0],t_type[1],N,npoints);
+            op = new tsdb::select_op_first(read_lock,ss.dms_path,
+                                           field_names,t0,t1,N);
+        break;
+
+        case 2:
+            // LAST N.
+            N = rand() % 1000000;
+            npoints = MIN(N,npoints);
+            fp = lp - npoints;
+            printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+                   "LAST %zu EXPECT %zu\n",
+                   ss.dms_path.c_str(),t0,t1,
+                   ss.points.front().time_ns,
+                   ss.points.back().time_ns,
+                   t_type[0],t_type[1],N,npoints);
+            op = new tsdb::select_op_last(read_lock,ss.dms_path,
+                                          field_names,t0,t1,N);
+        break;
+    }
+
+    // Validate.
+    validate_points(fp,op,npoints);
+    delete op;
+}
+
 int
 main(int argc, const char* argv[])
 {
@@ -232,14 +396,12 @@ main(int argc, const char* argv[])
         }
     }
 
-    std::vector<std::string> field_names;
     for (auto& f : fields)
         field_names.push_back(f.name);
 
     // Create 10 random series.
     printf("Generating random points...\n");
     srand(2);
-    std::vector<series_state> states;
     uint64_t time_ns = rand();
     for (size_t i=0; i<10; ++i)
     {
@@ -297,158 +459,12 @@ main(int argc, const char* argv[])
         }
     }
 
-    std::mt19937_64 mt(std::mt19937_64::default_seed + 1);
     for (;;)
     {
-        // Get a random series.
-        size_t ss_index = rand() % states.size();
-        auto& ss = states[ss_index];
-
-        // Get a random range.
-        uint64_t t[2];
-        uint32_t t_type[2];
-        for (size_t i=0; i<NELEMS(t); ++i)
-        {
-            t_type[i] = rand() % 3;
-            if (t_type[i] == 0 && ss.points.front().time_ns == 0)
-                t_type[i] = 1;
-            else if (t_type[i] == 2 && ss.points.back().time_ns == -1)
-                t_type[i] = 1;
-
-            uint64_t t_min;
-            uint64_t t_max;
-            if (t_type[i] == 0)
-            {
-                t_min = 0;
-                t_max = ss.points.front().time_ns - 1;
-            }
-            else if (t_type[i] == 1)
-            {
-                t_min = ss.points.front().time_ns;
-                t_max = ss.points.back().time_ns;
-            }
-            else
-            {
-                t_min = ss.points.back().time_ns + 1;
-                t_max = -1;
-            }
-            t[i] = std::uniform_int_distribution<uint64_t>(t_min,t_max)(mt);
-        }
-        uint64_t t0 = MIN(t[0],t[1]);
-        uint64_t t1 = MAX(t[0],t[1]);
-
-        // Find our expected first point.
-        auto fp = std::lower_bound(ss.points.begin(),ss.points.end(),t0);
-        auto lp = std::upper_bound(ss.points.begin(),ss.points.end(),t1);
-        size_t npoints = lp - fp;
-
-        // Perform the query.
-        tsdb::database db(ss.database);
-        tsdb::measurement m(db,ss.measurement);
-        tsdb::series_read_lock read_lock(m,ss.series);
-        tsdb::select_op* op;
-        size_t N;
-        switch (rand() % 3)
-        {
-            case 0:
-                // No limit.
-                printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
-                       "EXPECT %zu\n",
-                       ss.dms_path.c_str(),t0,t1,
-                       ss.points.front().time_ns,
-                       ss.points.back().time_ns,
-                       t_type[0],t_type[1],npoints);
-                op = new tsdb::select_op_first(read_lock,ss.dms_path,
-                                               field_names,t0,t1,-1);
-            break;
-
-            case 1:
-                // LIMIT N.
-                N = rand() % 1000000;
-                npoints = MIN(N,npoints);
-                printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
-                       "LIMIT %zu EXPECT %zu\n",
-                       ss.dms_path.c_str(),t0,t1,
-                       ss.points.front().time_ns,
-                       ss.points.back().time_ns,
-                       t_type[0],t_type[1],N,npoints);
-                op = new tsdb::select_op_first(read_lock,ss.dms_path,
-                                               field_names,t0,t1,N);
-            break;
-
-            case 2:
-                // LAST N.
-                N = rand() % 1000000;
-                npoints = MIN(N,npoints);
-                fp = lp - npoints;
-                printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
-                       "LAST %zu EXPECT %zu\n",
-                       ss.dms_path.c_str(),t0,t1,
-                       ss.points.front().time_ns,
-                       ss.points.back().time_ns,
-                       t_type[0],t_type[1],N,npoints);
-                op = new tsdb::select_op_last(read_lock,ss.dms_path,
-                                              field_names,t0,t1,N);
-            break;
-        }
-
-        // Validate.
-        size_t total_points = 0;
-        for (;;)
-        {
-            printf("CHUNK %zu\n",op->npoints);
-            total_points += op->npoints;
-            kassert(total_points <= npoints);
-            for (size_t i=0; i<op->npoints; ++i)
-            {
-                data_point p =
-                {
-                    op->timestamp_data[i],
-                    op->get_field<bool,0>(i),
-                    op->get_field<uint32_t,1>(i),
-                    op->get_field<uint32_t,2>(i),
-                    op->get_field<uint64_t,3>(i),
-                    op->get_field<float,4>(i),
-                    op->get_field<double,5>(i),
-                    op->get_field<int32_t,6>(i),
-                    op->get_field<int64_t,7>(i),
-                    op->is_field_null(0,i),
-                    op->is_field_null(1,i),
-                    op->is_field_null(2,i),
-                    op->is_field_null(3,i),
-                    op->is_field_null(4,i),
-                    op->is_field_null(5,i),
-                    op->is_field_null(6,i),
-                    op->is_field_null(7,i),
-                };
-                kassert(p.time_ns             == fp->time_ns);
-                kassert(p.field_bool          == fp->field_bool);
-                kassert(p.field_u32_1         == fp->field_u32_1);
-                kassert(p.field_u32_2         == fp->field_u32_2);
-                kassert(p.field_u64           == fp->field_u64);
-                kassert(p.field_f32           == fp->field_f32);
-                kassert(p.field_f64           == fp->field_f64);
-                kassert(p.field_i32           == fp->field_i32);
-                kassert(p.field_i64           == fp->field_i64);
-                kassert(p.field_bool_is_null  == fp->field_bool_is_null);
-                kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
-                kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
-                kassert(p.field_u64_is_null   == fp->field_u64_is_null);
-                kassert(p.field_f32_is_null   == fp->field_f32_is_null);
-                kassert(p.field_f64_is_null   == fp->field_f64_is_null);
-                kassert(p.field_i32_is_null   == fp->field_i32_is_null);
-                kassert(p.field_i64_is_null   == fp->field_i64_is_null);
-                ++fp;
-            }
-
-            if (op->is_last)
-                break;
-
-            op->advance();
-        }
-        kassert(total_points == npoints);
-
-        delete op;
+        // Figure out what action to take.
+        uint8_t p = std::uniform_int_distribution<uint8_t>(0,100)(mt);
+        if (p <= 100)
+            select_test();
     }
 }
 
