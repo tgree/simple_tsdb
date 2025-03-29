@@ -464,7 +464,9 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             if (write_lock.time_first > write_lock.time_last)
             {
                 // TODO: Double check that in this case we are also writing
-                // to the first entry of the index file.
+                // to the first entry of the index file.  Although, in the case
+                // of a crash during a delete operation before the index has
+                // been shifted, we might not be at the first entry.
                 write_lock.time_first = time_data[0];
                 write_lock.time_first_fd.lseek(0,SEEK_SET);
                 write_lock.time_first_fd.write_all(&write_lock.time_first,8);
