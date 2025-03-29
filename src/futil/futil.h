@@ -423,7 +423,7 @@ namespace futil
         {
             for (;;)
             {
-                fd = ::open(p,O_DIRECTORY | O_SEARCH);
+                fd = ::open(p,O_DIRECTORY | O_RDONLY);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
@@ -435,7 +435,7 @@ namespace futil
         {
             for (;;)
             {
-                fd = ::openat(d.fd,p,O_DIRECTORY | O_SEARCH);
+                fd = ::openat(d.fd,p,O_DIRECTORY | O_RDONLY);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
