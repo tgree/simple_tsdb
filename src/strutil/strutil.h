@@ -26,7 +26,7 @@ namespace str
     // Returns a slice of the string, from index i to index j-1, inclusive.
     // Negative indices are measured from the end of the string with index -1
     // being the last character, -2 the second-last character, etc.
-    constexpr std::string
+    inline std::string
     slice(const std::string& s, ssize_t i = 0, ssize_t j = 0x7FFFFFFFFFFFFFFFLL)
     {
         slice_indices si(s.size(),i,j);
@@ -34,7 +34,7 @@ namespace str
     }
 
     // Strips whitespace from either end of the string.
-    constexpr std::string
+    inline std::string
     strip(const std::string& s)
     {
         size_t i = s.find_first_not_of("\n\r\t\f ");
@@ -57,7 +57,7 @@ namespace str
     //
     // This is clearer if you replace the separator in the split() case with a
     // comma instead.
-    constexpr std::vector<std::string>
+    inline std::vector<std::string>
     split_whitespace(const std::string& s)
     {
         std::vector<std::string> v;
@@ -82,7 +82,7 @@ namespace str
     // Splits the string.  If sep is specified, then it is used as the
     // separator and may be more than one character long.  If sep is empty or
     // NULL, then any kind of whitespace is used as the separator.
-    constexpr std::vector<std::string>
+    inline std::vector<std::string>
     split(const std::string& s, const char* sep = NULL)
     {
         if (!sep || sep[0] == '\0')
@@ -106,7 +106,7 @@ namespace str
     }
 
     // Returns true if all charactes in the string are printable.
-    constexpr bool
+    inline bool
     isprint(const std::string& s)
     {
         for (char c: s)
