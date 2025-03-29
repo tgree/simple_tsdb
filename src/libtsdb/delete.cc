@@ -31,13 +31,12 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
                                  PROT_READ | PROT_WRITE,MAP_SHARED,0);
     auto* index_begin = (index_entry*)index_m.addr;
     auto* index_end = index_begin + index_m.len / sizeof(index_entry);
-    auto* index_slot = index_begin;
 
     // Find the target slot.  std::upper_bound returns the first slot greater
     // than the requested value, meaning that t must appear in the slot
     // preceding it - IF t appears at all.  It could be the case that t is
     // a value in the gap between slots.
-    index_slot = std::upper_bound(index_begin,index_end,t);
+    auto* index_slot = std::upper_bound(index_begin,index_end,t);
     kassert(index_slot != index_begin);
     --index_slot;
 
