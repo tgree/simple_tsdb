@@ -72,11 +72,14 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     // Update time_first.
     time_first_fd.lseek(0,SEEK_SET);
     time_first_fd.write_all(&time_first,8);
-    time_first_fd.fsync_and_barrier();
 
     // If we are keeping all the index slots, then we are done now.
     if (index_slot == index_begin)
+    {
+        time_first_fd.fsync_and_flush();
         return;
+    }
+    time_first_fd.fsync_and_barrier();
 
     // A crash here leaves slots in the index file the precede time_first.  As
     // long as code honors the time_first limit, then these extra slots won't
@@ -113,8 +116,8 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
                            (index_end - index_slot)*sizeof(index_entry));
     tmp_index_fd.fsync_and_barrier();
     futil::rename(tmp_dir,tmp_index_fd.name,series_dir,"index");
-    // TODO: Do we need to fsync series_dir after the rename?
     tmp_index_fd.commit();
+    series_dir.fsync_and_flush();
     printf("Deleted %zu slots from the start of the index file.\n",
            index_slot - index_begin);
 }
