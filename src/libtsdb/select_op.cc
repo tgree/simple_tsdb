@@ -7,10 +7,6 @@
 #define WITH_GZFILEOP
 #include <zlib-ng/zlib-ng.h>
 
-// TODO: This sets index_begin as the start of the index file.  Instead, it
-// should search for the first slot that could hold time_first since a delete
-// operation could have incremented time_first and then crashed before deleting
-// the chunk files or shifting the index file up.
 tsdb::select_op::select_op(const series_read_lock& read_lock,
     const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
     uint64_t limit):
@@ -50,6 +46,13 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
     // measurement, which means there must be at least one chunk, which means
     // there must be at least one slot in the index file - so we won't attempt
     // to mmap() an empty file which always fails.
+    //
+    // Note: if we crashed during a delete operation, it is possible that the
+    // first index entries in the index file point to chunks that all precede
+    // time_first.  We must not access those chunks.  Since we force t0 to be
+    // in the range of time_first and time_last, we should be safe and the
+    // extra slots will just make our binary searched on the index file a bit
+    // slower.
     index_fd.open(read_lock.series_dir,"index",O_RDONLY);
     index_mapping.map(NULL,index_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                       index_fd.fd,0),
