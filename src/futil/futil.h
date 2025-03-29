@@ -609,10 +609,15 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void mkdir(int fd, const char* path, mode_t mode)
+    {
+        if (::mkdirat(fd,path,mode) == -1)
+            throw errno_exception(errno);
+    }
+
     inline void mkdir(const directory& dir, const char* path, mode_t mode)
     {
-        if (::mkdirat(dir.fd,path,mode) == -1)
-            throw errno_exception(errno);
+        futil::mkdir(dir.fd,path,mode);
     }
 
     inline void mkdir_if_not_exists(const char* path, mode_t mode)
