@@ -30,6 +30,7 @@ namespace tsdb
         NO_SUCH_SERIES                  = -17,
         NO_SUCH_DATABASE                = -18,
         NO_SUCH_MEASUREMENT             = -19,
+        MEASUREMENT_EXISTS              = -20,
     };
 
     struct exception : public std::exception
@@ -120,6 +121,18 @@ namespace tsdb
         }
 
         invalid_measurement_exception():exception(INVALID_MEASUREMENT) {}
+    };
+
+    struct measurement_exists_exception : public exception
+    {
+        // The specified measurement already exists and has a different schema
+        // from the one we tried to create.
+        virtual const char* what() const noexcept override
+        {
+            return "Measurement already exists.";
+        }
+
+        measurement_exists_exception():exception(MEASUREMENT_EXISTS) {}
     };
 
     struct invalid_series_exception : public exception

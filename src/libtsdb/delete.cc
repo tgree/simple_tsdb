@@ -3,6 +3,7 @@
 #include "delete.h"
 #include "measurement.h"
 #include "series.h"
+#include <futil/xact.h>
 #include <algorithm>
 
 void
@@ -31,13 +32,12 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
                                  PROT_READ | PROT_WRITE,MAP_SHARED,0);
     auto* index_begin = (index_entry*)index_m.addr;
     auto* index_end = index_begin + index_m.len / sizeof(index_entry);
-    auto* index_slot = index_begin;
 
     // Find the target slot.  std::upper_bound returns the first slot greater
     // than the requested value, meaning that t must appear in the slot
     // preceding it - IF t appears at all.  It could be the case that t is
     // a value in the gap between slots.
-    index_slot = std::upper_bound(index_begin,index_end,t);
+    auto* index_slot = std::upper_bound(index_begin,index_end,t);
     kassert(index_slot != index_begin);
     --index_slot;
 
@@ -74,30 +74,47 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     time_first_fd.write_all(&time_first,8);
     time_first_fd.fcntl(F_BARRIERFSYNC);
 
+    // If we are keeping all the index slots, then we are done now.
+    if (index_slot == index_begin)
+        return;
+
+    // A crash here leaves slots in the index file the precede time_first.  As
+    // long as code honors the time_first limit, then these extra slots won't
+    // hurt anything, and they will get cleaned up on the next delete
+    // operation.
+
     // Delete all orphaned chunks.
     futil::directory fields_dir(series_dir,"fields");
     futil::directory bitmaps_dir(series_dir,"bitmaps");
     for (auto* slot = index_begin; slot < index_slot; ++slot)
     {
         futil::unlink_if_exists(time_ns_dir,slot->timestamp_file);
+        std::string gz_file = std::string(slot->timestamp_file) + ".gz";
         for (const auto& f : m.fields)
         {
             futil::path sub_path(f.name,slot->timestamp_file);
+            futil::path gz_sub_path(f.name,gz_file);
             futil::unlink_if_exists(fields_dir,sub_path);
+            futil::unlink_if_exists(fields_dir,gz_sub_path);
             futil::unlink_if_exists(bitmaps_dir,sub_path);
         }
     }
 
+    // A crash here leaves the slots in the index file, after we have deleted
+    // the backing files for those slots.  Again, this should not cause any
+    // issue as long as time_first is honored everywhere.  It means that during
+    // cleanup on the next delete operation we need to consider that the target
+    // file being deleted might no longer exist.
+
     // Shift the index file appropriately.
-    // TODO: This is unsafe.  If we crash in the middle of memmove, but the OS
-    // stays up, we will have corrupted the OS' page cache copy of the index
-    // file, which will eventually get flushed back to disk.  We need to make
-    // the shift appear atomic.
-    memmove(index_begin,index_slot,
-            (index_end - index_slot)*sizeof(index_entry));
-    index_m.msync();
-    index_fd.truncate((index_end - index_slot)*sizeof(index_entry));
-    index_fd.fcntl(F_BARRIERFSYNC);
+    futil::directory tmp_dir("tmp");
+    futil::xact_mktemp tmp_index_fd(tmp_dir,"index.XXXXXX",0770);
+    tmp_index_fd.write_all(index_slot,
+                           (index_end - index_slot)*sizeof(index_entry));
+    tmp_index_fd.fcntl(F_BARRIERFSYNC);
+    futil::rename(tmp_dir,tmp_index_fd.name,series_dir,"index");
+    // TODO: Do we need to fsync series_dir after the rename?
+    tmp_index_fd.commit();
     printf("Deleted %zu slots from the start of the index file.\n",
            index_slot - index_begin);
 }

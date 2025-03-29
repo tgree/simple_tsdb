@@ -588,6 +588,9 @@ namespace futil
         {
             open(d,p,oflag,mode);
         }
+
+    protected:
+        file(int fd):file_descriptor(fd) {}
     };
 
     struct file_write_watcher
@@ -609,10 +612,15 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void mkdir(int fd, const char* path, mode_t mode)
+    {
+        if (::mkdirat(fd,path,mode) == -1)
+            throw errno_exception(errno);
+    }
+
     inline void mkdir(const directory& dir, const char* path, mode_t mode)
     {
-        if (::mkdirat(dir.fd,path,mode) == -1)
-            throw errno_exception(errno);
+        futil::mkdir(dir.fd,path,mode);
     }
 
     inline void mkdir_if_not_exists(const char* path, mode_t mode)
@@ -668,6 +676,28 @@ namespace futil
             throw errno_exception(errno);
     }
 
+    inline void rename(const directory& old_dir, const char* old,
+                       const directory& new_dir, const char* _new)
+    {
+        // Renames to the target location, atomically overwriting whatever was
+        // there to begin with.
+        if (::renameat(old_dir.fd,old,new_dir.fd,_new) == -1)
+            throw errno_exception(errno);
+    }
+
+    inline bool rename_if_not_exists(const directory& old_dir, const char* old,
+                                     const directory& new_dir, const char* _new)
+    {
+        // Renames to the target location, as long as the target doesn't exist.
+        // Returns true if the rename was successful, false if the target
+        // already existed, otherwise throws an exception upon error.
+        if (!::renameatx_np(old_dir.fd,old,new_dir.fd,_new,RENAME_EXCL))
+            return true;
+        if (errno == EEXIST)
+            return false;
+        throw errno_exception(errno);
+    }
+
     inline void mkdtemp(char* tmp)
     {
         if (::mkdtemp(tmp) == NULL)
@@ -678,6 +708,17 @@ namespace futil
     {
         if (::chdir(path) == -1)
             throw errno_exception(errno);
+    }
+
+    inline void fchmod(int fd, mode_t mode)
+    {
+        for (;;)
+        {
+            if (!::fchmod(fd,mode))
+                return;
+            if (errno != EINTR)
+                throw errno_exception(errno);
+        }
     }
 
     inline int openat(const directory& d, const path& p, int oflag)
