@@ -158,18 +158,18 @@ namespace futil
             return futil::path(_path + "/" + rhs._path);
         }
 
-        constexpr path(const char* _path):
+        path(const char* _path):
             _path(_path)
         {
         }
 
-        constexpr path(const std::string& _path):
+        path(const std::string& _path):
             _path(_path)
         {
         }
 
         template<typename ...T>
-        constexpr path(const path& _path, T... tail):
+        path(const path& _path, T... tail):
             _path((_path + ... + tail))
         {
         }
@@ -236,6 +236,17 @@ namespace futil
         }
     };
 
+    inline void fsync(int fd)
+    {
+        for (;;)
+        {
+            if (::fsync(fd) != -1)
+                return;
+            if (errno != EINTR)
+                throw futil::errno_exception(errno);
+        }
+    }
+
     struct file_descriptor
     {
         int fd;
@@ -273,6 +284,69 @@ namespace futil
                 if (errno != EINTR)
                     return;
             }
+        }
+
+        int fcntl(int cmd)
+        {
+            for (;;)
+            {
+                int val = ::fcntl(fd,cmd);
+                if (val != -1)
+                    return val;
+                if (errno != EINTR)
+                    throw futil::errno_exception(errno);
+            }
+        }
+
+        template<typename T>
+        int fcntl(int cmd, T arg)
+        {
+            for (;;)
+            {
+                int val = ::fcntl(fd,cmd,arg);
+                if (val != -1)
+                    return val;
+                if (errno != EINTR)
+                    throw futil::errno_exception(errno);
+            }
+        }
+
+        void fsync()
+        {
+            // Pushes dirty data out to the disk controller.  On macOS, this
+            // doesn't flush to the disk itself; the dirty data could sit in
+            // disk buffers.
+            futil::fsync(fd);
+        }
+
+        void fsync_and_barrier()
+        {
+            // Performs an fsync() and then inserts an IO barrier, preventing
+            // IO reordering across the barrier.  This is available only on
+            // macOS and only on some combinations of file system and specific
+            // hard drives/SSDs.  Like fsync(), this doesn't guarantee that
+            // data is flushed to the disk itself, just that if a flush happens
+            // the data will be ordered correctly.
+            // 
+            // If the barrier operation is not supported, fall back to a full
+            // flush.
+            for (;;)
+            {
+                int val = ::fcntl(fd,F_BARRIERFSYNC);
+                if (val != -1)
+                    return;
+                if (errno != EINTR)
+                    break;
+            }
+
+            fsync_and_flush();
+        }
+
+        void fsync_and_flush()
+        {
+            // Performs an fasync() and then flushes the disk controller's
+            // buffers to the physical drive medium.
+            fcntl(F_FULLFSYNC);
         }
 
         constexpr file_descriptor():fd(-1) {}
@@ -349,7 +423,7 @@ namespace futil
         {
             for (;;)
             {
-                fd = ::open(p,O_DIRECTORY | O_SEARCH);
+                fd = ::open(p,O_DIRECTORY | O_RDONLY);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
@@ -361,7 +435,7 @@ namespace futil
         {
             for (;;)
             {
-                fd = ::openat(d.fd,p,O_DIRECTORY | O_SEARCH);
+                fd = ::openat(d.fd,p,O_DIRECTORY | O_RDONLY);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
@@ -369,17 +443,6 @@ namespace futil
             }
         }
     };
-
-    inline void fsync(int fd)
-    {
-        for (;;)
-        {
-            if (::fsync(fd) != -1)
-                return;
-            if (errno != EINTR)
-                throw futil::errno_exception(errno);
-        }
-    }
 
     struct file : public file_descriptor
     {
@@ -510,36 +573,6 @@ namespace futil
                 off_t pos = ::lseek(fd,offset,whence);
                 if (pos != -1)
                     return pos;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
-        }
-
-        void fsync()
-        {
-            futil::fsync(fd);
-        }
-
-        int fcntl(int cmd)
-        {
-            for (;;)
-            {
-                int val = ::fcntl(fd,cmd);
-                if (val != -1)
-                    return val;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
-        }
-
-        template<typename T>
-        int fcntl(int cmd, T arg)
-        {
-            for (;;)
-            {
-                int val = ::fcntl(fd,cmd,arg);
-                if (val != -1)
-                    return val;
                 if (errno != EINTR)
                     throw futil::errno_exception(errno);
             }
