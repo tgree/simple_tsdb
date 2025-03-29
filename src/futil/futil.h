@@ -319,6 +319,36 @@ namespace futil
             futil::fsync(fd);
         }
 
+        void fsync_and_barrier()
+        {
+            // Performs an fsync() and then inserts an IO barrier, preventing
+            // IO reordering across the barrier.  This is available only on
+            // macOS and only on some combinations of file system and specific
+            // hard drives/SSDs.  Like fsync(), this doesn't guarantee that
+            // data is flushed to the disk itself, just that if a flush happens
+            // the data will be ordered correctly.
+            // 
+            // If the barrier operation is not supported, fall back to a full
+            // flush.
+            for (;;)
+            {
+                int val = ::fcntl(fd,F_BARRIERFSYNC);
+                if (val != -1)
+                    return;
+                if (errno != EINTR)
+                    break;
+            }
+
+            fsync_and_flush();
+        }
+
+        void fsync_and_flush()
+        {
+            // Performs an fasync() and then flushes the disk controller's
+            // buffers to the physical drive medium.
+            fcntl(F_FULLFSYNC);
+        }
+
         constexpr file_descriptor():fd(-1) {}
         
         constexpr file_descriptor(int fd):fd(fd) {}
