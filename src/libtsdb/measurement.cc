@@ -36,6 +36,13 @@ tsdb::create_measurement(const database& db, const futil::path& name,
     if (name.empty() || name[0] == '/' || name.count_components() > 1)
         throw tsdb::invalid_measurement_exception();
 
+    // TODO: If we crash we will have a partially-created measurement which we
+    // are then stuck with.  This should all be done in a temporary directory
+    // that then gets atomically renamed into place.
+
+    // TODO: If the measurement already exists and matches exactly what we are
+    // trying to make, then we should quietly return success.
+
     futil::mkdir(db.dir,name,0770);
     futil::directory m_dir(db.dir,name);
 
