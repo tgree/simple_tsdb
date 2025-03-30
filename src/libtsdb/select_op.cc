@@ -9,7 +9,8 @@
 
 tsdb::select_op::select_op(const series_read_lock& read_lock,
     const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
-    uint64_t limit):
+    uint64_t limit, bool mmap_timestamps):
+        mmap_timestamps(mmap_timestamps),
         read_lock(read_lock),
         time_last(futil::file(read_lock.series_dir,"time_last",
                               O_RDONLY).read_u64()),
@@ -22,6 +23,7 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         index_slot(NULL),
         timestamp_mapping(NULL,CHUNK_FILE_SIZE,PROT_NONE,
                           MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
+        timestamp_buf(mmap_timestamps ? 0 : CHUNK_FILE_SIZE),
         field_mappings(field_names.size() ?: read_lock.m.fields.size()),
         bitmap_mappings(field_names.size() ?: read_lock.m.fields.size()),
         is_last(true),
@@ -102,23 +104,32 @@ tsdb::select_op::_advance(bool is_first)
     futil::directory time_ns_dir(read_lock.series_dir,"time_ns");
     futil::file timestamp_fd(time_ns_dir,index_slot->timestamp_file,O_RDONLY);
     off_t timestamp_fd_size = timestamp_fd.lseek(0,SEEK_END);
-    futil::mmap(timestamp_mapping.addr,timestamp_fd_size,PROT_READ,
-                MAP_SHARED | MAP_FIXED,timestamp_fd.fd,0);
+    const uint64_t* timestamps_begin;
+    if (mmap_timestamps)
+    {
+        futil::mmap(timestamp_mapping.addr,timestamp_fd_size,PROT_READ,
+                    MAP_SHARED | MAP_FIXED,timestamp_fd.fd,0);
+        timestamps_begin = (const uint64_t*)timestamp_mapping.addr;
+    }
+    else
+    {
+        timestamp_fd.lseek(0,SEEK_SET);
+        timestamp_fd.read_all(timestamp_buf,timestamp_fd_size);
+        timestamps_begin = (const uint64_t*)timestamp_buf.data;
+    }
+    const auto* timestamps_end = timestamps_begin + timestamp_fd_size/8;
 
     // Find the first timestamp >= t0.
     size_t start_index;
-    const auto* timestamps_end = (const uint64_t*)timestamp_mapping.addr +
-                                 timestamp_fd_size/8;
     if (!is_first)
     {
         // The first timestamp in our range is right at the start of the file.
-        timestamp_data = (const uint64_t*)timestamp_mapping.addr;
+        timestamp_data = timestamps_begin;
         start_index = 0;
     }
     else
     {
         // The first timestamp could be partway through the file.
-        auto* timestamps_begin = (const uint64_t*)timestamp_mapping.addr;
         timestamp_data = std::lower_bound(timestamps_begin,timestamps_end,t0);
 
         // The first timestamp could even be in the gap between this slot
@@ -132,11 +143,18 @@ tsdb::select_op::_advance(bool is_first)
             ++index_slot;
             timestamp_fd.open(time_ns_dir,index_slot->timestamp_file,O_RDONLY);
             timestamp_fd_size = timestamp_fd.lseek(0,SEEK_END);
-            futil::mmap(timestamp_mapping.addr,timestamp_fd_size,PROT_READ,
-                        MAP_SHARED | MAP_FIXED,timestamp_fd.fd,0);
+            if (mmap_timestamps)
+            {
+                futil::mmap(timestamp_mapping.addr,timestamp_fd_size,PROT_READ,
+                            MAP_SHARED | MAP_FIXED,timestamp_fd.fd,0);
+            }
+            else
+            {
+                timestamp_fd.lseek(0,SEEK_SET);
+                timestamp_fd.read_all(timestamp_buf,timestamp_fd_size);
+            }
             timestamp_data = timestamps_begin;
-            timestamps_end = (const uint64_t*)timestamp_mapping.addr +
-                             timestamp_fd_size/8;
+            timestamps_end = timestamps_begin + timestamp_fd_size/8;
         }
 
         start_index = timestamp_data - timestamps_begin;

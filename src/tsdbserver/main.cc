@@ -551,6 +551,7 @@ handle_sum_points(tcp::socket4& s,
         s.send_all(&dt,sizeof(dt));
         s.send_all(&chunk_npoints,sizeof(chunk_npoints));
         s.send_all(&timestamps[0],chunk_npoints*sizeof(uint64_t));
+        timestamps.clear();
         for (size_t j=0; j<nfields; ++j)
         {
             s.send_all(&field_sums[j][0],chunk_npoints*sizeof(double));
