@@ -5,6 +5,7 @@
 
 #include "series.h"
 #include <hdr/fixed_vector.h>
+#include <hdr/auto_buf.h>
 #include <hdr/kmath.h>
 
 namespace tsdb
@@ -17,6 +18,7 @@ namespace tsdb
         // deleting points during the query.  For time_last, we don't care if
         // someone adds points later, we only return the points from our
         // current snapshot of the live range.
+        const bool              mmap_timestamps;
         const series_read_lock& read_lock;
         const uint64_t          time_last;
         futil::file             index_fd;
@@ -33,6 +35,7 @@ namespace tsdb
         // Mapping objects to track mmap()-ed files.
         const index_entry*              index_slot;
         futil::mapping                  timestamp_mapping;
+        auto_buf                        timestamp_buf;
         fixed_vector<futil::mapping>    field_mappings;
         fixed_vector<futil::mapping>    bitmap_mappings;
 
@@ -87,7 +90,8 @@ namespace tsdb
 
         select_op(const series_read_lock& read_lock,
                   const std::vector<std::string>& field_names,
-                  uint64_t t0, uint64_t t1, uint64_t limit);
+                  uint64_t t0, uint64_t t1, uint64_t limit,
+                  bool mmap_timestamps = false);
     };
 
     struct select_op_first : public select_op

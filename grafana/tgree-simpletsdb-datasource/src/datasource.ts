@@ -1,18 +1,18 @@
-import { DataSourceInstanceSettings, CoreApp, ScopedVars } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
+import type { DataSourceInstanceSettings, ScopedVars } from '@grafana/data';
+import type { BasicQuery, BasicDataSourceOptions, DatabaseList, MeasurementList,
+              SeriesList, FieldsList } from './types';
 
-import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY } from './types';
+export class BasicDataSource extends DataSourceWithBackend<BasicQuery, BasicDataSourceOptions> {
+  database: string;
 
-export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
-  constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
+  constructor(instanceSettings: DataSourceInstanceSettings<BasicDataSourceOptions>) {
     super(instanceSettings);
+
+    this.database = instanceSettings.jsonData.database || "";
   }
 
-  getDefaultQuery(_: CoreApp): Partial<MyQuery> {
-    return DEFAULT_QUERY;
-  }
-
-  applyTemplateVariables(query: MyQuery, scopedVars: ScopedVars) {
+  applyTemplateVariables(query: BasicQuery, scopedVars: ScopedVars) {
     return {
       ...query,
       measurement: getTemplateSrv().replace(query.measurement, scopedVars),
@@ -21,8 +21,23 @@ export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptio
     };
   }
 
-  filterQuery(query: MyQuery): boolean {
-    // if no query has been provided, prevent the query from being executed
-    return !!query.measurement && !!query.series && !!query.field;
+  filterQuery(query: BasicQuery): boolean {
+    return true;
+  }
+
+  getDatabaseList(): Promise<DatabaseList> {
+    return this.getResource('/databases');
+  }
+
+  getMeasurementList(database: string): Promise<MeasurementList> {
+    return this.getResource('/measurements?database=' + database);
+  }
+
+  getSeriesList(database: string, measurement: string): Promise<SeriesList> {
+    return this.getResource('/series?database=' + database + '&measurement=' + measurement);
+  }
+
+  getFieldsList(database: string, measurement: string): Promise<FieldsList> {
+    return this.getResource('/fields?database=' + database + '&measurement=' + measurement);
   }
 }
