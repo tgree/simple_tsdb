@@ -38,6 +38,13 @@ tsdb::sum_op::next()
         }
 
         // Advance the op if we need to to get to the start of this range.
+        // When using strict mmap-ing of the timestamp files, a profile sample
+        // shows we spend a huge amount of time on this line of code.  What
+        // happens is that we take thousands of page faults as we advance
+        // through the timestamp file and the OS just faults them in small bits
+        // at a time (probably in 16K chunks).  Changing select_op over to use
+        // a simple read() to load the entire timestamp file leads to a
+        // massive speedup.
         if (range_t0 > op.timestamp_data[op_index])
         {
             ++op_index;
