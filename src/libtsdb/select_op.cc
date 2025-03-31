@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "select_op.h"
 #include "tsdb.h"
+#include <inttypes.h>
 #include <algorithm>
 
 #define WITH_GZFILEOP
@@ -281,7 +282,8 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
         const auto* ftinfo = &ftinfos[f.type];
         printf("%s/%s ",f.name,ftinfo->name);
     }
-    printf("] FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
+    printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " LIMIT %" PRIu64 "\n",
            series_id.c_str(),t0,t1,limit);
 
     // Find the target slot.  std::upper_bound returns the first slot greater
@@ -312,7 +314,8 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         const auto* ftinfo = &ftinfos[f.type];
         printf("%s/%s ",f.name,ftinfo->name);
     }
-    printf("] FROM %s WHERE %llu <= time_ns <= %llu LAST %llu\n",
+    printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " LAST %" PRIu64 "\n",
            series_id.c_str(),t0,t1,limit);
 
     // Find the location of both t0 and t1.
@@ -397,7 +400,8 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         const auto* ftinfo = &ftinfos[f.type];
         printf("%s/%s ",f.name,ftinfo->name);
     }
-    printf("] FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
+    printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " LIMIT %" PRIu64 "\n",
            series_id.c_str(),t0,t1,rem_limit);
 
     // And map it all.
