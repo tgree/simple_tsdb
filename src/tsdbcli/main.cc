@@ -798,7 +798,7 @@ handle_create_measurement(const std::vector<std::string>& v)
 {
     // Handles a command such as:
     //
-    //  create measurement pt-1/xtalx_data with fields \
+    //  create measurement pt-1/xtalx_data with fields
     //      pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
     std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(v[5],",");
