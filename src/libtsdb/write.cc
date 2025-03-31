@@ -76,7 +76,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
     // Open the index file, taking a shared lock on it to prevent any other
     // client from deleting from the file.
-    futil::file index_fd(write_lock.series_dir,"index",O_RDWR | O_SHLOCK);
+    futil::file index_fd(write_lock.series_dir,"index",O_RDWR);
+    index_fd.flock(LOCK_SH);
 
     // ********************** Overwrite Handling *************************
 
