@@ -5,9 +5,12 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/file.h>
 #include <dirent.h>
+#include <string.h>
 #include <string>
 #include <vector>
 
