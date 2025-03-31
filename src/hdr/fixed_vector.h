@@ -26,13 +26,13 @@ struct fixed_vector
         n = 0;
     }
 
-    T& operator[](size_t i)
+    constexpr T& operator[](size_t i)
     {
         kassert(i < n);
         return elems[i];
     }
 
-    const T& operator[](size_t i) const
+    constexpr const T& operator[](size_t i) const
     {
         kassert(i < n);
         return elems[i];
