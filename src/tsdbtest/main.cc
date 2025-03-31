@@ -10,6 +10,7 @@
 #include <random>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 constexpr const char* databases[] =
 {
@@ -280,7 +281,7 @@ select_test()
         t_type[i] = rand() % 3;
         if (t_type[i] == 0 && ss.points.front().time_ns == 0)
             t_type[i] = 1;
-        else if (t_type[i] == 2 && ss.points.back().time_ns == -1)
+        else if (t_type[i] == 2 && ss.points.back().time_ns == (uint64_t)-1)
             t_type[i] = 1;
 
         uint64_t t_min;
@@ -320,7 +321,8 @@ select_test()
     {
         case 0:
             // No limit.
-            printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+            printf("QUERY %s %" PRIu64 " %" PRIu64 " "
+                   "FROM %" PRIu64 " %" PRIu64 " TYPE %u %u "
                    "EXPECT %zu\n",
                    ss.dms_path.c_str(),t0,t1,
                    ss.points.front().time_ns,
@@ -334,7 +336,8 @@ select_test()
             // LIMIT N.
             N = rand() % 1000000;
             npoints = MIN(N,npoints);
-            printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+            printf("QUERY %s %" PRIu64 " %" PRIu64 " "
+                   "FROM %" PRIu64 " %" PRIu64 " TYPE %u %u "
                    "LIMIT %zu EXPECT %zu\n",
                    ss.dms_path.c_str(),t0,t1,
                    ss.points.front().time_ns,
@@ -349,7 +352,8 @@ select_test()
             N = rand() % 1000000;
             npoints = MIN(N,npoints);
             fp = lp - npoints;
-            printf("QUERY %s %llu %llu FROM %llu %llu TYPE %u %u "
+            printf("QUERY %s %" PRIu64 " %" PRIu64 " "
+                   "FROM %" PRIu64 " %" PRIu64 " TYPE %u %u "
                    "LAST %zu EXPECT %zu\n",
                    ss.dms_path.c_str(),t0,t1,
                    ss.points.front().time_ns,
@@ -357,6 +361,10 @@ select_test()
                    t_type[0],t_type[1],N,npoints);
             op = new tsdb::select_op_last(read_lock,ss.dms_path,
                                           field_names,t0,t1,N);
+        break;
+
+        default:
+            kabort();
         break;
     }
 
@@ -389,7 +397,8 @@ rotate_test()
     // Delete from the front of the database.
     tsdb::database db(ss.database);
     tsdb::measurement m(db,ss.measurement);
-    printf("DELETE FROM %s WHERE time_ns < %llu\n",ss.dms_path.c_str(),t);
+    printf("DELETE FROM %s WHERE time_ns < %" PRIu64 "\n",
+           ss.dms_path.c_str(),t);
     tsdb::delete_points(m,ss.series,t);
 
     // Incrementing the timestamp for everything that will be rotated.
@@ -401,7 +410,7 @@ rotate_test()
     }
 
     // Write the points that we are about to rotate.
-    printf("WRITE %s T %llu NPOINTS %zu\n",
+    printf("WRITE %s T %" PRIu64 " NPOINTS %zu\n",
            ss.dms_path.c_str(),ss.points.front().time_ns,npoints);
     write_series(ss,0,npoints);
 
