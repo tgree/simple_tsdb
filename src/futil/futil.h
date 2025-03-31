@@ -594,10 +594,11 @@ namespace futil
             }
         }
 
-        void flock(int operation)
+        file& flock(int operation)
         {
             if (::flock(fd,operation) == -1)
                 throw futil::errno_exception(errno);
+            return *this;
         }
 
         mapping mmap(void* addr, size_t len, int prot, int flags, off_t offset)
