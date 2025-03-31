@@ -12,6 +12,14 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
+#if IS_MACOS
+#define NSERIES 10
+#elif IS_LINUX
+#define NSERIES 6
+#else
+#error Unknown platform!
+#endif
+
 constexpr const char* databases[] =
 {
     "test1",
@@ -431,7 +439,11 @@ int
 main(int argc, const char* argv[])
 {
     // Create a temporary directory for our database.
+#if IS_MACOS
     char tmp[] = "/Volumes/ram_disk/tsdbtest.XXXXXX";
+#elif IS_LINUX
+    char tmp[] = "/tmp/tsdbtest.XXXXXX";
+#endif
     futil::mkdtemp(tmp);
     futil::chdir(tmp);
 
@@ -461,11 +473,11 @@ main(int argc, const char* argv[])
     for (auto& f : fields)
         field_names.push_back(f.name);
 
-    // Create 10 random series.
+    // Create some random series.
     printf("Generating random points...\n");
     srand(2);
     uint64_t time_ns = rand();
-    for (size_t i=0; i<10; ++i)
+    for (size_t i=0; i<NSERIES; ++i)
     {
         const auto* db = databases[rand() % NELEMS(databases)];
         const auto* m  = measurements[rand() % NELEMS(measurements)];
