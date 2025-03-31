@@ -198,7 +198,9 @@ static void handle_mean_from_series(const std::vector<std::string>& cmd);
 static void handle_delete_from_series(const std::vector<std::string>& cmd);
 static void handle_write_series(const std::vector<std::string>& cmd);
 static void handle_list_series(const std::vector<std::string>& cmd);
+#if IS_MACOS
 static void handle_watch_series(const std::vector<std::string>& cmd);
+#endif
 static void handle_list_schema(const std::vector<std::string>& cmd);
 static void handle_create_measurement(const std::vector<std::string>& cmd);
 static void handle_list_measurements(const std::vector<std::string>& cmd);
@@ -237,10 +239,12 @@ static const command_syntax commands[] =
         handle_list_series,
         {CT_STR_LIST, CT_STR_SERIES, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
     },
+#if IS_MACOS
     {
         handle_watch_series,
         {CT_STR_WATCH, CT_STR_SERIES, CT_SERIES_SPECIFIER},
     },
+#endif
     {
         handle_list_schema,
         {CT_STR_LIST, CT_STR_SCHEMA, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
@@ -661,6 +665,7 @@ handle_list_series(const std::vector<std::string>& v)
         printf("%s\n",s.c_str());
 }
 
+#if IS_MACOS
 static void
 handle_watch_series(const std::vector<std::string>& v)
 {
@@ -685,6 +690,7 @@ handle_watch_series(const std::vector<std::string>& v)
         printf("WATCH %s UPDATE %" PRIu64 "\n",v[2].c_str(),*time_last_ptr);
     }
 }
+#endif
 
 static void
 handle_write_series(const std::vector<std::string>& v)
