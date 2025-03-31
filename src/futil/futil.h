@@ -648,9 +648,9 @@ namespace futil
             throw errno_exception(errno);
     }
 
-    inline void mkdir(int fd, const char* path, mode_t mode)
+    inline void mkdir(int at_fd, const char* path, mode_t mode)
     {
-        if (::mkdirat(fd,path,mode) == -1)
+        if (::mkdirat(at_fd,path,mode) == -1)
             throw errno_exception(errno);
     }
 
