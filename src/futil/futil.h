@@ -3,6 +3,7 @@
 #ifndef __SRC_FUTIL_FUTIL_H
 #define __SRC_FUTIL_FUTIL_H
 
+#include <hdr/compiler.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -324,6 +325,7 @@ namespace futil
 
         void fsync_and_barrier()
         {
+#if IS_MACOS
             // Performs an fsync() and then inserts an IO barrier, preventing
             // IO reordering across the barrier.  This is available only on
             // macOS and only on some combinations of file system and specific
@@ -343,13 +345,24 @@ namespace futil
             }
 
             fsync_and_flush();
+#elif IS_LINUX
+            fsync();
+#else
+#error Unknown platform.
+#endif
         }
 
         void fsync_and_flush()
         {
+#if IS_MACOS
             // Performs an fasync() and then flushes the disk controller's
             // buffers to the physical drive medium.
             fcntl(F_FULLFSYNC);
+#elif IS_LINUX
+            fsync();
+#else
+#error Unknown platform.
+#endif
         }
 
         constexpr file_descriptor():fd(-1) {}
