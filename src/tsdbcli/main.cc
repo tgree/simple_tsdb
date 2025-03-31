@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #define MAX_PRINT_RESULTS   12
 KASSERT(MAX_PRINT_RESULTS % 2 == 0);
@@ -303,7 +304,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
 {
     for (size_t i=index; i<index + n; ++i)
     {
-        printf("%20llu ",op.timestamp_data[i]);
+        printf("%20" PRIu64 " ",op.timestamp_data[i]);
         for (size_t j=0; j<op.fields.size(); ++j)
         {
             if (op.is_field_null(j,i))
@@ -324,7 +325,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
                 break;
 
                 case tsdb::FT_U64:
-                    printf("%20llu ",((const uint64_t*)p)[i]);
+                    printf("%20" PRIu64 " ",((const uint64_t*)p)[i]);
                 break;
 
                 case tsdb::FT_F32:
@@ -340,7 +341,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
                 break;
 
                 case tsdb::FT_I64:
-                    printf("%20lld ",((const int64_t*)p)[i]);
+                    printf("%20" PRId64 " ",((const int64_t*)p)[i]);
                 break;
             }
         }
@@ -557,7 +558,8 @@ handle_count_from_series(const std::vector<std::string>& cmd)
     printf("-------------------- "
            "-------------------- "
            "--------------------\n");
-    printf("%20llu %20llu %20zu\n",cr.time_first,cr.time_last,cr.npoints);
+    printf("%20" PRIu64 " %20" PRIu64 " %20zu\n",
+           cr.time_first,cr.time_last,cr.npoints);
 }
 
 static void
@@ -601,7 +603,7 @@ handle_mean_from_series(const std::vector<std::string>& cmd)
 
     while (op.next())
     {
-        printf("%20llu ",op.range_t0);
+        printf("%20" PRIu64 " ",op.range_t0);
         for (size_t j=0; j<op.op.fields.size(); ++j)
         {
             if (op.npoints[j] > 0)
@@ -676,11 +678,11 @@ handle_watch_series(const std::vector<std::string>& v)
                                  MAP_SHARED,0);
     auto* time_last_ptr = (volatile uint64_t*)map.addr;
     futil::file_write_watcher watcher(time_last_fd);
-    printf("WATCH %s INITIAL %llu\n",v[2].c_str(),*time_last_ptr);
+    printf("WATCH %s INITIAL %" PRIu64 "\n",v[2].c_str(),*time_last_ptr);
     for (;;)
     {
         watcher.wait_for_write();
-        printf("WATCH %s UPDATE %llu\n",v[2].c_str(),*time_last_ptr);
+        printf("WATCH %s UPDATE %" PRIu64 "\n",v[2].c_str(),*time_last_ptr);
     }
 }
 
