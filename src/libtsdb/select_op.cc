@@ -235,8 +235,8 @@ tsdb::select_op::_advance(bool is_first)
 
         // Now, try and open the file and unzip it into the backing region.
         char gz_name[TIMESTAMP_FILE_NAME_LEN + 3];
-        strlcpy(gz_name,index_slot->timestamp_file,sizeof(gz_name));
-        strlcat(gz_name,".gz",sizeof(gz_name));
+        auto* p = stpcpy(gz_name,index_slot->timestamp_file);
+        strcpy(p,".gz");
         int field_fd = futil::openat(fields_dir,futil::path(f.name,gz_name),
                                      O_RDONLY);
         gzFile gzf = zng_gzdopen(field_fd,"rb");
