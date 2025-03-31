@@ -19,7 +19,8 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
 
     // We need to get time_first and time_last.  We lock time_first so that
     // nobody else tries to access the series while we are adjusting things.
-    futil::file time_first_fd(series_dir,"time_first",O_RDWR | O_EXLOCK);
+    futil::file time_first_fd(series_dir,"time_first",O_RDWR);
+    time_first_fd.flock(LOCK_EX);
     futil::file time_last_fd(series_dir,"time_last",O_RDONLY);
     uint64_t time_first = time_first_fd.read_u64();
     uint64_t time_last = time_last_fd.read_u64();
