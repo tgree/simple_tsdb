@@ -56,8 +56,9 @@ namespace tsdb
             size_t N = npoints;
             size_t M = fields.size();
             size_t S = 0;
-            for (const auto& f : fields)
+            for (size_t i=0; i<M; ++i)
             {
+                const auto& f = fields[i];
                 const auto* fti = &ftinfos[f.type];
                 S += round_up_pow2(N*fti->nbytes,8);
             }
