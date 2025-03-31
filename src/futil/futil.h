@@ -740,8 +740,15 @@ namespace futil
         // Renames to the target location, as long as the target doesn't exist.
         // Returns true if the rename was successful, false if the target
         // already existed, otherwise throws an exception upon error.
+#if IS_MACOS
         if (!::renameatx_np(old_dir.fd,old,new_dir.fd,_new,RENAME_EXCL))
             return true;
+#elif IS_LINUX
+        if (!::renameat2(old_dir.fd,old,new_dir.fd,_new,RENAME_NOREPLACE))
+            return true;
+#else
+#error Unknown platform.
+#endif
         if (errno == EEXIST)
             return false;
         throw errno_exception(errno);
