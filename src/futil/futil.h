@@ -398,9 +398,9 @@ namespace futil
                     continue;
                 if (dp->d_name[0] == '.')
                 {
-                    if (dp->d_namlen == 1)
+                    if (dp->d_name[1] == '\0')
                         continue;
-                    if (dp->d_name[1] == '.' && dp->d_namlen == 2)
+                    if (dp->d_name[1] == '.' && dp->d_name[2] == '\0')
                         continue;
                 }
 
