@@ -240,7 +240,7 @@ tsdb::select_op::_advance(bool is_first)
                                      O_RDONLY);
         gzFile gzf = zng_gzdopen(field_fd,"rb");
         int32_t zlen = zng_gzread(gzf,field_mappings[i].addr,len);
-        kassert(zlen == len);
+        kassert((size_t)zlen == len);
         zng_gzclose_r(gzf);
     }
 
