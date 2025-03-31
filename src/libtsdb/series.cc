@@ -11,7 +11,7 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
     try
     {
         futil::directory series_dir(m.dir,series);
-        time_last_fd.open_if_exists(series_dir,"time_last",O_RDWR | O_EXLOCK);
+        time_last_fd.open_if_exists(series_dir,"time_last",O_RDWR);
     }
     catch (const futil::errno_exception& e)
     {
@@ -23,15 +23,15 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
     if (time_last_fd.fd == -1)
     {
         // Acquire the lock to create the series.
-        futil::file create_series_lock_fd(m.dir,"create_series_lock",
-                                          O_WRONLY | O_EXLOCK);
+        futil::file create_series_lock_fd(m.dir,"create_series_lock",O_WRONLY);
+        create_series_lock_fd.flock(LOCK_EX);
 
         // Create and open the series directory.
         futil::mkdir_if_not_exists(m.dir,series,0770);
         futil::directory series_dir(m.dir,series);
 
         // Someone else may have created it in the meantime.
-        time_last_fd.open_if_exists(series_dir,"time_last",O_RDWR | O_EXLOCK);
+        time_last_fd.open_if_exists(series_dir,"time_last",O_RDWR);
         if (time_last_fd.fd == -1)
         {
             // Create the time sub-directory.
@@ -53,13 +53,14 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
             }
 
             // Create the time_first file and populate it with the value 1.
-            futil::file time_first_fd(series_dir,"time_first",
-                                      O_CREAT | O_TRUNC | O_WRONLY | O_EXLOCK,
-                                      0660);
+            futil::file time_first_fd(series_dir,"_time_first",
+                                      O_CREAT | O_TRUNC | O_WRONLY,0660);
             uint64_t one = 1;
             time_first_fd.write_all(&one,sizeof(uint64_t));
             time_first_fd.fsync();
             time_first_fd.close();
+            futil::rename(series_dir,"_time_first",series_dir,"time_first");
+            series_dir.fsync_and_barrier();
 
             // Create an empty index file.  No lock is needed since you can't
             // delete anything from an empty file!
@@ -71,15 +72,21 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
             series_dir.fsync_and_barrier();
 
             // Create the time_last file and populate it with 0.
-            time_last_fd.open(series_dir,"time_last",
-                              O_RDWR | O_EXCL | O_CREAT | O_EXLOCK,0660);
+            time_last_fd.open(series_dir,"_time_last",
+                              O_CREAT | O_TRUNC | O_RDWR,0660);
+            time_last_fd.flock(LOCK_EX);
             uint64_t zero = 0;
             time_last_fd.write_all(&zero,sizeof(uint64_t));
             time_last_fd.lseek(0,SEEK_SET);
             time_last_fd.fsync();
+            futil::rename(series_dir,"_time_last",series_dir,"time_last");
             series_dir.fsync_and_flush();
         }
+        else
+            time_last_fd.flock(LOCK_EX);
     }
+    else
+        time_last_fd.flock(LOCK_EX);
 
     return series_write_lock(m,series,std::move(time_last_fd));
 }
