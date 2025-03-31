@@ -41,4 +41,14 @@ typedef __uint128_t uint128_t;
 #define _STRINGIFY(s) #s
 #define STRINGIFY(s)  _STRINGIFY(s)
 
+#if defined(__APPLE__) && defined(__MACH__)
+#define IS_MACOS 1
+#define IS_LINUX 0
+#elif defined(__linux__)
+#define IS_MACOS 0
+#define IS_LINUX 1
+#else
+#error Cannot identify operating system.
+#endif
+
 #endif /* __ARM_DEV_ENVIRONMENT_COMPILER_H */
