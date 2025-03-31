@@ -112,7 +112,7 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
 
     // Shift the index file appropriately.
     futil::directory tmp_dir("tmp");
-    futil::xact_mktemp tmp_index_fd(tmp_dir,"index.XXXXXX",0770);
+    futil::xact_mktemp tmp_index_fd(tmp_dir,0770);
     tmp_index_fd.write_all(index_slot,
                            (index_end - index_slot)*sizeof(index_entry));
     tmp_index_fd.fsync_and_barrier();
