@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <inttypes.h>
 
 enum command_token : uint32_t
 {
@@ -398,7 +399,7 @@ handle_delete_points(tcp::socket4& s,
     futil::path path(database,measurement,series);
     uint64_t t = tokens[3].u64;
 
-    printf("DELETE FROM %s WHERE time_ns <= %llu\n",path.c_str(),t);
+    printf("DELETE FROM %s WHERE time_ns <= %" PRIu64 "\n",path.c_str(),t);
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
     tsdb::delete_points(m,series,t);
@@ -468,7 +469,8 @@ handle_select_points_limit(tcp::socket4& s,
     uint64_t t1 = tokens[5].u64;
     uint64_t N = tokens[6].u64;
 
-    printf("SELECT %s FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
+    printf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " LIMIT %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
@@ -490,7 +492,8 @@ handle_select_points_last(tcp::socket4& s,
     uint64_t t1 = tokens[5].u64;
     uint64_t N = tokens[6].u64;
 
-    printf("SELECT %s FROM %s WHERE %llu <= time_ns <= %llu LAST %llu\n",
+    printf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " LAST %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
@@ -512,7 +515,8 @@ handle_sum_points(tcp::socket4& s,
     uint64_t t1 = tokens[5].u64;
     uint64_t window_ns = tokens[6].u64;
 
-    printf("SUM %s FROM %s WHERE %llu <= time_ns <= %llu WINDOW_NS %llu\n",
+    printf("SUM %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " WINDOW_NS %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,window_ns);
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
@@ -535,7 +539,7 @@ handle_sum_points(tcp::socket4& s,
     data_token dt;
     while (rem_points)
     {
-        uint16_t chunk_npoints = MIN(rem_points,1024);
+        uint16_t chunk_npoints = MIN(rem_points,1024U);
         for (size_t i=0; i<chunk_npoints; ++i)
         {
             kassert(op.next());
