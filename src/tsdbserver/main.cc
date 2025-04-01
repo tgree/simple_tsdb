@@ -727,6 +727,20 @@ request_handler(std::unique_ptr<tcp::stream>&& s)
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 }
 
+static void
+socket4_workloop()
+{
+    tcp::ipv4::addr sa(4000,INADDR_LOOPBACK);
+    tcp::ipv4::server_socket ss(sa);
+    ss.listen(4);
+    printf("Listening on %s.\n",ss.bind_addr.to_string().c_str());
+    for (;;)
+    {
+        std::thread t(request_handler,ss.accept());
+        t.detach();
+    }
+}
+
 int
 main(int argc, const char* argv[])
 {
@@ -737,13 +751,5 @@ main(int argc, const char* argv[])
 
     signal(SIGPIPE,SIG_IGN);
 
-    tcp::ipv4::addr sa(4000,INADDR_LOOPBACK);
-    tcp::ipv4::server_socket ss(sa);
-    ss.listen(4);
-    printf("Listening on %s.\n",ss.bind_addr.to_string().c_str());
-    for (;;)
-    {
-        std::thread t(request_handler,ss.accept());
-        t.detach();
-    }
+    socket4_workloop();
 }
