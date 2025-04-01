@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
+#include <memory>
 
 namespace tcp
 {
@@ -186,7 +187,7 @@ namespace tcp
                 throw futil::errno_exception(errno);
         }
 
-        socket4 accept()
+        std::unique_ptr<stream> accept()
         {
             tcp::addr4 remote_addr;
             socklen_t sl = sizeof(remote_addr.sa);
@@ -194,7 +195,7 @@ namespace tcp
             if (afd == -1)
                 throw futil::errno_exception(errno);
 
-            return socket4(afd,bind_addr,remote_addr);
+            return std::make_unique<socket4>(afd,bind_addr,remote_addr);
         }
 
         server_socket4(const tcp::addr4& bind_addr):
