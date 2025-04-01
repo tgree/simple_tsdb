@@ -128,13 +128,13 @@ namespace tcp
 
         ~socket4()
         {
-            if (fd != -1)
-            {
-                printf("Shutdown fd %d local %s remote %s.\n",
-                       fd,local_addr.to_string().c_str(),
-                       remote_addr.to_string().c_str());
-                ::shutdown(fd,SHUT_RDWR);
-            }
+            if (fd == -1)
+                return;
+
+            printf("Shutdown fd %d local %s remote %s.\n",
+                   fd,local_addr.to_string().c_str(),
+                   remote_addr.to_string().c_str());
+            ::shutdown(fd,SHUT_RDWR);
         }
     };
 
