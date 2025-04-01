@@ -4,7 +4,7 @@
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
 #include <strutil/strutil.h>
-#include <futil/tcp.h>
+#include <futil/ipv4.h>
 #include <libtsdb/tsdb.h>
 
 #include <algorithm>
@@ -737,8 +737,8 @@ main(int argc, const char* argv[])
 
     signal(SIGPIPE,SIG_IGN);
 
-    tcp::addr4 sa(4000,INADDR_LOOPBACK);
-    tcp::server_socket4 ss(sa);
+    tcp::ipv4::addr sa(4000,INADDR_LOOPBACK);
+    tcp::ipv4::server_socket ss(sa);
     ss.listen(4);
     printf("Listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
