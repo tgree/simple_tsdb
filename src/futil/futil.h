@@ -244,8 +244,13 @@ namespace futil
     {
         for (;;)
         {
+#if IS_MACOS
             if (::fsync(fd) != -1)
                 return;
+#elif IS_LINUX
+            if (::fdatasync(fd) != -1)
+                return;
+#endif
             if (errno != EINTR)
                 throw futil::errno_exception(errno);
         }
