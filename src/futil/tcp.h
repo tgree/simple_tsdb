@@ -54,11 +54,11 @@ namespace tcp
         const tcp::addr4 local_addr;
         const tcp::addr4 remote_addr;
 
-        ssize_t send(const void* buffer, size_t len, int flags = 0)
+        ssize_t send(const void* buffer, size_t len)
         {
             for (;;)
             {
-                ssize_t slen = ::send(fd,buffer,len,flags);
+                ssize_t slen = ::send(fd,buffer,len,0);
                 if (slen != -1)
                     return slen;
                 if (errno != EINTR)
@@ -78,11 +78,11 @@ namespace tcp
             }
         }
 
-        ssize_t recv(void* buffer, size_t len, int flags = 0)
+        ssize_t recv(void* buffer, size_t len)
         {
             for (;;)
             {
-                ssize_t rlen = ::recv(fd,buffer,len,flags);
+                ssize_t rlen = ::recv(fd,buffer,len,0);
                 if (rlen != -1)
                     return rlen;
                 if (errno != EINTR)
