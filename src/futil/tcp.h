@@ -166,10 +166,9 @@ namespace tcp
         }
 
         server_socket4(const tcp::addr4& bind_addr):
+            futil::file_descriptor(_socket4()),
             bind_addr(bind_addr)
         {
-            fd = _socket4();
-
             int reuse = 1;
             if (setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse)))
                 throw futil::errno_exception(errno);
