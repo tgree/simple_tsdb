@@ -536,6 +536,9 @@ handle_sum_points(tcp::socket4& s,
         field_npoints[i].reserve(1024);
     }
 
+    // TODO: This is all broken if we have buckets outside of the series' live
+    // time range.  Also: we should be able to specify the chunk size so we can
+    // live-stream the data.
     data_token dt;
     while (rem_points)
     {
