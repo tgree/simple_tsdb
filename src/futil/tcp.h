@@ -10,6 +10,60 @@
 
 namespace tcp
 {
+    struct stream
+    {
+        // Returns the local or remote address.
+        virtual std::string local_addr_string() = 0;
+        virtual std::string remote_addr_string() = 0;
+
+        // Sends up to len bytes.  May send less if some sort of signal or
+        // other error occurs, or if the connection was closed before the
+        // requested number of bytes was sent.  Returns the actual number of
+        // bytes sent.  Returns 0 if the connection is now closed.
+        virtual size_t send(const void* buffer, size_t len) = 0;
+
+        // Receives up to len bytes.  May receive less if some sort of signal
+        // or other error occurs, or if the connecton was closed before the
+        // requested number of bytes was received.  Returns the actual number
+        // of bytes received.
+        virtual size_t recv(void* buffer, size_t len) = 0;
+
+        void send_all(const void* buffer, size_t len)
+        {
+            const char* p = (const char*)buffer;
+            while (len)
+            {
+                ssize_t slen = send(p,len);
+                kassert(slen != 0);
+                p   += slen;
+                len -= slen;
+            }
+        }
+
+        void recv_all(void* buffer, size_t len)
+        {
+            char* p = (char*)buffer;
+            while (len)
+            {
+                ssize_t rlen = recv(p,len);
+                if (!rlen)
+                    throw futil::errno_exception(ECONNRESET);
+                p   += rlen;
+                len -= rlen;
+            }
+        }
+
+        template<typename T>
+        T pop()
+        {
+            T v;
+            recv_all(&v,sizeof(v));
+            return v;
+        }
+
+        virtual ~stream() {}
+    };
+
     struct addr4
     {
         struct sockaddr_in sa;
@@ -49,12 +103,23 @@ namespace tcp
         return fd;
     }
 
-    struct socket4 : public futil::file_descriptor
+    struct socket4 : public futil::file_descriptor,
+                     public stream
     {
         const tcp::addr4 local_addr;
         const tcp::addr4 remote_addr;
 
-        ssize_t send(const void* buffer, size_t len)
+        virtual std::string local_addr_string() override
+        {
+            return local_addr.to_string();
+        }
+
+        virtual std::string remote_addr_string() override
+        {
+            return remote_addr.to_string();
+        }
+
+        virtual size_t send(const void* buffer, size_t len) override
         {
             for (;;)
             {
@@ -66,19 +131,7 @@ namespace tcp
             }
         }
 
-        void send_all(const void* buffer, size_t len)
-        {
-            const char* p = (const char*)buffer;
-            while (len)
-            {
-                ssize_t slen = send(p,len);
-                kassert(slen != 0);
-                p   += slen;
-                len -= slen;
-            }
-        }
-
-        ssize_t recv(void* buffer, size_t len)
+        size_t recv(void* buffer, size_t len) override
         {
             for (;;)
             {
@@ -88,27 +141,6 @@ namespace tcp
                 if (errno != EINTR)
                     throw futil::errno_exception(errno);
             }
-        }
-
-        void recv_all(void* buffer, size_t len)
-        {
-            char* p = (char*)buffer;
-            while (len)
-            {
-                ssize_t rlen = recv(p,len);
-                if (!rlen)
-                    throw futil::errno_exception(ECONNRESET);
-                p   += rlen;
-                len -= rlen;
-            }
-        }
-
-        template<typename T>
-        T pop()
-        {
-            T v;
-            recv_all(&v,sizeof(v));
-            return v;
         }
 
         constexpr socket4(int fd, const tcp::addr4& local_addr,
