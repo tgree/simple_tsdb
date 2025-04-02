@@ -88,6 +88,11 @@ namespace futil
             return c_str();
         }
 
+        bool ends_with(const char* s) const
+        {
+            return _path.ends_with(s);
+        }
+
         // Returns the number of components in the path.  For instance, the
         // following path has three components, a, b, and c:
         //
