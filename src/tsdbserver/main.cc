@@ -685,11 +685,6 @@ parse_cmd(tcp::stream& s, const command_syntax& cs)
 static void
 parse_cmd(tcp::stream& s)
 {
-    // 0. Set receive timeout to something very short.
-    // 1. Pop command token.
-    // 2. If not in commands[], close socket.
-    // 3. Pop data tokens as defined in commands[].
-    // 4. Call handler.
     try
     {
         for (;;)
