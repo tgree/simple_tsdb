@@ -76,7 +76,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
     // Open the index file, taking a shared lock on it to prevent any other
     // client from deleting from the file.
-    futil::file index_fd(write_lock.series_dir,"index",O_RDWR | O_SHLOCK);
+    futil::file index_fd(write_lock.series_dir,"index",O_RDWR);
+    index_fd.flock(LOCK_SH);
 
     // ********************** Overwrite Handling *************************
 
@@ -404,7 +405,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                         O_CREAT | O_TRUNC | O_RDWR,0660);
                     gzFile gz_file = zng_gzdopen(gz_fd,"wb");
                     int32_t gz_len = zng_gzwrite(gz_file,file_buf,chunk_len);
-                    kassert(gz_len == chunk_len);
+                    kassert((size_t)gz_len == chunk_len);
                     zng_gzflush(gz_file,Z_FINISH);
                     futil::fsync(gz_fd);
                     zng_gzclose(gz_file);

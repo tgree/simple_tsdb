@@ -76,6 +76,13 @@ TEST_CXXFLAGS := \
 	-I$(INCLUDE_DIR) \
 	-I$(THIRD_PARTY)
 
+# OS-specific include directories.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S), Darwin)
+	COMMON_CXXFLAGS += -I/opt/homebrew/opt/openssl/include
+	TEST_CXXFLAGS += -I/opt/homebrew/opt/openssl/include
+endif
+
 # Flags for archive tool
 ARFLAGS = rc
 

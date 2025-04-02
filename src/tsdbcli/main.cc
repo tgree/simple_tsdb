@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #define MAX_PRINT_RESULTS   12
 KASSERT(MAX_PRINT_RESULTS % 2 == 0);
@@ -197,7 +198,9 @@ static void handle_mean_from_series(const std::vector<std::string>& cmd);
 static void handle_delete_from_series(const std::vector<std::string>& cmd);
 static void handle_write_series(const std::vector<std::string>& cmd);
 static void handle_list_series(const std::vector<std::string>& cmd);
+#if IS_MACOS
 static void handle_watch_series(const std::vector<std::string>& cmd);
+#endif
 static void handle_list_schema(const std::vector<std::string>& cmd);
 static void handle_create_measurement(const std::vector<std::string>& cmd);
 static void handle_list_measurements(const std::vector<std::string>& cmd);
@@ -236,10 +239,12 @@ static const command_syntax commands[] =
         handle_list_series,
         {CT_STR_LIST, CT_STR_SERIES, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
     },
+#if IS_MACOS
     {
         handle_watch_series,
         {CT_STR_WATCH, CT_STR_SERIES, CT_SERIES_SPECIFIER},
     },
+#endif
     {
         handle_list_schema,
         {CT_STR_LIST, CT_STR_SCHEMA, CT_STR_FROM, CT_MEASUREMENT_SPECIFIER},
@@ -303,7 +308,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
 {
     for (size_t i=index; i<index + n; ++i)
     {
-        printf("%20llu ",op.timestamp_data[i]);
+        printf("%20" PRIu64 " ",op.timestamp_data[i]);
         for (size_t j=0; j<op.fields.size(); ++j)
         {
             if (op.is_field_null(j,i))
@@ -324,7 +329,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
                 break;
 
                 case tsdb::FT_U64:
-                    printf("%20llu ",((const uint64_t*)p)[i]);
+                    printf("%20" PRIu64 " ",((const uint64_t*)p)[i]);
                 break;
 
                 case tsdb::FT_F32:
@@ -340,7 +345,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
                 break;
 
                 case tsdb::FT_I64:
-                    printf("%20lld ",((const int64_t*)p)[i]);
+                    printf("%20" PRId64 " ",((const int64_t*)p)[i]);
                 break;
             }
         }
@@ -557,7 +562,8 @@ handle_count_from_series(const std::vector<std::string>& cmd)
     printf("-------------------- "
            "-------------------- "
            "--------------------\n");
-    printf("%20llu %20llu %20zu\n",cr.time_first,cr.time_last,cr.npoints);
+    printf("%20" PRIu64 " %20" PRIu64 " %20zu\n",
+           cr.time_first,cr.time_last,cr.npoints);
 }
 
 static void
@@ -601,7 +607,7 @@ handle_mean_from_series(const std::vector<std::string>& cmd)
 
     while (op.next())
     {
-        printf("%20llu ",op.range_t0);
+        printf("%20" PRIu64 " ",op.range_t0);
         for (size_t j=0; j<op.op.fields.size(); ++j)
         {
             if (op.npoints[j] > 0)
@@ -659,6 +665,7 @@ handle_list_series(const std::vector<std::string>& v)
         printf("%s\n",s.c_str());
 }
 
+#if IS_MACOS
 static void
 handle_watch_series(const std::vector<std::string>& v)
 {
@@ -676,13 +683,14 @@ handle_watch_series(const std::vector<std::string>& v)
                                  MAP_SHARED,0);
     auto* time_last_ptr = (volatile uint64_t*)map.addr;
     futil::file_write_watcher watcher(time_last_fd);
-    printf("WATCH %s INITIAL %llu\n",v[2].c_str(),*time_last_ptr);
+    printf("WATCH %s INITIAL %" PRIu64 "\n",v[2].c_str(),*time_last_ptr);
     for (;;)
     {
         watcher.wait_for_write();
-        printf("WATCH %s UPDATE %llu\n",v[2].c_str(),*time_last_ptr);
+        printf("WATCH %s UPDATE %" PRIu64 "\n",v[2].c_str(),*time_last_ptr);
     }
 }
+#endif
 
 static void
 handle_write_series(const std::vector<std::string>& v)
@@ -790,7 +798,7 @@ handle_create_measurement(const std::vector<std::string>& v)
 {
     // Handles a command such as:
     //
-    //  create measurement pt-1/xtalx_data with fields \
+    //  create measurement pt-1/xtalx_data with fields
     //      pressure_psi/f64,temp_c/f32,pressure_hz/f64,temp_hz/f64
     std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(v[5],",");

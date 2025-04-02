@@ -4,7 +4,8 @@
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
 #include <strutil/strutil.h>
-#include <futil/tcp.h>
+#include <futil/ipv4.h>
+#include <futil/ssl.h>
 #include <libtsdb/tsdb.h>
 
 #include <algorithm>
@@ -12,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <inttypes.h>
 
 enum command_token : uint32_t
 {
@@ -75,38 +77,38 @@ struct chunk_header
 
 struct command_syntax
 {
-    void (* const handler)(tcp::socket4& s,
+    void (* const handler)(tcp::stream& s,
                            const std::vector<parsed_data_token>& tokens);
     const command_token cmd_token;
     const std::vector<data_token> data_tokens;
 };
 
 static void handle_create_database(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_list_databases(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_create_measurement(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_list_measurements(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_list_series(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_get_schema(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_count_points(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_write_points(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_delete_points(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_limit(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_last(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_sum_points(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 static void handle_nop(
-    tcp::socket4& s, const std::vector<parsed_data_token>& tokens);
+    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
 
 static const command_syntax commands[] =
 {
@@ -184,7 +186,7 @@ static const command_syntax commands[] =
 static const uint8_t pad_bytes[8] = {};
 
 static void
-handle_create_database(tcp::socket4& s,
+handle_create_database(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     // TODO: Use string_view.
@@ -194,7 +196,7 @@ handle_create_database(tcp::socket4& s,
 }
 
 static void
-handle_list_databases(tcp::socket4& s,
+handle_list_databases(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     auto dbs = tsdb::list_databases();
@@ -210,7 +212,7 @@ handle_list_databases(tcp::socket4& s,
 }
 
 static void
-handle_create_measurement(tcp::socket4& s,
+handle_create_measurement(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -257,7 +259,7 @@ handle_create_measurement(tcp::socket4& s,
 }
 
 static void
-handle_get_schema(tcp::socket4& s,
+handle_get_schema(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -278,7 +280,7 @@ handle_get_schema(tcp::socket4& s,
 }
 
 static void
-handle_list_measurements(tcp::socket4& s,
+handle_list_measurements(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string db_name(tokens[0].data,tokens[0].len);
@@ -296,7 +298,7 @@ handle_list_measurements(tcp::socket4& s,
 }
 
 static void
-handle_list_series(tcp::socket4& s,
+handle_list_series(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string db_name(tokens[0].data,tokens[0].len);
@@ -316,7 +318,7 @@ handle_list_series(tcp::socket4& s,
 }
 
 static void
-handle_count_points(tcp::socket4& s,
+handle_count_points(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -347,7 +349,7 @@ handle_count_points(tcp::socket4& s,
 }
 
 static void
-handle_write_points(tcp::socket4& s,
+handle_write_points(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -389,7 +391,7 @@ handle_write_points(tcp::socket4& s,
 }
 
 static void
-handle_delete_points(tcp::socket4& s,
+handle_delete_points(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -398,14 +400,14 @@ handle_delete_points(tcp::socket4& s,
     futil::path path(database,measurement,series);
     uint64_t t = tokens[3].u64;
 
-    printf("DELETE FROM %s WHERE time_ns <= %llu\n",path.c_str(),t);
+    printf("DELETE FROM %s WHERE time_ns <= %" PRIu64 "\n",path.c_str(),t);
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
     tsdb::delete_points(m,series,t);
 }
 
 static void
-_handle_select_points(tcp::socket4& s, tsdb::select_op& op)
+_handle_select_points(tcp::stream& s, tsdb::select_op& op)
 {
     if (!op.npoints)
     {
@@ -456,7 +458,7 @@ _handle_select_points(tcp::socket4& s, tsdb::select_op& op)
 }
 
 static void
-handle_select_points_limit(tcp::socket4& s,
+handle_select_points_limit(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -468,7 +470,8 @@ handle_select_points_limit(tcp::socket4& s,
     uint64_t t1 = tokens[5].u64;
     uint64_t N = tokens[6].u64;
 
-    printf("SELECT %s FROM %s WHERE %llu <= time_ns <= %llu LIMIT %llu\n",
+    printf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " LIMIT %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
@@ -478,7 +481,7 @@ handle_select_points_limit(tcp::socket4& s,
 }
 
 static void
-handle_select_points_last(tcp::socket4& s,
+handle_select_points_last(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -490,7 +493,8 @@ handle_select_points_last(tcp::socket4& s,
     uint64_t t1 = tokens[5].u64;
     uint64_t N = tokens[6].u64;
 
-    printf("SELECT %s FROM %s WHERE %llu <= time_ns <= %llu LAST %llu\n",
+    printf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " LAST %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
@@ -500,7 +504,7 @@ handle_select_points_last(tcp::socket4& s,
 }
 
 static void
-handle_sum_points(tcp::socket4& s,
+handle_sum_points(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -512,7 +516,8 @@ handle_sum_points(tcp::socket4& s,
     uint64_t t1 = tokens[5].u64;
     uint64_t window_ns = tokens[6].u64;
 
-    printf("SUM %s FROM %s WHERE %llu <= time_ns <= %llu WINDOW_NS %llu\n",
+    printf("SUM %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+           " WINDOW_NS %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,window_ns);
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
@@ -532,10 +537,13 @@ handle_sum_points(tcp::socket4& s,
         field_npoints[i].reserve(1024);
     }
 
+    // TODO: This is all broken if we have buckets outside of the series' live
+    // time range.  Also: we should be able to specify the chunk size so we can
+    // live-stream the data.
     data_token dt;
     while (rem_points)
     {
-        uint16_t chunk_npoints = MIN(rem_points,1024);
+        uint16_t chunk_npoints = MIN(rem_points,1024U);
         for (size_t i=0; i<chunk_npoints; ++i)
         {
             kassert(op.next());
@@ -572,13 +580,13 @@ handle_sum_points(tcp::socket4& s,
 }
 
 static void
-handle_nop(tcp::socket4& s, const std::vector<parsed_data_token>& tokens)
+handle_nop(tcp::stream& s, const std::vector<parsed_data_token>& tokens)
 {
     // Do nothing.
 }
 
 static void
-parse_cmd(tcp::socket4& s, const command_syntax& cs)
+parse_cmd(tcp::stream& s, const command_syntax& cs)
 {
     printf("Got command 0x%08X.\n",cs.cmd_token);
 
@@ -667,7 +675,7 @@ parse_cmd(tcp::socket4& s, const command_syntax& cs)
 }
 
 static void
-parse_cmd(tcp::socket4& s)
+parse_cmd(tcp::stream& s)
 {
     // 0. Set receive timeout to something very short.
     // 1. Pop command token.
@@ -709,36 +717,74 @@ parse_cmd(tcp::socket4& s)
 }
 
 static void
-request_handler(tcp::socket4&& s)
+request_handler(std::unique_ptr<tcp::stream> s)
 {
-    printf("Accepted local %s remote %s.\n",
-           s.local_addr.to_string().c_str(),
-           s.remote_addr.to_string().c_str());
+    printf("Handling local %s remote %s.\n",
+           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
-    parse_cmd(s);
+    parse_cmd(*s);
 
-    printf("Closing local %s remote %s.\n",
-           s.local_addr.to_string().c_str(),
-           s.remote_addr.to_string().c_str());
+    printf("Teardown local %s remote %s.\n",
+           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+}
+
+static void
+socket4_workloop()
+{
+    tcp::ipv4::addr sa(4000,INADDR_LOOPBACK);
+    tcp::ipv4::server_socket ss(sa);
+    ss.listen(4);
+    printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
+    for (;;)
+    {
+        try
+        {
+            std::thread t(request_handler,ss.accept());
+            t.detach();
+        }
+        catch (const std::exception& e)
+        {
+            printf("Exception accepting TCP connection: %s\n",e.what());
+        }
+    }
+}
+
+static void
+ssl_workloop(const char* cert_file, const char* key_file)
+{
+    tcp::ssl::context sslctx(cert_file,key_file);
+    tcp::ipv4::addr sa(4000,INADDR_ANY);
+    tcp::ipv4::server_socket ss(sa);
+    ss.listen(4);
+    printf("SSL listening on %s.\n",ss.bind_addr.to_string().c_str());
+    for (;;)
+    {
+        try
+        {
+            std::thread t(request_handler,sslctx.wrap(ss.accept()));
+            t.detach();
+        }
+        catch (const std::exception& e)
+        {
+            printf("Exception accepting SSL connection: %s\n",e.what());
+        }
+    }
 }
 
 int
 main(int argc, const char* argv[])
 {
-    if (argc == 2)
+    if (argc == 2 || argc == 4)
         futil::chdir(argv[1]);
 
     printf("%s\n",GIT_VERSION);
 
     signal(SIGPIPE,SIG_IGN);
 
-    tcp::addr4 sa(4000,INADDR_LOOPBACK);
-    tcp::server_socket4 ss(sa);
-    ss.listen(4);
-    printf("Listening on %s.\n",ss.bind_addr.to_string().c_str());
-    for (;;)
-    {
-        std::thread t(request_handler,ss.accept());
-        t.detach();
-    }
+    if (argc == 1 || argc == 2)
+        socket4_workloop();
+    else if (argc == 3)
+        ssl_workloop(argv[1],argv[2]);
+    else if (argc == 4)
+        ssl_workloop(argv[2],argv[3]);
 }

@@ -51,7 +51,7 @@ namespace tsdb
             m(m),
             series_dir(m.dir,series),
             time_first_fd(series_dir,"time_first",oflag),
-            time_first(time_first_fd.read_u64())
+            time_first(time_first_fd.flock(LOCK_SH).read_u64())
         {
         }
         catch (const futil::errno_exception& e)
@@ -66,7 +66,7 @@ namespace tsdb
     struct series_read_lock : public _series_lock
     {
         series_read_lock(const measurement& m, const futil::path& series):
-            _series_lock(m,series,O_RDONLY | O_SHLOCK)
+            _series_lock(m,series,O_RDONLY)
         {
         }
 
@@ -88,7 +88,7 @@ namespace tsdb
         // us.
         series_write_lock(const measurement& m, const futil::path& series,
                           futil::file&& _time_last_fd):
-            series_read_lock(m,series,O_RDWR | O_SHLOCK),
+            series_read_lock(m,series,O_RDWR),
             time_last_fd(std::move(_time_last_fd)),
             time_last(time_last_fd.read_u64())
         {

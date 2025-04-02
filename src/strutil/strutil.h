@@ -3,6 +3,7 @@
 #ifndef __SRC_STRUTIL_STRUTIL_H
 #define __SRC_STRUTIL_STRUTIL_H
 
+#include <string.h>
 #include <string>
 #include <vector>
 #include <ctype.h>
@@ -14,7 +15,7 @@ namespace str
         size_t i;
         size_t j;
 
-        constexpr slice_indices(size_t size, ssize_t _i, ssize_t _j):
+        constexpr slice_indices(ssize_t size, ssize_t _i, ssize_t _j):
             i(_i >= 0 ? ( _i >= size ? size : _i       ) :
                         (-_i >= size ? 0    : _i + size)),
             j(_j >= 0 ? ( _j >= size ? size : _j       ) :
