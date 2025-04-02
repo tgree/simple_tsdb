@@ -32,7 +32,6 @@ namespace futil
         }
 
         errno_exception(int errnov):
-            exception(),
             errnov(errnov)
         {
         }
