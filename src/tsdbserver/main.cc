@@ -65,6 +65,27 @@ struct parsed_data_token
     };
 
     std::string to_string() const {return std::string(data,len);}
+
+    parsed_data_token():
+        data(NULL)
+    {
+    }
+
+    parsed_data_token(const parsed_data_token&) = delete;
+
+    parsed_data_token(parsed_data_token&& other):
+        type(other.type),
+        data(other.data),
+        u64(other.u64)
+    {
+        other.data = NULL;
+    }
+
+    ~parsed_data_token()
+    {
+        free((void*)data);
+        data = NULL;
+    }
 };
 
 struct chunk_header
@@ -591,87 +612,74 @@ parse_cmd(tcp::stream& s, const command_syntax& cs)
     printf("Got command 0x%08X.\n",cs.cmd_token);
 
     std::vector<parsed_data_token> tokens;
+    for (auto dt : cs.data_tokens)
+    {
+        uint32_t v = s.pop<uint32_t>();
+        if (v != dt)
+        {
+            printf("Expected 0x%08X got 0x%08X\n",dt,v);
+            throw futil::errno_exception(EINVAL);
+        }
+        printf("Got token 0x%08X.\n",dt);
+
+        parsed_data_token pdt;
+        pdt.type = dt;
+        pdt.data = NULL;
+        switch (dt)
+        {
+            case DT_DATABASE:
+            case DT_MEASUREMENT:
+            case DT_SERIES:
+            case DT_TYPED_FIELDS:
+            case DT_FIELD_LIST:
+                pdt.len = s.pop<uint16_t>();
+                if (pdt.len >= 1024)
+                {
+                    printf("String length %zu too long.\n",pdt.len);
+                    throw futil::errno_exception(EINVAL);
+                }
+                pdt.data = (char*)malloc(pdt.len);
+                s.recv_all((char*)pdt.data,pdt.len);
+                tokens.push_back(std::move(pdt));
+            break;
+
+            case DT_CHUNK:
+                throw futil::errno_exception(ENOTSUP);
+                tokens.push_back(std::move(pdt));
+            break;
+
+            case DT_TIME_FIRST:
+            case DT_TIME_LAST:
+            case DT_NLIMIT:
+            case DT_NLAST:
+            case DT_WINDOW_NS:
+                pdt.u64 = s.pop<uint64_t>();
+                tokens.push_back(std::move(pdt));
+            break;
+
+            case DT_END:
+                tokens.push_back(std::move(pdt));
+            break;
+
+            default:
+                throw futil::errno_exception(EINVAL);
+            break;
+        }
+    }
+
+    uint32_t status[2] = {DT_STATUS_CODE, 0};
     try
     {
-        for (auto dt : cs.data_tokens)
-        {
-            uint32_t v = s.pop<uint32_t>();
-            if (v != dt)
-            {
-                printf("Expected 0x%08X got 0x%08X\n",dt,v);
-                throw futil::errno_exception(EINVAL);
-            }
-            printf("Got token 0x%08X.\n",dt);
-
-            parsed_data_token pdt;
-            pdt.type = dt;
-            pdt.data = NULL;
-            switch (dt)
-            {
-                case DT_DATABASE:
-                case DT_MEASUREMENT:
-                case DT_SERIES:
-                case DT_TYPED_FIELDS:
-                case DT_FIELD_LIST:
-                    pdt.len = s.pop<uint16_t>();
-                    if (pdt.len >= 1024)
-                    {
-                        printf("String length %zu too long.\n",pdt.len);
-                        throw futil::errno_exception(EINVAL);
-                    }
-                    pdt.data = (char*)malloc(pdt.len);
-                    tokens.push_back(pdt);
-
-                    s.recv_all((char*)pdt.data,pdt.len);
-                break;
-
-                case DT_CHUNK:
-                    throw futil::errno_exception(ENOTSUP);
-                    tokens.push_back(pdt);
-                break;
-
-                case DT_TIME_FIRST:
-                case DT_TIME_LAST:
-                case DT_NLIMIT:
-                case DT_NLAST:
-                case DT_WINDOW_NS:
-                    pdt.u64 = s.pop<uint64_t>();
-                    tokens.push_back(pdt);
-                break;
-
-                case DT_END:
-                    tokens.push_back(pdt);
-                break;
-
-                default:
-                    throw futil::errno_exception(EINVAL);
-                break;
-            }
-        }
-
-        uint32_t status[2] = {DT_STATUS_CODE, 0};
-        try
-        {
-            cs.handler(s,tokens);
-        }
-        catch (const tsdb::exception& e)
-        {
-            printf("TSDB exception: %s\n",e.what());
-            status[1] = e.sc;
-        }
-        
-        printf("Sending status...\n");
-        s.send_all(&status,sizeof(status));
+        cs.handler(s,tokens);
     }
-    catch (...)
+    catch (const tsdb::exception& e)
     {
-        for (const auto& t : tokens)
-            free((void*)t.data);
-        throw;
+        printf("TSDB exception: %s\n",e.what());
+        status[1] = e.sc;
     }
-
-    for (const auto& t : tokens)
-        free((void*)t.data);
+    
+    printf("Sending status...\n");
+    s.send_all(&status,sizeof(status));
 }
 
 static void
