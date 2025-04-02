@@ -607,11 +607,11 @@ handle_nop(tcp::stream& s, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-parse_and_exec(tcp::stream& s, const command_syntax& cs)
+parse_cmd(tcp::stream& s, const command_syntax& cs,
+    std::vector<parsed_data_token>& tokens)
 {
     printf("Got command 0x%08X.\n",cs.cmd_token);
 
-    std::vector<parsed_data_token> tokens;
     for (auto dt : cs.data_tokens)
     {
         uint32_t v = s.pop<uint32_t>();
@@ -666,6 +666,13 @@ parse_and_exec(tcp::stream& s, const command_syntax& cs)
             break;
         }
     }
+}
+
+static void
+parse_and_exec(tcp::stream& s, const command_syntax& cs)
+{
+    std::vector<parsed_data_token> tokens;
+    parse_cmd(s,cs,tokens);
 
     uint32_t status[2] = {DT_STATUS_CODE, 0};
     try
