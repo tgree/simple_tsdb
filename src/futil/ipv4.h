@@ -133,7 +133,7 @@ namespace tcp::ipv4
                 throw futil::errno_exception(errno);
         }
 
-        std::unique_ptr<stream> accept()
+        std::unique_ptr<tcp::ipv4::socket> accept()
         {
             tcp::ipv4::addr remote_addr;
             socklen_t sl = sizeof(remote_addr.sa);
