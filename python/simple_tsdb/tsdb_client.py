@@ -3,6 +3,7 @@
 import socket
 import struct
 import math
+import ssl
 
 import numpy as np
 
@@ -405,9 +406,18 @@ class CountResult:
 
 
 class Client:
-    def __init__(self, host='127.0.0.1', port=4000):
+    DEFAULT_SSL_CTX = None
+
+    def __init__(self, host='127.0.0.1', port=4000, use_ssl=False):
         self.addr = (host, port)
-        self.socket = socket.create_connection(self.addr)
+        self.raw_socket = socket.create_connection(self.addr)
+        if use_ssl:
+            if Client.DEFAULT_SSL_CTX is None:
+                Client.DEFAULT_SSL_CTX = ssl.create_default_context()
+            self.socket = Client.DEFAULT_SSL_CTX.wrap_socket(
+                    self.raw_socket, server_hostname=host)
+        else:
+            self.socket = self.raw_socket
 
     def _sendall(self, data):
         self.socket.sendall(data)
