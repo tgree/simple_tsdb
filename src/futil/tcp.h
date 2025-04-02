@@ -4,6 +4,7 @@
 #define __SRC_FUTIL_TCP_H
 
 #include "futil.h"
+#include <hdr/kassert.h>
 
 namespace tcp
 {
