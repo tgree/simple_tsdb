@@ -6,6 +6,7 @@
 #include <exception>
 #include <string.h>
 #include <sys/types.h>
+#include <stdint.h>
 
 namespace tsdb
 {

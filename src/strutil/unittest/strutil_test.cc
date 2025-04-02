@@ -73,14 +73,14 @@ class tmock_test
         std::vector<std::string> v;
 
         v = str::split("123,45,6789,10",",");
-        tmock::assert_equiv(v.size(),4);
+        tmock::assert_equiv(v.size(),(size_t)4);
         tmock::assert_equiv(v[0].c_str(),"123");
         tmock::assert_equiv(v[1].c_str(),"45");
         tmock::assert_equiv(v[2].c_str(),"6789");
         tmock::assert_equiv(v[3].c_str(),"10");
 
         v = str::split("123,45,6789,10,",",");
-        tmock::assert_equiv(v.size(),5);
+        tmock::assert_equiv(v.size(),(size_t)5);
         tmock::assert_equiv(v[0].c_str(),"123");
         tmock::assert_equiv(v[1].c_str(),"45");
         tmock::assert_equiv(v[2].c_str(),"6789");
@@ -88,7 +88,7 @@ class tmock_test
         tmock::assert_equiv(v[4].c_str(),"");
 
         v = str::split("123a,a45a,a6789a,a10a,a","a,a");
-        tmock::assert_equiv(v.size(),5);
+        tmock::assert_equiv(v.size(),(size_t)5);
         tmock::assert_equiv(v[0].c_str(),"123");
         tmock::assert_equiv(v[1].c_str(),"45");
         tmock::assert_equiv(v[2].c_str(),"6789");
@@ -96,7 +96,7 @@ class tmock_test
         tmock::assert_equiv(v[4].c_str(),"");
         
         v = str::split("  1  2  3  "," ");
-        tmock::assert_equiv(v.size(),9);
+        tmock::assert_equiv(v.size(),(size_t)9);
         tmock::assert_equiv(v[0].c_str(),"");
         tmock::assert_equiv(v[1].c_str(),"");
         tmock::assert_equiv(v[2].c_str(),"1");
@@ -113,28 +113,28 @@ class tmock_test
         std::vector<std::string> v;
 
         v = str::split("123 45 6789 10");
-        tmock::assert_equiv(v.size(),4);
+        tmock::assert_equiv(v.size(),(size_t)4);
         tmock::assert_equiv(v[0].c_str(),"123");
         tmock::assert_equiv(v[1].c_str(),"45");
         tmock::assert_equiv(v[2].c_str(),"6789");
         tmock::assert_equiv(v[3].c_str(),"10");
 
         v = str::split("123 45 6789 10 ");
-        tmock::assert_equiv(v.size(),4);
+        tmock::assert_equiv(v.size(),(size_t)4);
         tmock::assert_equiv(v[0].c_str(),"123");
         tmock::assert_equiv(v[1].c_str(),"45");
         tmock::assert_equiv(v[2].c_str(),"6789");
         tmock::assert_equiv(v[3].c_str(),"10");
 
         v = str::split("    123   45  6789  10");
-        tmock::assert_equiv(v.size(),4);
+        tmock::assert_equiv(v.size(),(size_t)4);
         tmock::assert_equiv(v[0].c_str(),"123");
         tmock::assert_equiv(v[1].c_str(),"45");
         tmock::assert_equiv(v[2].c_str(),"6789");
         tmock::assert_equiv(v[3].c_str(),"10");
 
         v = str::split("    123   45  6789  10       ");
-        tmock::assert_equiv(v.size(),4);
+        tmock::assert_equiv(v.size(),(size_t)4);
         tmock::assert_equiv(v[0].c_str(),"123");
         tmock::assert_equiv(v[1].c_str(),"45");
         tmock::assert_equiv(v[2].c_str(),"6789");

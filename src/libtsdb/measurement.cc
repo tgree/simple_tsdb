@@ -64,7 +64,7 @@ tsdb::create_measurement(const database& db, const futil::path& name,
 
         // The measurement doesn't exist.  Create it in the tmp directory first.
         futil::directory tmp_dir("tmp");
-        futil::xact_mkdtemp m_dir(tmp_dir,"measurement.XXXXXX",0770);
+        futil::xact_mkdtemp m_dir(tmp_dir,0770);
         futil::xact_creat csl_fd(m_dir,"create_series_lock",
                                  O_WRONLY | O_CREAT | O_EXCL,0660);
         futil::xact_creat schema_fd(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL,

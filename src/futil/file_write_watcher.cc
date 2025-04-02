@@ -1,6 +1,9 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
 #include "futil.h"
+#include <hdr/compiler.h>
+
+#if IS_MACOS
 #include <sys/event.h>
 
 futil::file_write_watcher::file_write_watcher(int fd):
@@ -43,3 +46,4 @@ futil::file_write_watcher::wait_for_write() const
         throw errno_exception(errno);
     }
 }
+#endif

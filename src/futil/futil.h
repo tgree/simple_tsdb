@@ -3,11 +3,15 @@
 #ifndef __SRC_FUTIL_FUTIL_H
 #define __SRC_FUTIL_FUTIL_H
 
+#include <hdr/compiler.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/file.h>
 #include <dirent.h>
+#include <string.h>
 #include <string>
 #include <vector>
 
@@ -28,7 +32,6 @@ namespace futil
         }
 
         errno_exception(int errnov):
-            exception(),
             errnov(errnov)
         {
         }
@@ -83,6 +86,11 @@ namespace futil
         operator const char*() const
         {
             return c_str();
+        }
+
+        bool ends_with(const char* s) const
+        {
+            return _path.ends_with(s);
         }
 
         // Returns the number of components in the path.  For instance, the
@@ -240,8 +248,13 @@ namespace futil
     {
         for (;;)
         {
+#if IS_MACOS
             if (::fsync(fd) != -1)
                 return;
+#elif IS_LINUX
+            if (::fdatasync(fd) != -1)
+                return;
+#endif
             if (errno != EINTR)
                 throw futil::errno_exception(errno);
         }
@@ -321,6 +334,7 @@ namespace futil
 
         void fsync_and_barrier()
         {
+#if IS_MACOS
             // Performs an fsync() and then inserts an IO barrier, preventing
             // IO reordering across the barrier.  This is available only on
             // macOS and only on some combinations of file system and specific
@@ -340,13 +354,24 @@ namespace futil
             }
 
             fsync_and_flush();
+#elif IS_LINUX
+            fsync();
+#else
+#error Unknown platform.
+#endif
         }
 
         void fsync_and_flush()
         {
+#if IS_MACOS
             // Performs an fasync() and then flushes the disk controller's
             // buffers to the physical drive medium.
             fcntl(F_FULLFSYNC);
+#elif IS_LINUX
+            fsync();
+#else
+#error Unknown platform.
+#endif
         }
 
         constexpr file_descriptor():fd(-1) {}
@@ -395,9 +420,9 @@ namespace futil
                     continue;
                 if (dp->d_name[0] == '.')
                 {
-                    if (dp->d_namlen == 1)
+                    if (dp->d_name[1] == '\0')
                         continue;
-                    if (dp->d_name[1] == '.' && dp->d_namlen == 2)
+                    if (dp->d_name[1] == '.' && dp->d_name[2] == '\0')
                         continue;
                 }
 
@@ -578,10 +603,11 @@ namespace futil
             }
         }
 
-        void flock(int operation)
+        file& flock(int operation)
         {
             if (::flock(fd,operation) == -1)
                 throw futil::errno_exception(errno);
+            return *this;
         }
 
         mapping mmap(void* addr, size_t len, int prot, int flags, off_t offset)
@@ -645,9 +671,9 @@ namespace futil
             throw errno_exception(errno);
     }
 
-    inline void mkdir(int fd, const char* path, mode_t mode)
+    inline void mkdir(int at_fd, const char* path, mode_t mode)
     {
-        if (::mkdirat(fd,path,mode) == -1)
+        if (::mkdirat(at_fd,path,mode) == -1)
             throw errno_exception(errno);
     }
 
@@ -724,8 +750,15 @@ namespace futil
         // Renames to the target location, as long as the target doesn't exist.
         // Returns true if the rename was successful, false if the target
         // already existed, otherwise throws an exception upon error.
+#if IS_MACOS
         if (!::renameatx_np(old_dir.fd,old,new_dir.fd,_new,RENAME_EXCL))
             return true;
+#elif IS_LINUX
+        if (!::renameat2(old_dir.fd,old,new_dir.fd,_new,RENAME_NOREPLACE))
+            return true;
+#else
+#error Unknown platform.
+#endif
         if (errno == EEXIST)
             return false;
         throw errno_exception(errno);
