@@ -607,7 +607,7 @@ handle_nop(tcp::stream& s, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-parse_cmd(tcp::stream& s, const command_syntax& cs)
+parse_and_exec(tcp::stream& s, const command_syntax& cs)
 {
     printf("Got command 0x%08X.\n",cs.cmd_token);
 
@@ -683,7 +683,7 @@ parse_cmd(tcp::stream& s, const command_syntax& cs)
 }
 
 static void
-parse_cmd(tcp::stream& s)
+process_stream(tcp::stream& s)
 {
     try
     {
@@ -696,7 +696,7 @@ parse_cmd(tcp::stream& s)
             {
                 if (cmd.cmd_token == ct)
                 {
-                    parse_cmd(s,cmd);
+                    parse_and_exec(s,cmd);
                     found = true;
                     break;
                 }
@@ -725,7 +725,7 @@ request_handler(std::unique_ptr<tcp::stream> s)
     printf("Handling local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
-    parse_cmd(*s);
+    process_stream(*s);
 
     printf("Teardown local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
