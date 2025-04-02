@@ -42,7 +42,7 @@ namespace tcp::ipv4
         }
     };
 
-    int _socket()
+    inline int _socket()
     {
         int fd = ::socket(AF_INET,SOCK_STREAM,0);
         if (fd == -1)
