@@ -5,6 +5,7 @@
 #include <hdr/auto_buf.h>
 #include <strutil/strutil.h>
 #include <futil/ipv4.h>
+#include <futil/ssl.h>
 #include <libtsdb/tsdb.h>
 
 #include <algorithm>
@@ -748,15 +749,42 @@ socket4_workloop()
     }
 }
 
+static void
+ssl_workloop(const char* cert_file, const char* key_file)
+{
+    tcp::ssl::context sslctx(cert_file,key_file);
+    tcp::ipv4::addr sa(4000,INADDR_ANY);
+    tcp::ipv4::server_socket ss(sa);
+    ss.listen(4);
+    printf("SSL listening on %s.\n",ss.bind_addr.to_string().c_str());
+    for (;;)
+    {
+        try
+        {
+            std::thread t(request_handler,sslctx.wrap(ss.accept()));
+            t.detach();
+        }
+        catch (const std::exception& e)
+        {
+            printf("Exception accepting SSL connection: %s\n",e.what());
+        }
+    }
+}
+
 int
 main(int argc, const char* argv[])
 {
-    if (argc == 2)
+    if (argc == 2 || argc == 4)
         futil::chdir(argv[1]);
 
     printf("%s\n",GIT_VERSION);
 
     signal(SIGPIPE,SIG_IGN);
 
-    socket4_workloop();
+    if (argc == 1 || argc == 2)
+        socket4_workloop();
+    else if (argc == 3)
+        ssl_workloop(argv[1],argv[2]);
+    else if (argc == 4)
+        ssl_workloop(argv[2],argv[3]);
 }
