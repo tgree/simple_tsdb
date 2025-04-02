@@ -716,7 +716,7 @@ parse_cmd(tcp::stream& s)
 }
 
 static void
-request_handler(std::unique_ptr<tcp::stream>&& s)
+request_handler(std::unique_ptr<tcp::stream> s)
 {
     printf("Accepted local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
