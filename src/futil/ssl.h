@@ -183,7 +183,8 @@ namespace tcp::ssl
                 ERR_print_errors_fp(stderr);
                 kabort();
             }
-            if (SSL_CTX_use_PrivateKey_file(sslctx,key_file,SSL_FILETYPE_PEM) <= 0)
+            if (SSL_CTX_use_PrivateKey_file(sslctx,key_file,SSL_FILETYPE_PEM)
+                <= 0)
             {
                 ERR_print_errors_fp(stderr);
                 kabort();
