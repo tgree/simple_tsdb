@@ -736,8 +736,15 @@ socket4_workloop()
     printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        std::thread t(request_handler,ss.accept());
-        t.detach();
+        try
+        {
+            std::thread t(request_handler,ss.accept());
+            t.detach();
+        }
+        catch (const std::exception& e)
+        {
+            printf("Exception accepting TCP connection: %s\n",e.what());
+        }
     }
 }
 
