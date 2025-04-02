@@ -718,12 +718,12 @@ parse_cmd(tcp::stream& s)
 static void
 request_handler(std::unique_ptr<tcp::stream> s)
 {
-    printf("Accepted local %s remote %s.\n",
+    printf("Handling local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
     parse_cmd(*s);
 
-    printf("Closing local %s remote %s.\n",
+    printf("Teardown local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 }
 
@@ -733,7 +733,7 @@ socket4_workloop()
     tcp::ipv4::addr sa(4000,INADDR_LOOPBACK);
     tcp::ipv4::server_socket ss(sa);
     ss.listen(4);
-    printf("Listening on %s.\n",ss.bind_addr.to_string().c_str());
+    printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
         std::thread t(request_handler,ss.accept());
