@@ -22,6 +22,7 @@ CT_LIST_SERIES          = 0x7B8238D6
 CT_COUNT_POINTS         = 0x0E329B19
 CT_SUM_POINTS           = 0x90305A39
 CT_NOP                  = 0x22CF1296
+CT_AUTHENTICATE         = 0x0995EBDA
 
 # Data tokens
 DT_DATABASE             = 0x39385A4F
@@ -42,6 +43,8 @@ DT_READY_FOR_CHUNK      = 0x6000531C
 DT_NPOINTS              = 0x5F469D08
 DT_WINDOW_NS            = 0x76F0C374
 DT_SUMS_CHUNK           = 0x53FC76FC
+DT_USERNAME             = 0x6E39D1DE
+DT_PASSWORD             = 0x602E5B01
 
 
 # Status codes.
@@ -408,14 +411,17 @@ class CountResult:
 class Client:
     DEFAULT_SSL_CTX = None
 
-    def __init__(self, host='127.0.0.1', port=4000, use_ssl=False):
+    def __init__(self, host='127.0.0.1', port=4000, use_ssl=False,
+                 credentials=None):
         self.addr = (host, port)
         self.raw_socket = socket.create_connection(self.addr)
         if use_ssl:
+            assert len(credentials) == 2
             if Client.DEFAULT_SSL_CTX is None:
                 Client.DEFAULT_SSL_CTX = ssl.create_default_context()
             self.socket = Client.DEFAULT_SSL_CTX.wrap_socket(
                     self.raw_socket, server_hostname=host)
+            self.authenticate(*credentials)
         else:
             self.socket = self.raw_socket
 
@@ -451,6 +457,17 @@ class Client:
         sc = self._recv_i32()
         if sc != 0:
             raise StatusException(sc)
+
+    def authenticate(self, username, password):
+        username = username.encode()
+        password = password.encode()
+        cmd = struct.pack('<IIH%usIH%usI' % (len(username),
+                                             len(password)),
+                          CT_AUTHENTICATE,
+                          DT_USERNAME, len(username), username,
+                          DT_PASSWORD, len(password), password,
+                          DT_END)
+        self._transact(cmd)
 
     def create_database(self, database):
         database = database.encode()

@@ -6,6 +6,7 @@
 #include "ipv4.h"
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
+#include <openssl/evp.h>
 #include <openssl/err.h>
 
 namespace tcp::ssl
@@ -183,13 +184,82 @@ namespace tcp::ssl
                 ERR_print_errors_fp(stderr);
                 kabort();
             }
-            if (SSL_CTX_use_PrivateKey_file(sslctx,key_file,SSL_FILETYPE_PEM) <= 0)
+            if (SSL_CTX_use_PrivateKey_file(sslctx,key_file,SSL_FILETYPE_PEM)
+                <= 0)
             {
                 ERR_print_errors_fp(stderr);
                 kabort();
             }
         }
     };
+
+    struct sha512_digest
+    {
+        const EVP_MD*   md;
+        EVP_MD_CTX*     mdctx;
+        unsigned char   value[EVP_MAX_MD_SIZE];
+        unsigned int    len;
+
+        void update(const void* d, size_t cnt)
+        {
+            EVP_DigestUpdate(mdctx,d,cnt);
+        }
+
+        void finalize(size_t nrounds = 1)
+        {
+            EVP_DigestFinal_ex(mdctx,value,&len);
+            for (size_t i=0; i<nrounds; ++i)
+            {
+                EVP_DigestInit_ex(mdctx,md,NULL);
+                EVP_DigestUpdate(mdctx,value,len);
+                EVP_DigestFinal_ex(mdctx,value,&len);
+            }
+        }
+
+        sha512_digest():
+            md(EVP_get_digestbyname("SHA512")),
+            mdctx(EVP_MD_CTX_new()),
+            len(0)
+        {
+            kassert(md != NULL);
+            EVP_DigestInit_ex(mdctx,md,NULL);
+        }
+
+        ~sha512_digest()
+        {
+            EVP_MD_CTX_free(mdctx);
+        }
+    };
+
+    struct sha512_result
+    {
+        uint8_t data[512/8];
+
+        std::string to_string() const
+        {
+            char str[2*512/8 + 1];
+            for (size_t i=0; i<512/8; ++i)
+                snprintf(str + i*2,3,"%02X",data[i]);
+            return std::string(str);
+        }
+
+        sha512_result()
+        {
+            memset(data,0,sizeof(data));
+        }
+    };
+
+    static inline sha512_result
+    pbkdf2_sha512(const std::string& password, const std::string& salt,
+                  size_t iters)
+    {
+        sha512_result res;
+        kassert(PKCS5_PBKDF2_HMAC(password.c_str(),password.size(),
+                                  (const unsigned char*)salt.c_str(),
+                                  salt.size(),iters,EVP_sha512(),64,res.data)
+                == 1);
+        return res;
+    }
 }
 
 #endif /* __SRC_FUTIL_SSL_H */

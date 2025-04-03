@@ -32,6 +32,8 @@ namespace tsdb
         NO_SUCH_DATABASE                = -18,
         NO_SUCH_MEASUREMENT             = -19,
         MEASUREMENT_EXISTS              = -20,
+        USER_EXISTS                     = -21,
+        NO_SUCH_USER                    = -22,
     };
 
     struct exception : public std::exception
@@ -327,6 +329,34 @@ namespace tsdb
             corrupt_series_exception(INVALID_TIME_LAST),
             tail_time_ns(tail_time_ns),
             time_last_ns(time_last_ns)
+        {
+        }
+    };
+
+    struct user_exists_exception : public exception
+    {
+        // tsdb::add_user() was called for a user that already exists.
+        virtual const char* what() const noexcept override
+        {
+            return "User already exists.";
+        }
+
+        user_exists_exception():
+            exception(USER_EXISTS)
+        {
+        }
+    };
+
+    struct no_such_user_exception : public exception
+    {
+        // tsdb::verify_user() was called for a user that doesn't exist.
+        virtual const char* what() const noexcept override
+        {
+            return "No such user.";
+        }
+
+        no_such_user_exception():
+            exception(NO_SUCH_USER)
         {
         }
     };

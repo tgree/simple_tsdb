@@ -147,6 +147,13 @@ namespace futil
         {
         }
 
+        xact_creat(const char* path, int oflag, mode_t mode):
+            file(path,oflag,mode),
+            at_fd(AT_FDCWD),
+            path(path)
+        {
+        }
+
         ~xact_creat()
         {
             if (!committed)
