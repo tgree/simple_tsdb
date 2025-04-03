@@ -23,6 +23,12 @@
 
 namespace tsdb
 {
+    // Adds a new user to the passwd file.
+    void add_user(const std::string& username, const std::string& password);
+
+    // Verifies a username and password against the passwd file.
+    bool verify_user(const std::string& username, const std::string& password);
+
     // Creates a new TSDB instance rooted at the current working directory.
     void init();
 }
