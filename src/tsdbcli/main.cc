@@ -48,6 +48,8 @@ enum command_token
     CT_STR_MEAN,
     CT_STR_WINDOW_NS,
     CT_STR_WATCH,
+    CT_STR_ADDUSER,
+    CT_STR_AUTH,
 
     // Other types.
     CT_DATABASE_SPECIFIER,      // <database>
@@ -59,6 +61,8 @@ enum command_token
     CT_COMPARISON,              // <, <=, ==, >=, >
     CT_COMPARISON_LEFT,         // <, <=
     CT_COMPARISON_RIGHT,        // >=, >
+    CT_USERNAME,                // <username>
+    CT_PASSWORD,                // <password>
 };
 
 constexpr const char* const keyword_strings[] =
@@ -86,6 +90,8 @@ constexpr const char* const keyword_strings[] =
     [CT_STR_MEAN]           = "mean",
     [CT_STR_WINDOW_NS]      = "window_ns",
     [CT_STR_WATCH]          = "watch",
+    [CT_STR_ADDUSER]        = "adduser",
+    [CT_STR_AUTH]           = "auth",
 };
 
 struct command_syntax
@@ -124,6 +130,8 @@ struct command_syntax
                 case CT_STR_MEAN:
                 case CT_STR_WINDOW_NS:
                 case CT_STR_WATCH:
+                case CT_STR_ADDUSER:
+                case CT_STR_AUTH:
                     if (strcasecmp(cmd[i].c_str(),keyword_strings[tokens[i]]))
                         return false;
                 break;
@@ -145,6 +153,8 @@ struct command_syntax
 
                 case CT_TYPED_FIELDS:
                 case CT_FIELD_SPECIFIER:
+                case CT_USERNAME:
+                case CT_PASSWORD:
                 break;
 
                 case CT_UINT64:
@@ -206,6 +216,8 @@ static void handle_create_measurement(const std::vector<std::string>& cmd);
 static void handle_list_measurements(const std::vector<std::string>& cmd);
 static void handle_create_database(const std::vector<std::string>& cmd);
 static void handle_list_databases(const std::vector<std::string>& cmd);
+static void handle_adduser(const std::vector<std::string>& cmd);
+static void handle_auth(const std::vector<std::string>& cmd);
 static void handle_init(const std::vector<std::string>& cmd);
 
 static const command_syntax commands[] =
@@ -300,6 +312,14 @@ static const command_syntax commands[] =
         handle_delete_from_series,
         {CT_STR_DELETE, CT_STR_FROM, CT_SERIES_SPECIFIER, CT_STR_WHERE,
          CT_STR_TIME_NS, CT_COMPARISON_LEFT, CT_UINT64},
+    },
+    {
+        handle_adduser,
+        {CT_STR_ADDUSER, CT_USERNAME, CT_PASSWORD},
+    },
+    {
+        handle_auth,
+        {CT_STR_AUTH, CT_USERNAME, CT_PASSWORD},
     },
 };
 
@@ -861,6 +881,22 @@ handle_create_database(const std::vector<std::string>& cmd)
 {
     printf("Creating database \"%s\"...\n",cmd[2].c_str());
     tsdb::create_database(cmd[2].c_str());
+}
+
+static void
+handle_auth(const std::vector<std::string>& cmd)
+{
+    if (tsdb::verify_user(cmd[1],cmd[2]))
+        printf("Authentication successful.\n");
+    else
+        printf("Authentication failed.\n");
+}
+
+static void
+handle_adduser(const std::vector<std::string>& cmd)
+{
+    tsdb::add_user(cmd[1],cmd[2]);
+    printf("Added user %s.\n",cmd[1].c_str());
 }
 
 static void

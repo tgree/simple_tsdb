@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <time.h>
 #include <inttypes.h>
 
 enum command_token : uint32_t
@@ -30,6 +31,7 @@ enum command_token : uint32_t
     CT_COUNT_POINTS         = 0x0E329B19,
     CT_SUM_POINTS           = 0x90305A39,
     CT_NOP                  = 0x22CF1296,
+    CT_AUTHENTICATE         = 0x0995EBDA,
 };
 
 enum data_token : uint32_t
@@ -52,6 +54,8 @@ enum data_token : uint32_t
     DT_NPOINTS          = 0x5F469D08,   // <npoints> (uint64_t)
     DT_WINDOW_NS        = 0x76F0C374,   // <window_ns> (uint64_t)
     DT_SUMS_CHUNK       = 0x53FC76FC,   // <chunk_npoints> (uint16_t)
+    DT_USERNAME         = 0x6E39D1DE,   // <username>
+    DT_PASSWORD         = 0x602E5B01,   // <password>
 };
 
 struct parsed_data_token
@@ -65,6 +69,27 @@ struct parsed_data_token
     };
 
     std::string to_string() const {return std::string(data,len);}
+
+    parsed_data_token():
+        data(NULL)
+    {
+    }
+
+    parsed_data_token(const parsed_data_token&) = delete;
+
+    parsed_data_token(parsed_data_token&& other):
+        type(other.type),
+        data(other.data),
+        u64(other.u64)
+    {
+        other.data = NULL;
+    }
+
+    ~parsed_data_token()
+    {
+        free((void*)data);
+        data = NULL;
+    }
 };
 
 struct chunk_header
@@ -181,6 +206,13 @@ static const command_syntax commands[] =
         CT_NOP,
         {DT_END},
     },
+};
+
+static const command_syntax auth_command =
+{
+    NULL,
+    CT_AUTHENTICATE,
+    {DT_USERNAME, DT_PASSWORD, DT_END},
 };
 
 static const uint8_t pad_bytes[8] = {};
@@ -586,102 +618,94 @@ handle_nop(tcp::stream& s, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-parse_cmd(tcp::stream& s, const command_syntax& cs)
+parse_cmd(tcp::stream& s, const command_syntax& cs,
+    std::vector<parsed_data_token>& tokens)
 {
     printf("Got command 0x%08X.\n",cs.cmd_token);
 
-    std::vector<parsed_data_token> tokens;
-    try
+    for (auto dt : cs.data_tokens)
     {
-        for (auto dt : cs.data_tokens)
+        uint32_t v = s.pop<uint32_t>();
+        if (v != dt)
         {
-            uint32_t v = s.pop<uint32_t>();
-            if (v != dt)
-            {
-                printf("Expected 0x%08X got 0x%08X\n",dt,v);
-                throw futil::errno_exception(EINVAL);
-            }
-            printf("Got token 0x%08X.\n",dt);
+            printf("Expected 0x%08X got 0x%08X\n",dt,v);
+            throw futil::errno_exception(EINVAL);
+        }
+        printf("Got token 0x%08X.\n",dt);
 
-            parsed_data_token pdt;
-            pdt.type = dt;
-            pdt.data = NULL;
-            switch (dt)
-            {
-                case DT_DATABASE:
-                case DT_MEASUREMENT:
-                case DT_SERIES:
-                case DT_TYPED_FIELDS:
-                case DT_FIELD_LIST:
-                    pdt.len = s.pop<uint16_t>();
-                    if (pdt.len >= 1024)
-                    {
-                        printf("String length %zu too long.\n",pdt.len);
-                        throw futil::errno_exception(EINVAL);
-                    }
-                    pdt.data = (char*)malloc(pdt.len);
-                    tokens.push_back(pdt);
-
-                    s.recv_all((char*)pdt.data,pdt.len);
-                break;
-
-                case DT_CHUNK:
-                    throw futil::errno_exception(ENOTSUP);
-                    tokens.push_back(pdt);
-                break;
-
-                case DT_TIME_FIRST:
-                case DT_TIME_LAST:
-                case DT_NLIMIT:
-                case DT_NLAST:
-                case DT_WINDOW_NS:
-                    pdt.u64 = s.pop<uint64_t>();
-                    tokens.push_back(pdt);
-                break;
-
-                case DT_END:
-                    tokens.push_back(pdt);
-                break;
-
-                default:
+        parsed_data_token pdt;
+        pdt.type = dt;
+        pdt.data = NULL;
+        pdt.u64 = 0;
+        switch (dt)
+        {
+            case DT_DATABASE:
+            case DT_MEASUREMENT:
+            case DT_SERIES:
+            case DT_TYPED_FIELDS:
+            case DT_FIELD_LIST:
+            case DT_USERNAME:
+            case DT_PASSWORD:
+                pdt.len = s.pop<uint16_t>();
+                if (pdt.len >= 1024)
+                {
+                    printf("String length %zu too long.\n",pdt.len);
                     throw futil::errno_exception(EINVAL);
-                break;
-            }
-        }
+                }
+                pdt.data = (char*)malloc(pdt.len);
+                s.recv_all((char*)pdt.data,pdt.len);
+                tokens.push_back(std::move(pdt));
+            break;
 
-        uint32_t status[2] = {DT_STATUS_CODE, 0};
-        try
-        {
-            cs.handler(s,tokens);
-        }
-        catch (const tsdb::exception& e)
-        {
-            printf("TSDB exception: %s\n",e.what());
-            status[1] = e.sc;
-        }
-        
-        printf("Sending status...\n");
-        s.send_all(&status,sizeof(status));
-    }
-    catch (...)
-    {
-        for (const auto& t : tokens)
-            free((void*)t.data);
-        throw;
-    }
+            case DT_CHUNK:
+                throw futil::errno_exception(ENOTSUP);
+                tokens.push_back(std::move(pdt));
+            break;
 
-    for (const auto& t : tokens)
-        free((void*)t.data);
+            case DT_TIME_FIRST:
+            case DT_TIME_LAST:
+            case DT_NLIMIT:
+            case DT_NLAST:
+            case DT_WINDOW_NS:
+                pdt.u64 = s.pop<uint64_t>();
+                tokens.push_back(std::move(pdt));
+            break;
+
+            case DT_END:
+                tokens.push_back(std::move(pdt));
+            break;
+
+            default:
+                throw futil::errno_exception(EINVAL);
+            break;
+        }
+    }
 }
 
 static void
-parse_cmd(tcp::stream& s)
+parse_and_exec(tcp::stream& s, const command_syntax& cs)
 {
-    // 0. Set receive timeout to something very short.
-    // 1. Pop command token.
-    // 2. If not in commands[], close socket.
-    // 3. Pop data tokens as defined in commands[].
-    // 4. Call handler.
+    std::vector<parsed_data_token> tokens;
+    parse_cmd(s,cs,tokens);
+
+    uint32_t status[2] = {DT_STATUS_CODE, 0};
+    try
+    {
+        cs.handler(s,tokens);
+    }
+    catch (const tsdb::exception& e)
+    {
+        printf("TSDB exception: %s\n",e.what());
+        status[1] = e.sc;
+    }
+    
+    printf("Sending status...\n");
+    s.send_all(&status,sizeof(status));
+}
+
+static void
+process_stream(tcp::stream& s)
+{
     try
     {
         for (;;)
@@ -693,7 +717,7 @@ parse_cmd(tcp::stream& s)
             {
                 if (cmd.cmd_token == ct)
                 {
-                    parse_cmd(s,cmd);
+                    parse_and_exec(s,cmd);
                     found = true;
                     break;
                 }
@@ -722,10 +746,85 @@ request_handler(std::unique_ptr<tcp::stream> s)
     printf("Handling local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
-    parse_cmd(*s);
+    process_stream(*s);
 
     printf("Teardown local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+}
+
+static uint64_t
+time_ns()
+{
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
+    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
+}
+
+static void
+sleep_for_ns(uint64_t nsec)
+{
+    struct timespec rqtp;
+    struct timespec rmtp;
+    rqtp.tv_sec  = (nsec / 1000000000);
+    rqtp.tv_nsec = (nsec % 1000000000);
+    while (nanosleep(&rqtp,&rmtp) != 0)
+        rqtp = rmtp;
+}
+
+static void
+auth_request_handler(std::unique_ptr<tcp::stream> s)
+{
+    uint64_t t0 = time_ns();
+
+    printf("Authenticating local %s remote %s.\n",
+           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+
+    std::string username;
+    std::string password;
+    try
+    {
+        uint32_t dt = s->pop<uint32_t>();
+        if (dt != CT_AUTHENTICATE)
+            throw futil::errno_exception(EINVAL);
+
+        std::vector<parsed_data_token> tokens;
+        parse_cmd(*s,auth_command,tokens);
+
+        username = tokens[0].to_string();
+        password = tokens[1].to_string();
+        printf("Authenticating user %s from %s...\n",
+               username.c_str(),s->remote_addr_string().c_str());
+        if (!tsdb::verify_user(username,password))
+            throw futil::errno_exception(EPERM);
+        printf("Authentication from %s for user %s succeeded.\n",
+               s->remote_addr_string().c_str(),
+               username.c_str());
+
+        uint32_t status[2] = {DT_STATUS_CODE, 0};
+        s->send_all(&status,sizeof(status));
+    }
+    catch (const std::exception& e)
+    {
+        if (!username.empty())
+        {
+            printf("Authentication from %s for user %s failed.\n",
+                   s->remote_addr_string().c_str(),
+                   username.c_str());
+        }
+        else
+        {
+            printf("Authentication from %s failed.\n",
+                   s->remote_addr_string().c_str());
+        }
+        printf("Authentication exception: %s\n",e.what());
+        uint64_t t1 = time_ns();
+        uint64_t nsecs = round_up_to_nearest_multiple(t1 - t0,
+                                                      (uint64_t)2000000000);
+        sleep_for_ns(nsecs + 1);
+        return;
+    }
+
+    request_handler(std::move(s));
 }
 
 static void
@@ -761,7 +860,7 @@ ssl_workloop(const char* cert_file, const char* key_file)
     {
         try
         {
-            std::thread t(request_handler,sslctx.wrap(ss.accept()));
+            std::thread t(auth_request_handler,sslctx.wrap(ss.accept()));
             t.detach();
         }
         catch (const std::exception& e)
