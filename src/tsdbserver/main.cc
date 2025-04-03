@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <time.h>
 #include <inttypes.h>
 
 enum command_token : uint32_t
@@ -30,6 +31,7 @@ enum command_token : uint32_t
     CT_COUNT_POINTS         = 0x0E329B19,
     CT_SUM_POINTS           = 0x90305A39,
     CT_NOP                  = 0x22CF1296,
+    CT_AUTHENTICATE         = 0x0995EBDA,
 };
 
 enum data_token : uint32_t
@@ -52,6 +54,8 @@ enum data_token : uint32_t
     DT_NPOINTS          = 0x5F469D08,   // <npoints> (uint64_t)
     DT_WINDOW_NS        = 0x76F0C374,   // <window_ns> (uint64_t)
     DT_SUMS_CHUNK       = 0x53FC76FC,   // <chunk_npoints> (uint16_t)
+    DT_USERNAME         = 0x6E39D1DE,   // <username>
+    DT_PASSWORD         = 0x602E5B01,   // <password>
 };
 
 struct parsed_data_token
@@ -202,6 +206,13 @@ static const command_syntax commands[] =
         CT_NOP,
         {DT_END},
     },
+};
+
+static const command_syntax auth_command =
+{
+    NULL,
+    CT_AUTHENTICATE,
+    {DT_USERNAME, DT_PASSWORD, DT_END},
 };
 
 static const uint8_t pad_bytes[8] = {};
@@ -625,6 +636,7 @@ parse_cmd(tcp::stream& s, const command_syntax& cs,
         parsed_data_token pdt;
         pdt.type = dt;
         pdt.data = NULL;
+        pdt.u64 = 0;
         switch (dt)
         {
             case DT_DATABASE:
@@ -632,6 +644,8 @@ parse_cmd(tcp::stream& s, const command_syntax& cs,
             case DT_SERIES:
             case DT_TYPED_FIELDS:
             case DT_FIELD_LIST:
+            case DT_USERNAME:
+            case DT_PASSWORD:
                 pdt.len = s.pop<uint16_t>();
                 if (pdt.len >= 1024)
                 {
@@ -738,6 +752,81 @@ request_handler(std::unique_ptr<tcp::stream> s)
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 }
 
+static uint64_t
+time_ns()
+{
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
+    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
+}
+
+static void
+sleep_for_ns(uint64_t nsec)
+{
+    struct timespec rqtp;
+    struct timespec rmtp;
+    rqtp.tv_sec  = (nsec / 1000000000);
+    rqtp.tv_nsec = (nsec % 1000000000);
+    while (nanosleep(&rqtp,&rmtp) != 0)
+        rqtp = rmtp;
+}
+
+static void
+auth_request_handler(std::unique_ptr<tcp::stream> s)
+{
+    uint64_t t0 = time_ns();
+
+    printf("Authenticating local %s remote %s.\n",
+           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+
+    std::string username;
+    std::string password;
+    try
+    {
+        uint32_t dt = s->pop<uint32_t>();
+        if (dt != CT_AUTHENTICATE)
+            throw futil::errno_exception(EINVAL);
+
+        std::vector<parsed_data_token> tokens;
+        parse_cmd(*s,auth_command,tokens);
+
+        username = tokens[0].to_string();
+        password = tokens[1].to_string();
+        printf("Authenticating user %s from %s...\n",
+               username.c_str(),s->remote_addr_string().c_str());
+        if (!tsdb::verify_user(username,password))
+            throw futil::errno_exception(EPERM);
+        printf("Authentication from %s for user %s succeeded.\n",
+               s->remote_addr_string().c_str(),
+               username.c_str());
+
+        uint32_t status[2] = {DT_STATUS_CODE, 0};
+        s->send_all(&status,sizeof(status));
+    }
+    catch (const std::exception& e)
+    {
+        if (!username.empty())
+        {
+            printf("Authentication from %s for user %s failed.\n",
+                   s->remote_addr_string().c_str(),
+                   username.c_str());
+        }
+        else
+        {
+            printf("Authentication from %s failed.\n",
+                   s->remote_addr_string().c_str());
+        }
+        printf("Authentication exception: %s\n",e.what());
+        uint64_t t1 = time_ns();
+        uint64_t nsecs = round_up_to_nearest_multiple(t1 - t0,
+                                                      (uint64_t)2000000000);
+        sleep_for_ns(nsecs + 1);
+        return;
+    }
+
+    request_handler(std::move(s));
+}
+
 static void
 socket4_workloop()
 {
@@ -771,7 +860,7 @@ ssl_workloop(const char* cert_file, const char* key_file)
     {
         try
         {
-            std::thread t(request_handler,sslctx.wrap(ss.accept()));
+            std::thread t(auth_request_handler,sslctx.wrap(ss.accept()));
             t.detach();
         }
         catch (const std::exception& e)
