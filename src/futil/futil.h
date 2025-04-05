@@ -246,6 +246,7 @@ namespace futil
 
     inline void fsync(int fd)
     {
+        printf("fsync()\n");
         for (;;)
         {
 #if IS_MACOS
@@ -344,6 +345,7 @@ namespace futil
             // 
             // If the barrier operation is not supported, fall back to a full
             // flush.
+            printf("fsync_and_barrier()\n");
             for (;;)
             {
                 int val = ::fcntl(fd,F_BARRIERFSYNC);
@@ -353,6 +355,7 @@ namespace futil
                     break;
             }
 
+            printf("---> failed, trying fsync_and_flush()\n");
             fsync_and_flush();
 #elif IS_LINUX
             fsync();
@@ -366,6 +369,7 @@ namespace futil
 #if IS_MACOS
             // Performs an fasync() and then flushes the disk controller's
             // buffers to the physical drive medium.
+            printf("fsync_and_flush()\n");
             fcntl(F_FULLFSYNC);
 #elif IS_LINUX
             fsync();

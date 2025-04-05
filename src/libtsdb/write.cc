@@ -539,7 +539,6 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         }
         else
 #endif
-            write_lock.time_last_fd.fsync();
 
         // Advance to the next set of points.
         time_data         += write_points;
@@ -549,6 +548,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         src_bitmap_offset += write_points;
         if (rem_points)
         {
+            write_lock.time_last_fd.fsync();
             kassert(avail_points == 0);
             kassert(pos == CHUNK_NPOINTS*sizeof(uint64_t));
         }

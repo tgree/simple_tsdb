@@ -141,14 +141,14 @@ namespace futil
     public:
         xact_creat(const directory& dir, const char* path, int oflag,
                    mode_t mode):
-            file(dir,path,oflag,mode),
+            file(dir,path,oflag | O_CREAT,mode),
             at_fd(dir.fd),
             path(path)
         {
         }
 
         xact_creat(const char* path, int oflag, mode_t mode):
-            file(path,oflag,mode),
+            file(path,oflag | O_CREAT,mode),
             at_fd(AT_FDCWD),
             path(path)
         {
