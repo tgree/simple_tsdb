@@ -69,7 +69,7 @@ tsdb::create_measurement(const database& db, const futil::path& name,
                                  O_WRONLY | O_CREAT | O_EXCL,0660);
         futil::xact_creat schema_fd(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL,
                                     0440);
-        
+
         for (auto& se : fields)
             schema_fd.write_all(&se,sizeof(se));
 
