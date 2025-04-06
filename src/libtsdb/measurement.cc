@@ -70,8 +70,8 @@ tsdb::create_measurement(const database& db, const futil::path& name,
         futil::xact_creat schema_fd(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL,
                                     0440);
 
-        for (auto& se : fields)
-            schema_fd.write_all(&se,sizeof(se));
+        // Write the schema.
+        schema_fd.write_all(&fields[0],fields.size()*sizeof(schema_entry));
 
         // Try to move the newly-created measurement into place.
         if (futil::rename_if_not_exists(tmp_dir,(const char*)m_dir.name,db.dir,
