@@ -56,8 +56,8 @@ tsdb::verify_user(const std::string& username, const std::string& password)
 void
 tsdb::init() try
 {
-    futil::xact_creat passwd_lock_fd("passwd.lock",0660,O_RDWR);
-    futil::xact_creat passwd_fd("passwd",0660,O_RDWR);
+    futil::xact_creat passwd_lock_fd("passwd.lock",O_RDWR | O_CREAT,0660);
+    futil::xact_creat passwd_fd("passwd",O_RDWR | O_CREAT,0660);
     futil::xact_mkdir tmp_dir("tmp",0770);
     futil::xact_mkdir databases_dir("databases",0770);
     databases_dir.commit();
