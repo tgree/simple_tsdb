@@ -63,6 +63,8 @@ namespace tsdb
     };
 
     // Obtains a read lock on a series.
+    // This acquires a shared lock on time_first so that no delete operation
+    // can happen while we are reading.
     struct series_read_lock : public _series_lock
     {
         series_read_lock(const measurement& m, const futil::path& series):
@@ -79,13 +81,20 @@ namespace tsdb
     };
 
     // Obtains a write lock on a series.
+    // This acquires a shared lock on time_first so that no delete operation
+    // can happen while we are writing, and it acquires an exclusive lock on
+    // time_last so that nobody else can write new data points while we are
+    // (not that that should ever happen).
+    //
+    // A write lock can be substituted in calls where only a read lock is
+    // needed; this allows for instance a select operation to take place inside
+    // a write method to handle overwrite.
     struct series_write_lock : public series_read_lock
     {
         futil::file time_last_fd;
         uint64_t    time_last;
 
-        // Transfer ownership of an O_EXLOCK exclusive lock fd on time_last to
-        // us.
+        // Transfer ownership of an exclusive lock on time_last to us.
         series_write_lock(const measurement& m, const futil::path& series,
                           futil::file&& _time_last_fd):
             series_read_lock(m,series,O_RDWR),
