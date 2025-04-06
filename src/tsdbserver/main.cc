@@ -556,7 +556,6 @@ handle_sum_points(tcp::stream& s,
     tsdb::series_read_lock read_lock(m,series);
     tsdb::sum_op op(read_lock,path,str::split(field_list,","),t0,t1,window_ns);
 
-    size_t rem_points = op.nranges;
     const size_t nfields = op.op.fields.size();
     fixed_vector<uint64_t> timestamps(1024);
     fixed_vector<std::vector<double>> field_sums(nfields);
@@ -569,16 +568,13 @@ handle_sum_points(tcp::stream& s,
         field_npoints[i].reserve(1024);
     }
 
-    // TODO: This is all broken if we have buckets outside of the series' live
-    // time range.  Also: we should be able to specify the chunk size so we can
-    // live-stream the data.
-    data_token dt;
-    while (rem_points)
+    while (!op.is_done)
     {
-        uint16_t chunk_npoints = MIN(rem_points,1024U);
-        for (size_t i=0; i<chunk_npoints; ++i)
+        while (timestamps.size() < 1024)
         {
-            kassert(op.next());
+            if (!op.next())
+                break;
+
             timestamps.emplace_back(op.range_t0);
             for (size_t j=0; j<nfields; ++j)
             {
@@ -587,27 +583,29 @@ handle_sum_points(tcp::stream& s,
             }
         }
 
-        dt = DT_SUMS_CHUNK;
-        s.send_all(&dt,sizeof(dt));
-        s.send_all(&chunk_npoints,sizeof(chunk_npoints));
-        s.send_all(&timestamps[0],chunk_npoints*sizeof(uint64_t));
-        timestamps.clear();
-        for (size_t j=0; j<nfields; ++j)
+        uint16_t chunk_npoints = timestamps.size();
+        if (chunk_npoints)
         {
-            s.send_all(&field_sums[j][0],chunk_npoints*sizeof(double));
-            field_sums[j].clear();
+            data_token dt = DT_SUMS_CHUNK;
+            s.send_all(&dt,sizeof(dt));
+            s.send_all(&chunk_npoints,sizeof(chunk_npoints));
+            s.send_all(&timestamps[0],chunk_npoints*sizeof(uint64_t));
+            timestamps.clear();
+            for (size_t j=0; j<nfields; ++j)
+            {
+                s.send_all(&field_sums[j][0],chunk_npoints*sizeof(double));
+                field_sums[j].clear();
+            }
+            for (size_t j=0; j<nfields; ++j)
+            {
+                s.send_all(&field_npoints[j][0],chunk_npoints*sizeof(uint64_t));
+                field_npoints[j].clear();
+            }
         }
-        for (size_t j=0; j<nfields; ++j)
-        {
-            s.send_all(&field_npoints[j][0],chunk_npoints*sizeof(uint64_t));
-            field_npoints[j].clear();
-        }
-
-        rem_points -= chunk_npoints;
     }
 
     kassert(!op.next());
-    dt = DT_END;
+    data_token dt = DT_END;
     s.send_all(&dt,sizeof(dt));
 }
 

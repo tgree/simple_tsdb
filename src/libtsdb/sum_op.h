@@ -17,7 +17,8 @@ namespace tsdb
         const uint64_t  t0;
         const uint64_t  t1;
         const uint64_t  window_ns;
-        const uint64_t  nranges;
+        bool            is_first;
+        bool            is_done;
 
         // Select op that we are using to iterate.
         select_op_first op;
@@ -25,7 +26,6 @@ namespace tsdb
 
         // Latest result.
         uint64_t                range_t0;
-        uint64_t                range_t1;
         std::vector<double>     sums;
         std::vector<uint64_t>   npoints;
 
