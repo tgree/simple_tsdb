@@ -5,34 +5,44 @@
 tsdb::sum_op::sum_op(const series_read_lock& read_lock,
     const futil::path& series_id, const std::vector<std::string>& field_names,
     uint64_t _t0, uint64_t _t1, uint64_t window_ns):
-        t0(round_up_to_nearest_multiple(_t0,window_ns)),
-        t1(MAX(t0,round_down_to_nearest_multiple(_t1,window_ns))),
+        t0(MAX(round_up_to_nearest_multiple(_t0,window_ns),
+               round_down_to_nearest_multiple(read_lock.time_first,window_ns))),
+        t1(_t1),
         window_ns(window_ns),
-        nranges((t1 - t0) / window_ns),
+        is_first(true),
+        is_done(false),
         op(read_lock,series_id,field_names,t0,t1,-1),
         op_index(0),
-        range_t0(round_up_to_nearest_multiple(op.t0,window_ns)),
-        range_t1(range_t0 + window_ns - 1)
+        range_t0(t0)
 {
 }
 
 bool
 tsdb::sum_op::next()
 {
-    if (op.fields.empty() || range_t0 == t1)
+    if (op.fields.empty() || is_done)
         return false;
+
+    if (!is_first)
+        range_t0 += window_ns;
+    else
+        is_first = false;
 
     sums.clear();
     sums.resize(op.fields.size());
     npoints.clear();
     npoints.resize(op.fields.size());
+    size_t range_npoints = 0;
     for (;;)
     {
         // Advance the op if needed.
         if (op_index == op.npoints)
         {
             if (op.is_last)
-                break;
+            {
+                is_done = true;
+                return range_npoints != 0;
+            }
             op.advance();
             op_index = 0;
         }
@@ -52,7 +62,7 @@ tsdb::sum_op::next()
         }
 
         // If we have gone past the end of this range, break.
-        if (range_t1 < op.timestamp_data[op_index])
+        if (range_t0 + window_ns <= op.timestamp_data[op_index])
             break;
 
         // Compute sums.
@@ -95,10 +105,8 @@ tsdb::sum_op::next()
         }
 
         ++op_index;
+        ++range_npoints;
     }
-
-    range_t0 += window_ns;
-    range_t1 += window_ns;
 
     return true;
 }

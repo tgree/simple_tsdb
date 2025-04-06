@@ -182,7 +182,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	} else if count_result.npoints < 200000 {
 		return d.querySelect(tc, dm.Database, qm.Measurement, qm.Series, qm.Field, t0, t1)
 	} else {
-		return d.queryMean(tc, dm.Database, qm.Measurement, qm.Series, qm.Field, count_result.time_first, count_result.time_last, qm.IntervalMs * 1000000)
+		return d.queryMean(tc, dm.Database, qm.Measurement, qm.Series, qm.Field, t0, t1, qm.IntervalMs * 1000000)
 	}
 }
 
