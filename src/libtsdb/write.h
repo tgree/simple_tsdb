@@ -9,14 +9,7 @@ namespace tsdb
 {
     struct series_write_lock;
 
-    // Writes data points to the specified series.  If the series does not
-    // exist (but the measurement does exist) then the series will be created.
-    // The path argument should have the form:
-    //
-    //      database_name/measurement_name/series_name
-    //
-    // The series name should be a tag that uniquely identifies the data source,
-    // such as a sensor's serial number.
+    // Writes data points to the specified series.
     //
     // Data points can only be written past the end of a series; however, you
     // can write the tail points of the series multiple times (tsdb will verify
@@ -33,7 +26,7 @@ namespace tsdb
     // will always be 8-byte aligned, padded with 0 bytes to maintain that
     // alignment as necessary.
     //
-    // Example writing 9 bytes to an xtalx_data series:
+    // Example writing 9 points to an xtalx_data series:
     //
     //      9 u64 timestamps
     //      1 u64 bitmap for pressure_psi (only 9 bits used)
