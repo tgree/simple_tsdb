@@ -5,6 +5,11 @@ $(LIB_DIR)/libz-ng.a: $(THIRD_PARTY)/zlib-ng/libz-ng.a
 	@mkdir -p $(LIB_DIR)
 	@ln -s ../../$(THIRD_PARTY)/zlib-ng/libz-ng.a $@
 
+$(LIB_DIR)/libeditline.a: $(THIRD_PARTY)/editline/src/.libs/libeditline.a
+	@echo Symlinking $@...
+	@mkdir -p $(LIB_DIR)
+	@ln -s ../../$(THIRD_PARTY)/editline/src/.libs/libeditline.a $@
+
 ifeq ($(UNAME_S), Darwin)
 $(LIB_DIR)/libssl.a: /opt/homebrew/opt/openssl/lib/libssl.a
 	@echo Symlinking $@...
