@@ -3,11 +3,33 @@
 #ifndef __SRC_LIBTSDB_WRITE_H
 #define __SRC_LIBTSDB_WRITE_H
 
+#include <stdint.h>
 #include <stddef.h>
+#include <vector>
 
 namespace tsdb
 {
     struct series_write_lock;
+    struct measurement;
+
+    struct write_field_info
+    {
+        const uint64_t* bitmap_ptr;
+        const char*     data_ptr;
+    };
+
+    // An index for finding information inside a block of write data.
+    struct write_chunk_index
+    {
+        const size_t                    npoints;
+        const size_t                    bitmap_offset;
+        const uint64_t*                 timestamps;
+        std::vector<write_field_info>   fields;
+
+        write_chunk_index(const measurement& m, size_t npoints,
+                          size_t bitmap_offset, size_t data_len,
+                          const void* data);
+    };
 
     // Writes data points to the specified series.
     //

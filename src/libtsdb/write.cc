@@ -8,6 +8,43 @@
 #define WITH_GZFILEOP
 #include <zlib-ng/zlib-ng.h>
 
+tsdb::write_chunk_index::write_chunk_index(const measurement& m, size_t npoints,
+    size_t bitmap_offset, size_t data_len, const void* data):
+        npoints(npoints),
+        bitmap_offset(bitmap_offset)
+{
+    // Build a table of pointers to the timestamps, field bitmaps and field
+    // data, and then validate the data length.
+    timestamps = (const uint64_t*)data;
+    auto* data_ptr = (const char*)data + npoints*8;
+    fields.reserve(m.fields.size());
+    for (auto& f : m.fields)
+    {
+        const auto* fti     = &ftinfos[f.type];
+        size_t bitmap_words = ceil_div<size_t>(npoints + bitmap_offset,64);
+        size_t data_words   = ceil_div<size_t>(npoints*fti->nbytes,8);
+
+        auto* bitmap_ptr = (const uint64_t*)data_ptr;
+        data_ptr += bitmap_words*8;
+        fields.push_back({bitmap_ptr,data_ptr});
+        data_ptr += data_words*8;
+    }
+    size_t expected_len = data_ptr - (const char*)data;
+    if (data_len != expected_len)
+    {
+        printf("Expected %zu bytes of data, got %zu bytes.\n",
+               expected_len,data_len);
+        throw tsdb::incorrect_write_chunk_len_exception(expected_len,data_len);
+    }
+
+    // Ensure that the timestamps are in strictly-increasing order.
+    for (size_t i=1; i<npoints; ++i)
+    {
+        if (timestamps[i] <= timestamps[i-1])
+            throw tsdb::out_of_order_timestamps_exception();
+    }
+}
+
 void
 tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     size_t bitmap_offset, size_t data_len, const void* data)
@@ -39,43 +76,15 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     //     in, but we will never access it otherwise.
 
     // ********************** Data Input Validation *************************
-    // Build a table of pointers to the timestamps, field bitmaps and field
-    // data, and then validate the data length.
-    std::vector<const uint64_t*> field_bitmap_ptrs;
-    std::vector<const char*> field_data_ptrs;
-    const auto* time_data = (const uint64_t*)data;
-    auto* data_ptr = (const char*)data + npoints*8;
-    for (auto& f : write_lock.m.fields)
-    {
-        const auto* fti     = &ftinfos[f.type];
-        size_t bitmap_words = ceil_div<size_t>(npoints + bitmap_offset,64);
-        size_t data_words   = ceil_div<size_t>(npoints*fti->nbytes,8);
+    write_chunk_index wci(write_lock.m,npoints,bitmap_offset,data_len,data);
 
-        field_bitmap_ptrs.push_back((const uint64_t*)data_ptr);
-        data_ptr += bitmap_words*8;
-        field_data_ptrs.push_back(data_ptr);
-        data_ptr += data_words*8;
-    }
-    size_t expected_len = data_ptr - (const char*)data;
-    if (data_len != expected_len)
-    {
-        printf("Expected %zu bytes of data, got %zu bytes.\n",
-               expected_len,data_len);
-        throw tsdb::incorrect_write_chunk_len_exception(expected_len,data_len);
-    }
-
-    // Find the first and last time stamps and ensure that the timestamps are
-    // in strictly-increasing order.
-    uint64_t chunk_first_ns = time_data[0];
-    uint64_t chunk_last_ns  = time_data[npoints-1];
-    for (size_t i=1; i<npoints; ++i)
-    {
-        if (time_data[i] <= time_data[i-1])
-            throw tsdb::out_of_order_timestamps_exception();
-    }
+    // Find the first and last time stamps.
+    uint64_t chunk_first_ns = wci.timestamps[0];
+    uint64_t chunk_last_ns  = wci.timestamps[npoints-1];
 
     // Open the index file, taking a shared lock on it to prevent any other
     // client from deleting from the file.
+    // TODO: We hold a write lock.  Is this really necessary?
     futil::file index_fd(write_lock.series_dir,"index",O_RDWR);
     index_fd.flock(LOCK_SH);
 
@@ -128,25 +137,25 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         while (op.npoints)
         {
             // Start by doing a memcmp of all the timestamps.
-            if (memcmp(time_data,op.timestamps_begin,op.npoints*8))
+            if (memcmp(wci.timestamps,op.timestamps_begin,op.npoints*8))
             {
                 printf("Overwrite mismatch in timestamps.\n");
                 throw tsdb::timestamp_overwrite_mismatch_exception();
             }
-            time_data += op.npoints;
+            wci.timestamps += op.npoints;
 
             // Do a memcmp on all of the fields.
             for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
                 const auto* fti = &ftinfos[write_lock.m.fields[i].type];
                 size_t len = op.npoints*fti->nbytes;
-                if (memcmp(field_data_ptrs[i],op.field_data[i],len))
+                if (memcmp(wci.fields[i].data_ptr,op.field_data[i],len))
                 {
                     printf("Overwrite mismatch in field %s.\n",
                            write_lock.m.fields[i].name);
                     throw tsdb::field_overwrite_mismatch_exception();
                 }
-                field_data_ptrs[i] += len;
+                wci.fields[i].data_ptr += len;
             }
 
             // Manually check all the bitmaps.
@@ -155,7 +164,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 for (size_t j=0; j<op.npoints; ++j)
                 {
                     bool new_bitmap = get_bitmap_bit(
-                        field_bitmap_ptrs[i],
+                        wci.fields[i].bitmap_ptr,
                         bitmap_offset + n_overlap_points + j);
                     if (new_bitmap != op.get_bitmap_bit(i,j))
                     {
@@ -182,7 +191,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             printf("Dropping %zu overlapping points.\n",n_overlap_points);
 
         // Update chunk_first_ns, although we don't use it again.
-        chunk_first_ns = time_data[0];
+        chunk_first_ns = wci.timestamps[0];
     }
 
     // ************ Index search and crash recovery truncation  **************
@@ -412,7 +421,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 #endif
 
             // Figure out what to name the new files.
-            std::string time_data_str = std::to_string(time_data[0]);
+            std::string time_data_str = std::to_string(wci.timestamps[0]);
 
             // Create and open all new field and bitmap files.  We fully-
             // populate the bitmap files with zeroes even though they don't
@@ -465,7 +474,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                 // to the first entry of the index file.  Although, in the case
                 // of a crash during a delete operation before the index has
                 // been shifted, we might not be at the first entry.
-                write_lock.time_first = time_data[0];
+                write_lock.time_first = wci.timestamps[0];
                 write_lock.time_first_fd.lseek(0,SEEK_SET);
                 write_lock.time_first_fd.write_all(&write_lock.time_first,8);
                 write_lock.time_first_fd.fsync();
@@ -476,7 +485,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
             // Add the timestamp file to the index.
             memset(&ie,0,sizeof(ie));
-            ie.time_ns = time_data[0];
+            ie.time_ns = wci.timestamps[0];
             strcpy(ie.timestamp_file,time_data_str.c_str());
             index_fd.write_all(&ie,sizeof(ie));
             index_fd.fsync();
@@ -492,9 +501,9 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             const auto* fti = &ftinfos[write_lock.m.fields[i].type];
             size_t nbytes = write_points*fti->nbytes;
             field_fds[i].lseek(timestamp_index*fti->nbytes,SEEK_SET);
-            field_fds[i].write_all(field_data_ptrs[i],nbytes);
+            field_fds[i].write_all(wci.fields[i].data_ptr,nbytes);
             field_fds[i].fsync();
-            field_data_ptrs[i] += nbytes;
+            wci.fields[i].data_ptr += nbytes;
         }
 
         // Update all the bitmap files.
@@ -506,8 +515,11 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             size_t bitmap_index = timestamp_index;
             for (size_t j=0; j<write_points; ++j)
             {
-                if (get_bitmap_bit(field_bitmap_ptrs[i],src_bitmap_offset + j))
+                if (get_bitmap_bit(wci.fields[i].bitmap_ptr,
+                                   src_bitmap_offset + j))
+                {
                     set_bitmap_bit(bitmap,bitmap_index,1);
+                }
                 ++bitmap_index;
             }
             m.msync();
@@ -516,11 +528,11 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
         // Update the timestamp file and issue a barrier before updating
         // time_last.
-        tail_fd.write_all(time_data,write_points*sizeof(uint64_t));
+        tail_fd.write_all(wci.timestamps,write_points*sizeof(uint64_t));
         tail_fd.fsync_and_barrier();
 
         // Finally, update time_last.
-        write_lock.time_last = time_data[write_points - 1];
+        write_lock.time_last = wci.timestamps[write_points - 1];
         write_lock.time_last_fd.lseek(0,SEEK_SET);
         write_lock.time_last_fd.write_all(&write_lock.time_last,
                                               sizeof(uint64_t));
@@ -537,7 +549,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 #endif
 
         // Advance to the next set of points.
-        time_data         += write_points;
+        wci.timestamps    += write_points;
         rem_points        -= write_points;
         pos               += write_points*sizeof(uint64_t);
         avail_points      -= write_points;
