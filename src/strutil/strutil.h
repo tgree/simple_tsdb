@@ -3,10 +3,12 @@
 #ifndef __SRC_STRUTIL_STRUTIL_H
 #define __SRC_STRUTIL_STRUTIL_H
 
+#include <hdr/compiler.h>
 #include <string.h>
 #include <string>
 #include <vector>
 #include <ctype.h>
+#include <stdarg.h>
 
 namespace str
 {
@@ -116,6 +118,25 @@ namespace str
                 return false;
         }
         return true;
+    }
+
+    // Returns a printf-style formatted string.
+    inline std::string __PRINTF__(1,2)
+    printf(const char* fmt, ...)
+    {
+        char* buf;
+
+        va_list ap;
+        va_start(ap,fmt);
+        vasprintf(&buf,fmt,ap);
+        va_end(ap);
+
+        if (!buf)
+            return "";
+
+        std::string s(buf);
+        free(buf);
+        return s;
     }
 }
 
