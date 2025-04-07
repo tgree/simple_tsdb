@@ -95,10 +95,9 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     // only write the new part.
     if (chunk_first_ns <= write_lock.time_last)
     {
-        // TODO: We should get time_first_stored and silently discard any
-        // points before that point in time - those are points that have
-        // presumably been deleted and we have no way to verify if they are
-        // proper overwrites or not.  This could happen in the following
+        // Silently discard any points before time_first - those are points
+        // that have already been deleted and we have no way to verify if they
+        // are proper overwrites or not.  This could happen in the following
         // scenario:
         //
         //  1. Client has a store of local points.
@@ -121,7 +120,24 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         // server now since that would be rewriting history which is forbidden,
         // so the options are to either halt the client which now has points it
         // can't write anywhere, or to just discard the very-old points.
-        //
+        // TODO: Binary search?
+        while (chunk_first_ns < write_lock.time_first)
+        {
+            if (!--wci.npoints)
+            {
+                printf("100%% previously deleted, abandoning write op.\n");
+                return;
+            }
+
+            ++wci.bitmap_offset;
+            chunk_first_ns = *++wci.timestamps;
+            for (size_t i=0; i<write_lock.m.fields.size(); ++i)
+            {
+                const auto* fti = &ftinfos[write_lock.m.fields[i].type];
+                wci.fields[i].data_ptr += fti->nbytes;
+            }
+        }
+
         // Select all data points from the overlap.
         uint64_t overlap_time_last = MIN(chunk_last_ns,write_lock.time_last);
         std::vector<std::string> field_names;
