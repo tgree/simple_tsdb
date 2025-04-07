@@ -207,8 +207,11 @@ namespace futil
                         off_t offset)
         {
             unmap();
-            addr = futil::mmap(_addr,_len,prot,flags,fd,offset);
-            len = _len;
+            if (_len)
+            {
+                addr = futil::mmap(_addr,_len,prot,flags,fd,offset);
+                len = _len;
+            }
         }
 
         inline void unmap()
