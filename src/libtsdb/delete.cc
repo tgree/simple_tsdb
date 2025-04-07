@@ -17,13 +17,11 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     futil::directory series_dir(m.dir,series);
     futil::directory time_ns_dir(series_dir,"time_ns");
 
-    // We need to get time_first and time_last.  We lock time_first so that
-    // nobody else tries to access the series while we are adjusting things.
+    // We need to get time_first.  We lock time_first so that nobody else tries
+    // to access the series while we are adjusting things.
     futil::file time_first_fd(series_dir,"time_first",O_RDWR);
     time_first_fd.flock(LOCK_EX);
-    futil::file time_last_fd(series_dir,"time_last",O_RDONLY);
     uint64_t time_first = time_first_fd.read_u64();
-    uint64_t time_last = time_last_fd.read_u64();
     if (t < time_first)
         return;
 
@@ -68,14 +66,15 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     {
         // This is equivalent to t >= time_last (which maybe we could have
         // checked above?).  We can delete every single chunk in the series.
+        // Set time_first to t + 1.  This has the effect of "deleting from the
+        // future", while also trivially deleting from the WAL.  We have
+        // already checked that t >= time_first, therefore this update will
+        // always increase time_first to a higher value.
         ++index_slot;
-        time_first = time_last + 1;
+        time_first = t + 1;
     }
 
     // Update time_first.
-    // TODO: We actually want to set time_first to t + 1, don't we?  So we can
-    // delete "from the future", or especially so we can trivially delete from
-    // the WAL.  Note: this may make write_points() trickier.
     time_first_fd.lseek(0,SEEK_SET);
     time_first_fd.write_all(&time_first,8);
 
