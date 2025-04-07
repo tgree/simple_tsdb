@@ -52,13 +52,15 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     auto* timestamp_slot = std::upper_bound(timestamps_begin,timestamps_end,t);
     if (timestamp_slot < timestamps_end)
     {
-        // We can delete all chunks before this one.
+        // We can delete all chunks before this one.  Set time_first to the
+        // first live timestamp >= t.
         time_first = *timestamp_slot;
     }
     else if (index_slot < index_end - 1)
     {
         // This is not the last chunk, so it must be full.  We can delete all
-        // chunks up to and including this one.
+        // chunks up to and including this one.  Set time_first to the first
+        // timestamp of the next index slot.
         ++index_slot;
         time_first = index_slot->time_ns;
     }
@@ -85,7 +87,7 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     }
     time_first_fd.fsync_and_barrier();
 
-    // A crash here leaves slots in the index file the precede time_first.  As
+    // A crash here leaves slots in the index file that precede time_first.  As
     // long as code honors the time_first limit, then these extra slots won't
     // hurt anything, and they will get cleaned up on the next delete
     // operation.
