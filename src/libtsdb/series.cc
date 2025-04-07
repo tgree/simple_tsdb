@@ -20,6 +20,8 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
     }
 
     // If the time_last file doesn't exist, we need to create the series.
+    // TODO: This should be done atomically with a temporary directory rename
+    // like we do for measurements.
     if (time_last_fd.fd == -1)
     {
         // Acquire the lock to create the series.
