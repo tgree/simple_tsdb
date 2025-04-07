@@ -11,12 +11,12 @@ $(LIB_DIR)/libeditline.a: $(THIRD_PARTY)/editline/src/.libs/libeditline.a
 	@ln -s ../../$(THIRD_PARTY)/editline/src/.libs/libeditline.a $@
 
 ifeq ($(UNAME_S), Darwin)
-$(LIB_DIR)/libssl.a: /opt/homebrew/opt/openssl/lib/libssl.a
+$(LIB_DIR)/libssl.a: $(HOMEBREW_PREFIX)/opt/openssl/lib/libssl.a
 	@echo Symlinking $@...
 	@mkdir -p $(LIB_DIR)
 	@ln -s $< $@
 
-$(LIB_DIR)/libcrypto.a: /opt/homebrew/opt/openssl/lib/libcrypto.a
+$(LIB_DIR)/libcrypto.a: $(HOMEBREW_PREFIX)/opt/openssl/lib/libcrypto.a
 	@echo Symlinking $@...
 	@mkdir -p $(LIB_DIR)
 	@ln -s $< $@
