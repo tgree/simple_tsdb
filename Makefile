@@ -10,7 +10,8 @@ TARGETS := \
 	tsdbcli \
 	tsdbcli2 \
 	tsdbserver \
-	tsdbtest
+	tsdbtest \
+	tsdbwaltest
 
 # Build options.
 OPT_LEVEL := -O2
