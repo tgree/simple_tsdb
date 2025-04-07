@@ -12,6 +12,7 @@
 #include "write.h"
 #include "delete.h"
 #include "sum_op.h"
+#include "wal.h"
 
 // Whether or not to enable compression.
 #define ENABLE_COMPRESSION  1

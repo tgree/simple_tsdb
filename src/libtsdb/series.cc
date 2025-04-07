@@ -70,6 +70,11 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
                                  0660);
             index_fd.fsync();
 
+            // Create an empty write-ahead log.
+            futil::file wal_fd(series_dir,"wal",O_CREAT | O_TRUNC | O_RDWR,
+                               0660);
+            wal_fd.fsync();
+
             // Write barrier so that time_last_fd is the last thing to go out.
             series_dir.fsync_and_barrier();
 
