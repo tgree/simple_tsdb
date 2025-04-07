@@ -71,6 +71,9 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     }
 
     // Update time_first.
+    // TODO: We actually want to set time_first to t + 1, don't we?  So we can
+    // delete "from the future", or especially so we can trivially delete from
+    // the WAL.  Note: this may make write_points() trickier.
     time_first_fd.lseek(0,SEEK_SET);
     time_first_fd.write_all(&time_first,8);
 
