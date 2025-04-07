@@ -80,7 +80,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 
     // Find the first and last time stamps.
     uint64_t chunk_first_ns = wci.timestamps[0];
-    uint64_t chunk_last_ns  = wci.timestamps[npoints-1];
+    uint64_t chunk_last_ns  = wci.timestamps[wci.npoints-1];
 
     // Open the index file, taking a shared lock on it to prevent any other
     // client from deleting from the file.
@@ -93,7 +93,6 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     // If the timestamps we are appending start before our last stored
     // timestamp, we should validate and discard the overlapping part and then
     // only write the new part.
-    size_t n_overlap_points = 0;
     if (chunk_first_ns <= write_lock.time_last)
     {
         // TODO: We should get time_first_stored and silently discard any
@@ -163,10 +162,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             {
                 for (size_t j=0; j<op.npoints; ++j)
                 {
-                    bool new_bitmap = get_bitmap_bit(
-                        wci.fields[i].bitmap_ptr,
-                        bitmap_offset + n_overlap_points + j);
-                    if (new_bitmap != op.get_bitmap_bit(i,j))
+                    if (wci.get_bitmap_bit(i,j) != op.get_bitmap_bit(i,j))
                     {
                         printf("Overwrite mismatch in bitmap %s.\n",
                                write_lock.m.fields[i].name);
@@ -174,21 +170,19 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
                     }
                 }
             }
+            wci.bitmap_offset += op.npoints;
 
             // Count how many points we drop.
-            n_overlap_points += op.npoints;
+            wci.npoints -= op.npoints;
 
             op.next();
         }
 
-        npoints -= n_overlap_points;
-        if (!npoints)
+        if (!wci.npoints)
         {
             printf("100%% overwrite, abandoning write op.\n");
             return;
         }
-        else
-            printf("Dropping %zu overlapping points.\n",n_overlap_points);
 
         // Update chunk_first_ns, although we don't use it again.
         chunk_first_ns = wci.timestamps[0];
@@ -372,12 +366,10 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     // Write points.  The variable pos is the absolute position in the
     // timestamp file; this should be used to calculate the index for other
     // field sizes.
-    size_t rem_points = npoints;
-    size_t src_bitmap_offset = bitmap_offset + n_overlap_points;
 #if ENABLE_COMPRESSION
     fixed_vector<futil::path> unlink_field_paths(write_lock.m.fields.size());
 #endif
-    while (rem_points)
+    while (wci.npoints)
     {
         // If we have overflowed the timestamp file, or we have an empty index,
         // we need to grow into a new timestamp file.
@@ -492,7 +484,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         }
 
         // Compute how many points we can write.
-        size_t write_points = MIN(rem_points,avail_points);
+        size_t write_points = MIN(wci.npoints,avail_points);
 
         // Write out all the field files first.
         size_t timestamp_index = pos / 8;
@@ -515,11 +507,8 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             size_t bitmap_index = timestamp_index;
             for (size_t j=0; j<write_points; ++j)
             {
-                if (get_bitmap_bit(wci.fields[i].bitmap_ptr,
-                                   src_bitmap_offset + j))
-                {
+                if (wci.get_bitmap_bit(i,j))
                     set_bitmap_bit(bitmap,bitmap_index,1);
-                }
                 ++bitmap_index;
             }
             m.msync();
@@ -549,12 +538,12 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
 #endif
 
         // Advance to the next set of points.
+        wci.bitmap_offset += write_points;
         wci.timestamps    += write_points;
-        rem_points        -= write_points;
+        wci.npoints       -= write_points;
         pos               += write_points*sizeof(uint64_t);
         avail_points      -= write_points;
-        src_bitmap_offset += write_points;
-        if (rem_points)
+        if (wci.npoints)
         {
             write_lock.time_last_fd.fsync();
             kassert(avail_points == 0);
