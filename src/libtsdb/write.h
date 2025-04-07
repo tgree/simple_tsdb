@@ -3,9 +3,7 @@
 #ifndef __SRC_LIBTSDB_WRITE_H
 #define __SRC_LIBTSDB_WRITE_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <vector>
+#include "series.h"
 
 namespace tsdb
 {
@@ -25,6 +23,12 @@ namespace tsdb
         const size_t                    bitmap_offset;
         const uint64_t*                 timestamps;
         std::vector<write_field_info>   fields;
+
+        constexpr bool get_bitmap_bit(size_t field_index, size_t i) const
+        {
+            return tsdb::get_bitmap_bit(fields[field_index].bitmap_ptr,
+                                        bitmap_offset + i);
+        }
 
         write_chunk_index(const measurement& m, size_t npoints,
                           size_t bitmap_offset, size_t data_len,
