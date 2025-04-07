@@ -19,8 +19,8 @@ namespace tsdb
     // An index for finding information inside a block of write data.
     struct write_chunk_index
     {
-        const size_t                    npoints;
-        const size_t                    bitmap_offset;
+        size_t                          npoints;
+        size_t                          bitmap_offset;
         const uint64_t*                 timestamps;
         std::vector<write_field_info>   fields;
 
