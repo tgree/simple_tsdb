@@ -6,6 +6,7 @@
 #include <futil/futil.h>
 #include <span>
 #include <hdr/kassert.h>
+#include <hdr/kmath.h>
 
 namespace tsdb
 {
@@ -60,6 +61,24 @@ namespace tsdb
         std::vector<std::string> list_series() const
         {
             return dir.listdirs();
+        }
+
+        size_t compute_write_chunk_len(size_t npoints,
+                                       size_t bitmap_offset = 0) const
+        {
+            // Timestamps first.
+            size_t len = npoints*8;
+
+            // For each field: bitmap comes first, padded to 64-bits, then
+            // field data comes next, padded to 64-bits.
+            for (auto& f : fields)
+            {
+                const auto* fti = &ftinfos[f.type];
+                len += ceil_div<size_t>(npoints + bitmap_offset,64)*8;
+                len += ceil_div<size_t>(npoints*fti->nbytes,8)*8;
+            }
+
+            return len;
         }
 
         measurement(const database& db, const futil::path& path);
