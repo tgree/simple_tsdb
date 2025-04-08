@@ -34,9 +34,9 @@ namespace tsdb
     constexpr void set_bitmap_bit(uint64_t* bitmap, size_t index, bool v)
     {
         if (v)
-            bitmap[index / 64] |= (((uint64_t)v) << (index % 64));
+            bitmap[index / 64] |= (1ULL << (index % 64));
         else
-            bitmap[index / 64] &= ~(((uint64_t)v) << (index % 64));
+            bitmap[index / 64] &= ~(1ULL << (index % 64));
     }
 
     struct _series_lock

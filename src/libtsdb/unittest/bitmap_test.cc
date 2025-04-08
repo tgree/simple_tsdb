@@ -16,7 +16,7 @@ class tmock_test
         tmock::assert_equiv(bitmap[3],0x0000000000000000ULL);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(bitmap_ones_test)
+    TMOCK_TEST(bitmap_ones_test)
     {
         uint64_t bitmap[4] = {0xFFFFFFFFFFFFFFFFULL,
                               0xFFFFFFFFFFFFFFFFULL,
