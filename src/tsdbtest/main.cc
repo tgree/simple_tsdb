@@ -216,7 +216,7 @@ write_series(series_state& ss, size_t offset, size_t npoints)
 
 void
 validate_points(std::vector<data_point>::iterator fp, tsdb::select_op* op,
-    size_t npoints)
+    tsdb::wal_query& wq, size_t npoints, size_t N)
 {
     size_t total_points = 0;
     while (op->npoints)
@@ -266,6 +266,55 @@ validate_points(std::vector<data_point>::iterator fp, tsdb::select_op* op,
             ++fp;
         }
         op->next();
+    }
+    if (total_points < N && wq.nentries)
+    {
+        size_t rem_points = N - total_points;
+        size_t wal_nentries = MIN(rem_points,wq.nentries);
+        printf("WAL %zu\n",wal_nentries);
+        total_points += wal_nentries;
+        kassert(total_points <= npoints);
+        for (size_t i=0; i<wal_nentries; ++i)
+        {
+            data_point p =
+            {
+                wq[i].time_ns,
+                wq[i].get_field<bool>(0),
+                wq[i].get_field<uint32_t>(1),
+                wq[i].get_field<uint32_t>(2),
+                wq[i].get_field<uint64_t>(3),
+                wq[i].get_field<float>(4),
+                wq[i].get_field<double>(5),
+                wq[i].get_field<int32_t>(6),
+                wq[i].get_field<int64_t>(7),
+                wq[i].is_field_null(0),
+                wq[i].is_field_null(1),
+                wq[i].is_field_null(2),
+                wq[i].is_field_null(3),
+                wq[i].is_field_null(4),
+                wq[i].is_field_null(5),
+                wq[i].is_field_null(6),
+                wq[i].is_field_null(7),
+            };
+            kassert(p.time_ns             == fp->time_ns);
+            kassert(p.field_bool          == fp->field_bool);
+            kassert(p.field_u32_1         == fp->field_u32_1);
+            kassert(p.field_u32_2         == fp->field_u32_2);
+            kassert(p.field_u64           == fp->field_u64);
+            kassert(p.field_f32           == fp->field_f32);
+            kassert(p.field_f64           == fp->field_f64);
+            kassert(p.field_i32           == fp->field_i32);
+            kassert(p.field_i64           == fp->field_i64);
+            kassert(p.field_bool_is_null  == fp->field_bool_is_null);
+            kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
+            kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
+            kassert(p.field_u64_is_null   == fp->field_u64_is_null);
+            kassert(p.field_f32_is_null   == fp->field_f32_is_null);
+            kassert(p.field_f64_is_null   == fp->field_f64_is_null);
+            kassert(p.field_i32_is_null   == fp->field_i32_is_null);
+            kassert(p.field_i64_is_null   == fp->field_i64_is_null);
+            ++fp;
+        }
     }
     kassert(total_points == npoints);
 }
@@ -319,12 +368,14 @@ select_test()
     tsdb::database db(ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
+    tsdb::wal_query wq(read_lock,t0,t1);
     tsdb::select_op* op;
     size_t N;
     switch (rand() % 3)
     {
         case 0:
             // No limit.
+            N = -1;
             printf("QUERY %s %" PRIu64 " %" PRIu64 " "
                    "FROM %" PRIu64 " %" PRIu64 " TYPE %u %u "
                    "EXPECT %zu\n",
@@ -333,7 +384,7 @@ select_test()
                    ss.points.back().time_ns,
                    t_type[0],t_type[1],npoints);
             op = new tsdb::select_op_first(read_lock,ss.dms_path,
-                                           field_names,t0,t1,-1);
+                                           field_names,t0,t1,N);
         break;
 
         case 1:
@@ -363,8 +414,13 @@ select_test()
                    ss.points.front().time_ns,
                    ss.points.back().time_ns,
                    t_type[0],t_type[1],N,npoints);
+            if (wq.nentries > N)
+            {
+                wq._begin += (wq.nentries - N);
+                wq.nentries = N;
+            }
             op = new tsdb::select_op_last(read_lock,ss.dms_path,
-                                          field_names,t0,t1,N);
+                                          field_names,t0,t1,N - wq.nentries);
         break;
 
         default:
@@ -373,7 +429,7 @@ select_test()
     }
 
     // Validate.
-    validate_points(fp,op,npoints);
+    validate_points(fp,op,wq,npoints,N);
     delete op;
 }
 
@@ -413,13 +469,17 @@ rotate_test()
         ++fp;
     }
 
-    // Write the points that we are about to rotate.
-    printf("WRITE %s T %" PRIu64 " NPOINTS %zu\n",
-           ss.dms_path.c_str(),ss.points.front().time_ns,npoints);
-    write_series(ss,0,npoints);
-
-    // Now rotate.
+    // Rotate.
     std::rotate(ss.points.begin(),mp,ss.points.end());
+
+    // Write the rotated points, along with some overwrite.
+    auto iter = ss.points.end() - npoints;
+    size_t avail_over = iter - ss.points.begin();
+    size_t nover = MIN(avail_over,100);
+    iter -= nover;
+    printf("WRITE %s T %" PRIu64 " NPOINTS %zu\n",
+           ss.dms_path.c_str(),iter->time_ns,npoints + nover);
+    write_series(ss,iter - ss.points.begin(),npoints + nover);
 
     // Finally, validate the entire series.
     tsdb::series_read_lock read_lock(m,ss.series);
@@ -428,7 +488,8 @@ rotate_test()
     kassert(cr.time_first == ss.points.front().time_ns);
     kassert(cr.time_last == ss.points.back().time_ns);
     tsdb::select_op_first op(read_lock,ss.dms_path,field_names,0,-1,-1);
-    validate_points(ss.points.begin(),&op,ss.points.size());
+    tsdb::wal_query wq(read_lock,0,-1);
+    validate_points(ss.points.begin(),&op,wq,ss.points.size(),-1);
 }
 
 int
