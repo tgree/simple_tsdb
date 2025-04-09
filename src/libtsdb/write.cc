@@ -8,15 +8,15 @@
 #define WITH_GZFILEOP
 #include <zlib-ng/zlib-ng.h>
 
-tsdb::write_chunk_index::write_chunk_index(const measurement& m, size_t npoints,
-    size_t bitmap_offset, size_t data_len, const void* data):
+tsdb::write_chunk_index::write_chunk_index(const measurement& m,
+    size_t npoints, size_t bitmap_offset, size_t data_len, void* data):
         npoints(npoints),
         bitmap_offset(bitmap_offset)
 {
     // Build a table of pointers to the timestamps, field bitmaps and field
     // data, and then validate the data length.
-    timestamps = (const uint64_t*)data;
-    auto* data_ptr = (const char*)data + npoints*8;
+    timestamps = (uint64_t*)data;
+    auto* data_ptr = (char*)data + npoints*8;
     fields.reserve(m.fields.size());
     for (auto& f : m.fields)
     {
@@ -24,12 +24,12 @@ tsdb::write_chunk_index::write_chunk_index(const measurement& m, size_t npoints,
         size_t bitmap_words = ceil_div<size_t>(npoints + bitmap_offset,64);
         size_t data_words   = ceil_div<size_t>(npoints*fti->nbytes,8);
 
-        auto* bitmap_ptr = (const uint64_t*)data_ptr;
+        auto* bitmap_ptr = (uint64_t*)data_ptr;
         data_ptr += bitmap_words*8;
         fields.push_back({bitmap_ptr,data_ptr});
         data_ptr += data_words*8;
     }
-    size_t expected_len = data_ptr - (const char*)data;
+    size_t expected_len = data_ptr - (char*)data;
     if (data_len != expected_len)
     {
         printf("Expected %zu bytes of data, got %zu bytes.\n",

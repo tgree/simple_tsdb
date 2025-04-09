@@ -12,16 +12,16 @@ namespace tsdb
 
     struct write_field_info
     {
-        const uint64_t* bitmap_ptr;
-        const char*     data_ptr;
+        uint64_t* bitmap_ptr;
+        char*     data_ptr;
     };
 
-    // An index for finding information inside a block of write data.
+    // An index for working with data chunks used in write operations.
     struct write_chunk_index
     {
         size_t                          npoints;
         size_t                          bitmap_offset;
-        const uint64_t*                 timestamps;
+        uint64_t*                       timestamps;
         std::vector<write_field_info>   fields;
 
         constexpr uint64_t get_bitmap_bit(size_t field_index, size_t i) const
@@ -32,7 +32,14 @@ namespace tsdb
 
         write_chunk_index(const measurement& m, size_t npoints,
                           size_t bitmap_offset, size_t data_len,
-                          const void* data);
+                          void* data);
+        write_chunk_index(const measurement& m, size_t npoints,
+                          size_t bitmap_offset, size_t data_len,
+                          const void* data):
+            write_chunk_index(m,npoints,bitmap_offset,data_len,
+                              (void*)data)
+        {
+        }
     };
 
     // Writes data points to the specified series.  This should not be called
