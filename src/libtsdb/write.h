@@ -54,8 +54,9 @@ namespace tsdb
 
     // Writes data points to the specified series.  This should not be called
     // directly and is instead invoked from committing the write-ahead log.
-    void write_series(series_write_lock& write_lock, size_t npoints,
-                      size_t bitmap_offset, size_t data_len, const void* data);
+    // The wci argument is consumed in this operation.
+    void write_series(series_write_lock& write_lock,
+                      write_chunk_index& wci);
 }
 
 #endif /* __SRC_LIBTSDB_WRITE_H */
