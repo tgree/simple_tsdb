@@ -206,7 +206,7 @@ write_series(series_state& ss, size_t offset, size_t npoints)
 
         // Write the series to disk.
         printf("Writing %zu points to %s...\n",cpoints,ss.dms_path.c_str());
-        tsdb::write_series(write_lock,cpoints,0,expected_len,&data[0]);
+        tsdb::write_wal(write_lock,cpoints,0,expected_len,&data[0]);
         printf("Done\n");
 
         npoints -= cpoints;
