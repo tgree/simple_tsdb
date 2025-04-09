@@ -25,9 +25,9 @@ namespace tsdb
         uint64_t    bitmap;
         wal_field   fields[];
 
-        constexpr bool get_bitmap_bit(size_t i) const
+        constexpr uint64_t get_bitmap_bit(size_t i) const
         {
-            return (1 << i) & bitmap;
+            return (bitmap >> i) & 1;
         }
 
         constexpr bool is_field_null(size_t i) const

@@ -24,7 +24,7 @@ namespace tsdb
         const uint64_t*                 timestamps;
         std::vector<write_field_info>   fields;
 
-        constexpr bool get_bitmap_bit(size_t field_index, size_t i) const
+        constexpr uint64_t get_bitmap_bit(size_t field_index, size_t i) const
         {
             return tsdb::get_bitmap_bit(fields[field_index].bitmap_ptr,
                                         bitmap_offset + i);
