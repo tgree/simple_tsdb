@@ -115,6 +115,7 @@ tsdb::select_op::next()
     timestamps_end = std::upper_bound(timestamps_begin,timestamps_end,t1);
     npoints = timestamps_end - timestamps_begin;
     npoints = MIN(npoints,rem_limit);
+    timestamps_end = timestamps_begin + npoints;
     rem_limit -= npoints;
     map_data();
 }
@@ -248,6 +249,7 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
     {
         npoints = timestamps_end - timestamps_begin;
         npoints = MIN(npoints,rem_limit);
+        timestamps_end = timestamps_begin + npoints;
         rem_limit -= npoints;
         map_data();
     }
@@ -372,6 +374,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     timestamps_begin += t0_index;
     npoints = timestamps_end - timestamps_begin;
     npoints = MIN(npoints,rem_limit);
+    timestamps_end = timestamps_begin + npoints;
     rem_limit -= npoints;
     map_data();
 }
