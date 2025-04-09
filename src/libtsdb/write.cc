@@ -71,133 +71,17 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     // ********************** Data Input Validation *************************
     write_chunk_index wci(write_lock.m,npoints,bitmap_offset,data_len,data);
 
-    // Find the first and last time stamps.
-    uint64_t chunk_first_ns = wci.timestamps[0];
-    uint64_t chunk_last_ns  = wci.timestamps[wci.npoints-1];
+    // ********************** Overwrite Handling *************************
+    // Commiting from the WAL to the main data store should not ever try to do
+    // overwrites - that is a programmer error.
+    kassert(wci.timestamps[0] > write_lock.time_last);
 
+    // ************ Index search and crash recovery truncation  **************
     // Open the index file, taking a shared lock on it to prevent any other
     // client from deleting from the file.
     // TODO: We hold a write lock.  Is this really necessary?
     futil::file index_fd(write_lock.series_dir,"index",O_RDWR);
     index_fd.flock(LOCK_SH);
-
-    // ********************** Overwrite Handling *************************
-
-    // If the timestamps we are appending start before our last stored
-    // timestamp, we should validate and discard the overlapping part and then
-    // only write the new part.
-    if (chunk_first_ns <= write_lock.time_last)
-    {
-        // Silently discard any points before time_first - those are points
-        // that have already been deleted and we have no way to verify if they
-        // are proper overwrites or not.  This could happen in the following
-        // scenario:
-        //
-        //  1. Client has a store of local points.
-        //  2. Client transmits points to server.
-        //  3. Server writes points but crashes before transmitting ACK back to
-        //     client.
-        //  4. Client crashes and goes away.
-        //  5. Server is restored, (lots of?) time passes, someone deletes old
-        //     points, maybe as part of an automated cleanup script, leaving
-        //     some of the client's later points behind but purging the earlier
-        //     ones.
-        //  6. Client is finally restored and tries to retransmit its entire
-        //     store of local points.
-        //
-        // In step 6, the client will be transmitting points from its local
-        // store that precede the server's time_first value.  The client has no
-        // way of knowing (without doing a select op which we'd rather avoid
-        // for the client) what time_first is on the server.  There's no
-        // possible way for the client to even store those old points on the
-        // server now since that would be rewriting history which is forbidden,
-        // so the options are to either halt the client which now has points it
-        // can't write anywhere, or to just discard the very-old points.
-        // TODO: Binary search?
-        while (chunk_first_ns < write_lock.time_first)
-        {
-            if (!--wci.npoints)
-            {
-                printf("100%% previously deleted, abandoning write op.\n");
-                return;
-            }
-
-            ++wci.bitmap_offset;
-            chunk_first_ns = *++wci.timestamps;
-            for (size_t i=0; i<write_lock.m.fields.size(); ++i)
-            {
-                const auto* fti = &ftinfos[write_lock.m.fields[i].type];
-                wci.fields[i].data_ptr += fti->nbytes;
-            }
-        }
-
-        // Select all data points from the overlap.
-        uint64_t overlap_time_last = MIN(chunk_last_ns,write_lock.time_last);
-        std::vector<std::string> field_names;
-        field_names.reserve(write_lock.m.fields.size());
-        for (const auto& f : write_lock.m.fields)
-            field_names.emplace_back(f.name);
-        select_op_first op(write_lock,"<overwrite>",field_names,chunk_first_ns,
-                           overlap_time_last,-1);
-        kassert(op.npoints);
-        
-        // Compare all the points.
-        while (op.npoints)
-        {
-            // Start by doing a memcmp of all the timestamps.
-            if (memcmp(wci.timestamps,op.timestamps_begin,op.npoints*8))
-            {
-                printf("Overwrite mismatch in timestamps.\n");
-                throw tsdb::timestamp_overwrite_mismatch_exception();
-            }
-            wci.timestamps += op.npoints;
-
-            // Do a memcmp on all of the fields.
-            for (size_t i=0; i<write_lock.m.fields.size(); ++i)
-            {
-                const auto* fti = &ftinfos[write_lock.m.fields[i].type];
-                size_t len = op.npoints*fti->nbytes;
-                if (memcmp(wci.fields[i].data_ptr,op.field_data[i],len))
-                {
-                    printf("Overwrite mismatch in field %s.\n",
-                           write_lock.m.fields[i].name);
-                    throw tsdb::field_overwrite_mismatch_exception();
-                }
-                wci.fields[i].data_ptr += len;
-            }
-
-            // Manually check all the bitmaps.
-            for (size_t i=0; i<write_lock.m.fields.size(); ++i)
-            {
-                for (size_t j=0; j<op.npoints; ++j)
-                {
-                    if (wci.get_bitmap_bit(i,j) != op.get_bitmap_bit(i,j))
-                    {
-                        printf("Overwrite mismatch in bitmap %s.\n",
-                               write_lock.m.fields[i].name);
-                        throw tsdb::bitmap_overwrite_mismatch_exception();
-                    }
-                }
-            }
-            wci.bitmap_offset += op.npoints;
-
-            // Count how many points we drop.
-            wci.npoints -= op.npoints;
-
-            op.next();
-        }
-
-        if (!wci.npoints)
-        {
-            printf("100%% overwrite, abandoning write op.\n");
-            return;
-        }
-
-        // Update chunk_first_ns, although we don't use it again.
-        chunk_first_ns = wci.timestamps[0];
-    }
-
-    // ************ Index search and crash recovery truncation  **************
 
     // Open the most recent timestamp file if it exists, and perform validation
     // checking on it if found.
