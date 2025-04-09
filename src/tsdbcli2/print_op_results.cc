@@ -14,7 +14,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
 {
     for (size_t i=index; i<index + n; ++i)
     {
-        printf("%20" PRIu64 " ",op.timestamp_data[i]);
+        printf("%20" PRIu64 " ",op.timestamps_begin[i]);
         for (size_t j=0; j<op.fields.size(); ++j)
         {
             if (op.is_field_null(j,i))
@@ -70,7 +70,7 @@ print_op_results(tsdb::select_op& op)
         printf("%20s ",f.name);
     printf("\n");
 
-    for (;;)
+    while (op.npoints)
     {
         for (size_t i=0; i<op.fields.size() + 1; ++i)
             printf("-------------------- ");
@@ -85,9 +85,7 @@ print_op_results(tsdb::select_op& op)
             print_op_points(op,op.npoints-MAX_PRINT_RESULTS/2,
                             MAX_PRINT_RESULTS/2);
         }
-        if (op.is_last)
-            break;
 
-        op.advance();
+        op.next();
     }
 }

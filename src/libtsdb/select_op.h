@@ -18,7 +18,6 @@ namespace tsdb
         // deleting points during the query.  For time_last, we don't care if
         // someone adds points later, we only return the points from our
         // current snapshot of the live range.
-        const bool              mmap_timestamps;
         const series_read_lock& read_lock;
         const uint64_t          time_last;
         futil::file             index_fd;
@@ -40,16 +39,13 @@ namespace tsdb
         fixed_vector<futil::mapping>    bitmap_mappings;
 
         // State of the current set of results.
-        bool                            is_last;
         size_t                          npoints;
         size_t                          bitmap_offset;
-        const uint64_t*                 timestamp_data;
+        const uint64_t*                 timestamps_begin;
+        const uint64_t*                 timestamps_end;
         fixed_vector<const void*>       field_data;
 
-        inline void advance()
-        {
-            _advance(false);
-        }
+        void next();
 
         constexpr size_t compute_chunk_len() const
         {
@@ -87,12 +83,12 @@ namespace tsdb
         }
 
     protected:
-        void _advance(bool is_first);
+        void map_timestamps();
+        void map_data();
 
         select_op(const series_read_lock& read_lock,
                   const std::vector<std::string>& field_names,
-                  uint64_t t0, uint64_t t1, uint64_t limit,
-                  bool mmap_timestamps = false);
+                  uint64_t t0, uint64_t t1, uint64_t limit);
     };
 
     struct select_op_first : public select_op

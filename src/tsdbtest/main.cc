@@ -219,7 +219,7 @@ validate_points(std::vector<data_point>::iterator fp, tsdb::select_op* op,
     size_t npoints)
 {
     size_t total_points = 0;
-    for (;;)
+    while (op->npoints)
     {
         printf("CHUNK %zu\n",op->npoints);
         total_points += op->npoints;
@@ -228,7 +228,7 @@ validate_points(std::vector<data_point>::iterator fp, tsdb::select_op* op,
         {
             data_point p =
             {
-                op->timestamp_data[i],
+                op->timestamps_begin[i],
                 op->get_field<bool,0>(i),
                 op->get_field<uint32_t,1>(i),
                 op->get_field<uint32_t,2>(i),
@@ -265,11 +265,7 @@ validate_points(std::vector<data_point>::iterator fp, tsdb::select_op* op,
             kassert(p.field_i64_is_null   == fp->field_i64_is_null);
             ++fp;
         }
-
-        if (op->is_last)
-            break;
-
-        op->advance();
+        op->next();
     }
     kassert(total_points == npoints);
 }

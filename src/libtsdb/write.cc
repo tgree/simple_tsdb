@@ -125,10 +125,10 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
         kassert(op.npoints);
         
         // Compare all the points.
-        for (;;)
+        while (op.npoints)
         {
             // Start by doing a memcmp of all the timestamps.
-            if (memcmp(time_data,op.timestamp_data,op.npoints*8))
+            if (memcmp(time_data,op.timestamps_begin,op.npoints*8))
             {
                 printf("Overwrite mismatch in timestamps.\n");
                 throw tsdb::timestamp_overwrite_mismatch_exception();
@@ -169,10 +169,7 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
             // Count how many points we drop.
             n_overlap_points += op.npoints;
 
-            if (op.is_last)
-                break;
-
-            op.advance();
+            op.next();
         }
 
         npoints -= n_overlap_points;

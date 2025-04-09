@@ -38,12 +38,12 @@ tsdb::sum_op::next()
         // Advance the op if needed.
         if (op_index == op.npoints)
         {
-            if (op.is_last)
+            op.next();
+            if (!op.npoints)
             {
                 is_done = true;
                 return range_npoints != 0;
             }
-            op.advance();
             op_index = 0;
         }
 
@@ -55,14 +55,14 @@ tsdb::sum_op::next()
         // at a time (probably in 16K chunks).  Changing select_op over to use
         // a simple read() to load the entire timestamp file leads to a
         // massive speedup.
-        if (range_t0 > op.timestamp_data[op_index])
+        if (range_t0 > op.timestamps_begin[op_index])
         {
             ++op_index;
             continue;
         }
 
         // If we have gone past the end of this range, break.
-        if (range_t0 + window_ns <= op.timestamp_data[op_index])
+        if (range_t0 + window_ns <= op.timestamps_begin[op_index])
             break;
 
         // Compute sums.
