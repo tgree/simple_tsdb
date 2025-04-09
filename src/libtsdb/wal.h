@@ -222,6 +222,9 @@ namespace tsdb
         }
     };
 
+    // Commit all points from the WAL to the main data store.
+    void commit_wal(series_write_lock& write_lock);
+
     // Write data points to the write-ahead log.
     //
     // Data points can only be written past the end of a series; however, you

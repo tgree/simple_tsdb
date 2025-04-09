@@ -7,6 +7,59 @@
 #include <hdr/kmath.h>
 
 void
+tsdb::commit_wal(series_write_lock& write_lock)
+{
+    // Figure out what it is we need to write.
+    wal_query wq(write_lock,write_lock.time_first,(uint64_t)-1,O_RDWR);
+    if (!wq.nentries)
+    {
+        wq.wal_fd.truncate(0);
+        wq.wal_fd.fsync();
+        return;
+    }
+
+    // Marshal the WAL row entries into the columns needed by the main data
+    // store.
+    size_t data_len = write_lock.m.compute_write_chunk_len(wq.nentries);
+    auto_buf data(data_len);
+    write_chunk_index wci(write_lock.m,wq.nentries,0,data_len,data);
+    for (size_t i=0; i<wq.nentries; ++i)
+    {
+        const auto& we = wq[i];
+        wci.timestamps[i] = we.time_ns;
+        for (size_t j=0; j<write_lock.m.fields.size(); ++j)
+        {
+            auto& fti = ftinfos[write_lock.m.fields[j].type];
+            wci.set_bitmap_bit(j,i,we.get_bitmap_bit(j));
+            switch (fti.nbytes)
+            {
+                case 1:
+                    ((uint8_t*)wci.fields[j].data_ptr)[i] = we.fields[j].u8;
+                break;
+
+                case 4:
+                    ((uint32_t*)wci.fields[j].data_ptr)[i] = we.fields[j].u32;
+                break;
+
+                case 8:
+                    ((uint64_t*)wci.fields[j].data_ptr)[i] = we.fields[j].u64;
+                break;
+            }
+        }
+    }
+
+    // Write and then truncate.  We don't need to do a full or barrier sync
+    // here since we don't really care if the truncate happens or not - if we
+    // crash before truncating we are just left with points that are covered
+    // by the main data store's time_last value, so we skip them for all
+    // operations.  We will re-attempt a truncate on the next write to the
+    // series after recovering from the crash.
+    tsdb::write_series(write_lock,wci);
+    wq.wal_fd.truncate(0);
+    wq.wal_fd.fsync();
+}
+
+void
 tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
     size_t bitmap_offset, size_t data_len, const void* data)
 {
@@ -198,6 +251,21 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
         if (!wci.npoints)
         {
             printf("100%% WAL overwrite, abandoning write op.\n");
+            return;
+        }
+    }
+
+    // See if we need to commit.
+    if (wal_nentries + wci.npoints > WAL_MAX_ENTRIES)
+    {
+        tsdb::commit_wal(write_lock);
+        wal_nentries = 0;
+
+        // The WAL is now empty.  If the client is giving us a large chunk of
+        // points then that should also go directly into the main data store.
+        if (wci.npoints > WAL_MAX_ENTRIES)
+        {
+            tsdb::write_series(write_lock,wci);
             return;
         }
     }
