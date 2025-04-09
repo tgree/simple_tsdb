@@ -191,9 +191,9 @@ namespace tsdb
         const size_t                entry_size;
         futil::file                 wal_fd;
         futil::mapping              wal_mm;
-        const wal_entry_iterator    _begin;
-        const wal_entry_iterator    _end;
-        const size_t                nentries;
+        wal_entry_iterator          _begin;
+        wal_entry_iterator          _end;
+        size_t                      nentries;
 
         wal_entry_iterator begin() const {return _begin;}
         wal_entry_iterator end() const {return _end;}
