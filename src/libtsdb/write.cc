@@ -39,8 +39,7 @@ tsdb::write_chunk_index::write_chunk_index(const measurement& m,
 }
 
 void
-tsdb::write_series(series_write_lock& write_lock, size_t npoints,
-    size_t bitmap_offset, size_t data_len, const void* data)
+tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
 {
     // Predicates when writing a series:
     //  1. If the series/time_last file exists then the series is fully
@@ -67,9 +66,6 @@ tsdb::write_series(series_write_lock& write_lock, size_t npoints,
     //     are points that would have been partially written before a crash.
     //     This garbage data will eventually be overwritten if new points come
     //     in, but we will never access it otherwise.
-
-    // ********************** Data Input Validation *************************
-    write_chunk_index wci(write_lock.m,npoints,bitmap_offset,data_len,data);
 
     // ********************** Overwrite Handling *************************
     // Commiting from the WAL to the main data store should not ever try to do
