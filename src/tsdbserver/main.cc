@@ -441,14 +441,7 @@ handle_delete_points(tcp::stream& s,
 static void
 _handle_select_points(tcp::stream& s, tsdb::select_op& op)
 {
-    if (!op.npoints)
-    {
-        uint32_t dt = DT_END;
-        s.send_all(&dt,sizeof(dt));
-        return;
-    }
-
-    for (;;)
+    while (op.npoints)
     {
         size_t len = op.compute_chunk_len();
         uint32_t tokens[4] = {DT_CHUNK,(uint32_t)op.npoints,
@@ -456,7 +449,7 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op)
         s.send_all(tokens,sizeof(tokens));
 
         // Start by sending timestamp data.
-        s.send_all(op.timestamp_data,8*op.npoints);
+        s.send_all(op.timestamps_begin,8*op.npoints);
 
         // Send each field in turn.
         size_t bitmap_index = op.bitmap_offset / 64;
@@ -478,15 +471,11 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op)
                 s.send_all(pad_bytes,8 - (data_len % 8));
         }
 
-        if (op.is_last)
-        {
-            uint32_t dt = DT_END;
-            s.send_all(&dt,sizeof(dt));
-            return;
-        }
-
-        op.advance();
+        op.next();
     }
+
+    uint32_t dt = DT_END;
+    s.send_all(&dt,sizeof(dt));
 }
 
 static void
