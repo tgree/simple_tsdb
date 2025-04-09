@@ -201,10 +201,11 @@ namespace tsdb
         wal_entry_iterator back() const {return _end - 1;}
         const wal_entry& operator[](size_t i) const {return begin()[i];}
 
-        wal_query(const series_read_lock& read_lock, uint64_t t0, uint64_t t1):
+        wal_query(const series_read_lock& read_lock, uint64_t t0, uint64_t t1,
+                  int oflag = O_RDONLY):
             read_lock(read_lock),
             entry_size(sizeof(wal_entry) + read_lock.m.fields.size()*8),
-            wal_fd(read_lock.series_dir,"wal",O_RDONLY),
+            wal_fd(read_lock.series_dir,"wal",oflag),
             wal_mm(0,wal_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,wal_fd.fd,0),
             _begin(std::lower_bound(
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size),
