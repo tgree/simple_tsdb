@@ -210,7 +210,7 @@ namespace tsdb
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size),
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size) +
                                    wal_mm.len/entry_size,
-                MAX(t0,read_lock.time_first))),
+                MAX(t0,read_lock.time_first,read_lock.time_last + 1))),
             _end(std::upper_bound(
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size),
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size) +
