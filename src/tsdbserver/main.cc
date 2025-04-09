@@ -632,12 +632,16 @@ handle_sum_points(tcp::stream& s,
         field_npoints[i].reserve(1024);
     }
 
-    while (!op.is_done)
+    bool done = false;
+    while (!done)
     {
         while (timestamps.size() < 1024)
         {
             if (!op.next())
+            {
+                done = true;
                 break;
+            }
 
             timestamps.emplace_back(op.range_t0);
             for (size_t j=0; j<nfields; ++j)
@@ -668,7 +672,6 @@ handle_sum_points(tcp::stream& s,
         }
     }
 
-    kassert(!op.next());
     data_token dt = DT_END;
     s.send_all(&dt,sizeof(dt));
 }
