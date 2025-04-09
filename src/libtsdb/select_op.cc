@@ -20,6 +20,7 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         t1(MIN(_t1,time_last)),
         rem_limit(limit),
         fields(field_names.size() ?: read_lock.m.fields.size()),
+        field_indices(fields.capacity()),
         index_slot(NULL),
         timestamp_mapping(NULL,CHUNK_FILE_SIZE,PROT_NONE,
                           MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
@@ -41,11 +42,13 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         for (const auto& fn : field_names)
         {
             bool found = false;
-            for (const auto& sf : read_lock.m.fields)
+            for (size_t i=0; i<read_lock.m.fields.size(); ++i)
             {
+                const auto& sf = read_lock.m.fields[i];
                 if (sf.name == fn)
                 {
                     fields.emplace_back(sf);
+                    field_indices.emplace_back(i);
                     found = true;
                     break;
                 }
@@ -56,8 +59,12 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
     }
     else
     {
-        for (const auto& sf : read_lock.m.fields)
+        for (size_t i=0; i<read_lock.m.fields.size(); ++i)
+        {
+            const auto& sf = read_lock.m.fields[i];
             fields.emplace_back(sf);
+            field_indices.emplace_back(i);
+        }
     }
     for (size_t i=0; i<fields.size(); ++i)
     {

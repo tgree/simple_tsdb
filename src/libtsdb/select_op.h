@@ -30,6 +30,7 @@ namespace tsdb
         uint64_t                    t1;
         uint64_t                    rem_limit;
         fixed_vector<schema_entry>  fields;
+        fixed_vector<size_t>        field_indices;
 
         // Mapping objects to track mmap()-ed files.
         const index_entry*              index_slot;
