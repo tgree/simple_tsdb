@@ -7,7 +7,6 @@
 # 	T.OBJ      - list of .o dependencies
 # 	T.LD       - linker file to use
 TARGETS := \
-	tsdbcli \
 	tsdbcli2 \
 	tsdbserver \
 	tsdbtest \
