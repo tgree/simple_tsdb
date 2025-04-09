@@ -26,6 +26,8 @@ namespace tsdb
 
         constexpr uint64_t get_bitmap_bit(size_t field_index, size_t i) const
         {
+            kassert(field_index < fields.size());
+            kassert(i < npoints);
             return tsdb::get_bitmap_bit(fields[field_index].bitmap_ptr,
                                         bitmap_offset + i);
         }
