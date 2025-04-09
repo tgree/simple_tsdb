@@ -417,8 +417,8 @@ handle_write_points(tcp::stream& s,
         s.recv_all(data,ch.data_len);
 
         printf("WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
-        tsdb::write_series(write_lock,ch.npoints,ch.bitmap_offset,ch.data_len,
-                           data);
+        tsdb::write_wal(write_lock,ch.npoints,ch.bitmap_offset,ch.data_len,
+                        data);
     }
 }
 
