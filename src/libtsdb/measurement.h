@@ -3,9 +3,12 @@
 #ifndef __SRC_LIBTSDB_MEASUREMENT_H
 #define __SRC_LIBTSDB_MEASUREMENT_H
 
+#include "exception.h"
 #include <futil/futil.h>
 #include <span>
 #include <hdr/kassert.h>
+#include <hdr/kmath.h>
+#include <hdr/fixed_vector.h>
 
 namespace tsdb
 {
@@ -60,6 +63,46 @@ namespace tsdb
         std::vector<std::string> list_series() const
         {
             return dir.listdirs();
+        }
+
+        size_t compute_write_chunk_len(size_t npoints,
+                                       size_t bitmap_offset = 0) const
+        {
+            // Timestamps first.
+            size_t len = npoints*8;
+
+            // For each field: bitmap comes first, padded to 64-bits, then
+            // field data comes next, padded to 64-bits.
+            for (auto& f : fields)
+            {
+                const auto* fti = &ftinfos[f.type];
+                len += ceil_div<size_t>(npoints + bitmap_offset,64)*8;
+                len += ceil_div<size_t>(npoints*fti->nbytes,8)*8;
+            }
+
+            return len;
+        }
+
+        fixed_vector<size_t> gen_indices(
+            const std::vector<std::string>& field_names) const
+        {
+            fixed_vector<size_t> indices(field_names.size());
+            for (auto& field_name : field_names)
+            {
+                bool found = false;
+                for (size_t i=0; i<fields.size(); ++i)
+                {
+                    if (field_name == fields[i].name)
+                    {
+                        indices.emplace_back(i);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    throw no_such_field_exception();
+            }
+            return indices;
         }
 
         measurement(const database& db, const futil::path& path);

@@ -7,10 +7,10 @@
 # 	T.OBJ      - list of .o dependencies
 # 	T.LD       - linker file to use
 TARGETS := \
-	tsdbcli \
 	tsdbcli2 \
 	tsdbserver \
-	tsdbtest
+	tsdbtest \
+	tsdbwaltest
 
 # Build options.
 OPT_LEVEL := -O2
@@ -80,8 +80,8 @@ TEST_CXXFLAGS := \
 # OS-specific include directories.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
-	COMMON_CXXFLAGS += -I/opt/homebrew/opt/openssl/include
-	TEST_CXXFLAGS += -I/opt/homebrew/opt/openssl/include
+	COMMON_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
+	TEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 endif
 
 # Flags for archive tool

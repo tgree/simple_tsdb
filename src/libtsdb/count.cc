@@ -5,7 +5,8 @@
 #include <algorithm>
 
 tsdb::count_result
-tsdb::count_points(const series_read_lock& read_lock, uint64_t t0, uint64_t t1)
+tsdb::count_committed_points(const series_read_lock& read_lock, uint64_t t0,
+    uint64_t t1)
 {
     // Validate the time and limit ranges.
     uint64_t time_last = futil::file(read_lock.series_dir,"time_last",
@@ -62,4 +63,29 @@ tsdb::count_points(const series_read_lock& read_lock, uint64_t t0, uint64_t t1)
     if (!npoints)
         return count_result{0,t0,t1};
     return count_result{npoints,*time_first_iter,*(time_last_iter - 1)};
+}
+
+tsdb::count_result
+tsdb::count_wal_points(const series_read_lock& read_lock, uint64_t t0,
+    uint64_t t1)
+{
+    wal_query wq(read_lock,t0,t1);
+    if (!wq.nentries)
+        return count_result{0,t0,t1};
+
+    return count_result{wq.nentries,wq.front()->time_ns,wq.back()->time_ns};
+}
+
+tsdb::count_result
+tsdb::count_points(const series_read_lock& read_lock, uint64_t t0, uint64_t t1)
+{
+    auto cr = count_committed_points(read_lock,t0,t1);
+    if (!cr.npoints)
+        return count_wal_points(read_lock,t0,t1);
+
+    auto wr = count_wal_points(read_lock,cr.time_last + 1,t1);
+    if (!wr.npoints)
+        return cr;
+
+    return count_result{cr.npoints + wr.npoints,cr.time_first,wr.time_last};
 }

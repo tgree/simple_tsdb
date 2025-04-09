@@ -13,7 +13,7 @@
 #include <inttypes.h>
 
 #if IS_MACOS
-#define NSERIES 4
+#define NSERIES 10
 #elif IS_LINUX
 #define NSERIES 6
 #else
@@ -215,112 +215,58 @@ write_series(series_state& ss, size_t offset, size_t npoints)
 }
 
 void
-validate_points(std::vector<data_point>::iterator fp, tsdb::select_op* op,
-    tsdb::wal_query& wq, size_t npoints, size_t N)
+validate_points(std::vector<data_point>::iterator fp, tsdb::wal_query& query,
+    size_t expected_npoints)
 {
-    size_t total_points = 0;
-    while (op->npoints)
+    printf("VIEW %zu\n",query.nentries);
+    kassert(query.nentries == expected_npoints);
+
+    for (size_t i=0; i<query.nentries; ++i)
     {
-        printf("CHUNK %zu\n",op->npoints);
-        total_points += op->npoints;
-        kassert(total_points <= npoints);
-        for (size_t i=0; i<op->npoints; ++i)
+        auto& entry = query[i];
+        data_point p =
         {
-            data_point p =
-            {
-                op->timestamps_begin[i],
-                op->get_field<bool,0>(i),
-                op->get_field<uint32_t,1>(i),
-                op->get_field<uint32_t,2>(i),
-                op->get_field<uint64_t,3>(i),
-                op->get_field<float,4>(i),
-                op->get_field<double,5>(i),
-                op->get_field<int32_t,6>(i),
-                op->get_field<int64_t,7>(i),
-                op->is_field_null(0,i),
-                op->is_field_null(1,i),
-                op->is_field_null(2,i),
-                op->is_field_null(3,i),
-                op->is_field_null(4,i),
-                op->is_field_null(5,i),
-                op->is_field_null(6,i),
-                op->is_field_null(7,i),
-            };
-            kassert(p.time_ns             == fp->time_ns);
-            kassert(p.field_bool          == fp->field_bool);
-            kassert(p.field_u32_1         == fp->field_u32_1);
-            kassert(p.field_u32_2         == fp->field_u32_2);
-            kassert(p.field_u64           == fp->field_u64);
-            kassert(p.field_f32           == fp->field_f32);
-            kassert(p.field_f64           == fp->field_f64);
-            kassert(p.field_i32           == fp->field_i32);
-            kassert(p.field_i64           == fp->field_i64);
-            kassert(p.field_bool_is_null  == fp->field_bool_is_null);
-            kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
-            kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
-            kassert(p.field_u64_is_null   == fp->field_u64_is_null);
-            kassert(p.field_f32_is_null   == fp->field_f32_is_null);
-            kassert(p.field_f64_is_null   == fp->field_f64_is_null);
-            kassert(p.field_i32_is_null   == fp->field_i32_is_null);
-            kassert(p.field_i64_is_null   == fp->field_i64_is_null);
-            ++fp;
-        }
-        op->next();
+            entry.time_ns,
+            entry.get_field<bool>(0),
+            entry.get_field<uint32_t>(1),
+            entry.get_field<uint32_t>(2),
+            entry.get_field<uint64_t>(3),
+            entry.get_field<float>(4),
+            entry.get_field<double>(5),
+            entry.get_field<int32_t>(6),
+            entry.get_field<int64_t>(7),
+            entry.is_field_null(0),
+            entry.is_field_null(1),
+            entry.is_field_null(2),
+            entry.is_field_null(3),
+            entry.is_field_null(4),
+            entry.is_field_null(5),
+            entry.is_field_null(6),
+            entry.is_field_null(7),
+        };
+        kassert(p.time_ns             == fp->time_ns);
+        kassert(p.field_bool          == fp->field_bool);
+        kassert(p.field_u32_1         == fp->field_u32_1);
+        kassert(p.field_u32_2         == fp->field_u32_2);
+        kassert(p.field_u64           == fp->field_u64);
+        kassert(p.field_f32           == fp->field_f32);
+        kassert(p.field_f64           == fp->field_f64);
+        kassert(p.field_i32           == fp->field_i32);
+        kassert(p.field_i64           == fp->field_i64);
+        kassert(p.field_bool_is_null  == fp->field_bool_is_null);
+        kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
+        kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
+        kassert(p.field_u64_is_null   == fp->field_u64_is_null);
+        kassert(p.field_f32_is_null   == fp->field_f32_is_null);
+        kassert(p.field_f64_is_null   == fp->field_f64_is_null);
+        kassert(p.field_i32_is_null   == fp->field_i32_is_null);
+        kassert(p.field_i64_is_null   == fp->field_i64_is_null);
+        ++fp;
     }
-    if (total_points < N && wq.nentries)
-    {
-        size_t rem_points = N - total_points;
-        size_t wal_nentries = MIN(rem_points,wq.nentries);
-        printf("WAL %zu\n",wal_nentries);
-        total_points += wal_nentries;
-        kassert(total_points <= npoints);
-        for (size_t i=0; i<wal_nentries; ++i)
-        {
-            data_point p =
-            {
-                wq[i].time_ns,
-                wq[i].get_field<bool>(0),
-                wq[i].get_field<uint32_t>(1),
-                wq[i].get_field<uint32_t>(2),
-                wq[i].get_field<uint64_t>(3),
-                wq[i].get_field<float>(4),
-                wq[i].get_field<double>(5),
-                wq[i].get_field<int32_t>(6),
-                wq[i].get_field<int64_t>(7),
-                wq[i].is_field_null(0),
-                wq[i].is_field_null(1),
-                wq[i].is_field_null(2),
-                wq[i].is_field_null(3),
-                wq[i].is_field_null(4),
-                wq[i].is_field_null(5),
-                wq[i].is_field_null(6),
-                wq[i].is_field_null(7),
-            };
-            kassert(p.time_ns             == fp->time_ns);
-            kassert(p.field_bool          == fp->field_bool);
-            kassert(p.field_u32_1         == fp->field_u32_1);
-            kassert(p.field_u32_2         == fp->field_u32_2);
-            kassert(p.field_u64           == fp->field_u64);
-            kassert(p.field_f32           == fp->field_f32);
-            kassert(p.field_f64           == fp->field_f64);
-            kassert(p.field_i32           == fp->field_i32);
-            kassert(p.field_i64           == fp->field_i64);
-            kassert(p.field_bool_is_null  == fp->field_bool_is_null);
-            kassert(p.field_u32_1_is_null == fp->field_u32_1_is_null);
-            kassert(p.field_u32_2_is_null == fp->field_u32_2_is_null);
-            kassert(p.field_u64_is_null   == fp->field_u64_is_null);
-            kassert(p.field_f32_is_null   == fp->field_f32_is_null);
-            kassert(p.field_f64_is_null   == fp->field_f64_is_null);
-            kassert(p.field_i32_is_null   == fp->field_i32_is_null);
-            kassert(p.field_i64_is_null   == fp->field_i64_is_null);
-            ++fp;
-        }
-    }
-    kassert(total_points == npoints);
 }
 
 void
-select_test()
+wal_query_test()
 {
     // Get a random series.
     size_t ss_index = rand() % states.size();
@@ -368,128 +314,16 @@ select_test()
     tsdb::database db(ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
-    tsdb::wal_query wq(read_lock,t0,t1);
-    tsdb::select_op* op;
-    size_t N;
-    switch (rand() % 3)
-    {
-        case 0:
-            // No limit.
-            N = -1;
-            printf("QUERY %s %" PRIu64 " %" PRIu64 " "
-                   "FROM %" PRIu64 " %" PRIu64 " TYPE %u %u "
-                   "EXPECT %zu\n",
-                   ss.dms_path.c_str(),t0,t1,
-                   ss.points.front().time_ns,
-                   ss.points.back().time_ns,
-                   t_type[0],t_type[1],npoints);
-            op = new tsdb::select_op_first(read_lock,ss.dms_path,
-                                           field_names,t0,t1,N);
-        break;
 
-        case 1:
-            // LIMIT N.
-            N = rand() % 1000000;
-            npoints = MIN(N,npoints);
-            printf("QUERY %s %" PRIu64 " %" PRIu64 " "
-                   "FROM %" PRIu64 " %" PRIu64 " TYPE %u %u "
-                   "LIMIT %zu EXPECT %zu\n",
-                   ss.dms_path.c_str(),t0,t1,
-                   ss.points.front().time_ns,
-                   ss.points.back().time_ns,
-                   t_type[0],t_type[1],N,npoints);
-            op = new tsdb::select_op_first(read_lock,ss.dms_path,
-                                           field_names,t0,t1,N);
-        break;
-
-        case 2:
-            // LAST N.
-            N = rand() % 1000000;
-            npoints = MIN(N,npoints);
-            fp = lp - npoints;
-            printf("QUERY %s %" PRIu64 " %" PRIu64 " "
-                   "FROM %" PRIu64 " %" PRIu64 " TYPE %u %u "
-                   "LAST %zu EXPECT %zu\n",
-                   ss.dms_path.c_str(),t0,t1,
-                   ss.points.front().time_ns,
-                   ss.points.back().time_ns,
-                   t_type[0],t_type[1],N,npoints);
-            if (wq.nentries > N)
-            {
-                wq._begin += (wq.nentries - N);
-                wq.nentries = N;
-            }
-            op = new tsdb::select_op_last(read_lock,ss.dms_path,
-                                          field_names,t0,t1,N - wq.nentries);
-        break;
-
-        default:
-            kabort();
-        break;
-    }
-
-    // Validate.
-    validate_points(fp,op,wq,npoints,N);
-    delete op;
-}
-
-void
-rotate_test()
-{
-    // Delete some points from the front and append them to the end.
-
-    // Get a random series.
-    size_t ss_index = rand() % states.size();
-    auto& ss = states[ss_index];
-
-    // Get a timestamp in the live range.
-    uint64_t t_min = ss.points.front().time_ns;
-    uint64_t t_max = ss.points.back().time_ns;
-    uint64_t t = std::uniform_int_distribution<uint64_t>(t_min,t_max)(mt);
-
-    // We will delete everything up to and including t.
-    auto fp = ss.points.begin();
-    auto mp = std::lower_bound(ss.points.begin(),ss.points.end(),t + 1);
-    size_t npoints = mp - fp;
-    if (!npoints)
-        return;
-
-    // Delete from the front of the database.
-    tsdb::database db(ss.database);
-    tsdb::measurement m(db,ss.measurement);
-    printf("DELETE FROM %s WHERE time_ns < %" PRIu64 "\n",
-           ss.dms_path.c_str(),t);
-    tsdb::delete_points(m,ss.series,t);
-
-    // Incrementing the timestamp for everything that will be rotated.
-    uint64_t dt = ss.points.back().time_ns - ss.points.front().time_ns + 1;
-    while (fp != mp)
-    {
-        fp->time_ns += dt;
-        ++fp;
-    }
-
-    // Rotate.
-    std::rotate(ss.points.begin(),mp,ss.points.end());
-
-    // Write the rotated points, along with some overwrite.
-    auto iter = ss.points.end() - npoints;
-    size_t avail_over = iter - ss.points.begin();
-    size_t nover = MIN(avail_over,100);
-    iter -= nover;
-    printf("WRITE %s T %" PRIu64 " NPOINTS %zu\n",
-           ss.dms_path.c_str(),iter->time_ns,npoints + nover);
-    write_series(ss,iter - ss.points.begin(),npoints + nover);
-
-    // Finally, validate the entire series.
-    tsdb::series_read_lock read_lock(m,ss.series);
-    auto cr = tsdb::count_points(read_lock,0,-1);
-    kassert(cr.npoints == ss.points.size());
-    kassert(cr.time_first == ss.points.front().time_ns);
-    kassert(cr.time_last == ss.points.back().time_ns);
-    tsdb::select_op_first op(read_lock,ss.dms_path,field_names,0,-1,-1);
-    tsdb::wal_query wq(read_lock,0,-1);
-    validate_points(ss.points.begin(),&op,wq,ss.points.size(),-1);
+    printf("QUERY %s %" PRIu64 " %" PRIu64 " "
+           "FROM %" PRIu64 " %" PRIu64 " TYPE %u %u "
+           "EXPECT %zu\n",
+           ss.dms_path.c_str(),t0,t1,
+           ss.points.front().time_ns,
+           ss.points.back().time_ns,
+           t_type[0],t_type[1],npoints);
+    tsdb::wal_query query(read_lock,t0,t1);
+    validate_points(fp,query,npoints);
 }
 
 int
@@ -542,7 +376,7 @@ main(int argc, const char* argv[])
         states.emplace_back(series_state{db,m,s,futil::path(db,m,s)});
 
         auto& ss = states.back();
-        size_t nelems = (rand() % 1000000) + 1;
+        size_t nelems = (rand() % 10000000) + 1;
         ss.points.reserve(nelems);
         for (size_t j=0; j<nelems; ++j)
         {
@@ -573,31 +407,15 @@ main(int argc, const char* argv[])
     for (auto& ss : states)
     {
         printf("Populating series %s...\n",ss.dms_path.c_str());
-        if(ss.points.size() >= 4096*1024/8)
-        {
-            // The series is large.  Write two 2M chunks, test a 100% overlap
-            // write crossing the chunks, and finally complete the write but
-            // start at offset 100 to do it.
-            printf("Testing dual-chunk overlap...\n");
-            write_series(ss,0,4096*1024/8);
-            write_series(ss,10,4096*1024/8 - 20);
-            write_series(ss,100,ss.points.size() - 100);
-        }
-        else
-        {
-            // The series is not large, so just write the whole thing.
-            write_series(ss,0,ss.points.size());
-        }
+        write_series(ss,0,ss.points.size());
     }
 
     for (;;)
     {
         // Figure out what action to take.
         uint8_t p = std::uniform_int_distribution<uint8_t>(0,100)(mt);
-        if (p <= 5)
-            rotate_test();
-        else if (p <= 100)
-            select_test();
+        if (p <= 100)
+            wal_query_test();
     }
 }
 

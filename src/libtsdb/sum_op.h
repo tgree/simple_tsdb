@@ -4,6 +4,7 @@
 #define __SRC_LIBTSDB_SUM_OP_H
 
 #include "select_op.h"
+#include "wal.h"
 
 namespace tsdb
 {
@@ -18,11 +19,13 @@ namespace tsdb
         const uint64_t  t1;
         const uint64_t  window_ns;
         bool            is_first;
-        bool            is_done;
 
         // Select op that we are using to iterate.
-        select_op_first op;
-        size_t          op_index;
+        wal_query               wq;
+        wal_entry_iterator      wqiter;
+        fixed_vector<size_t>    windices;
+        select_op_first         op;
+        size_t                  op_index;
 
         // Latest result.
         uint64_t                range_t0;
