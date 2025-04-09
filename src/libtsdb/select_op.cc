@@ -10,8 +10,7 @@
 
 tsdb::select_op::select_op(const series_read_lock& read_lock,
     const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
-    uint64_t limit, bool mmap_timestamps):
-        mmap_timestamps(mmap_timestamps),
+    uint64_t limit):
         read_lock(read_lock),
         time_last(futil::file(read_lock.series_dir,"time_last",
                               O_RDONLY).read_u64()),
@@ -21,29 +20,58 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         t1(MIN(_t1,time_last)),
         rem_limit(limit),
         fields(field_names.size() ?: read_lock.m.fields.size()),
+        field_indices(fields.capacity()),
         index_slot(NULL),
         timestamp_mapping(NULL,CHUNK_FILE_SIZE,PROT_NONE,
                           MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
-        timestamp_buf(mmap_timestamps ? 0 : CHUNK_FILE_SIZE),
-        field_mappings(field_names.size() ?: read_lock.m.fields.size()),
-        bitmap_mappings(field_names.size() ?: read_lock.m.fields.size()),
-        is_last(true),
+        timestamp_buf(CHUNK_FILE_SIZE),
+        field_mappings(fields.capacity()),
+        bitmap_mappings(fields.capacity()),
         npoints(0),
         bitmap_offset(0),
-        timestamp_data(NULL),
-        field_data(field_names.size() ?: read_lock.m.fields.size())
+        timestamps_begin(NULL),
+        timestamps_end(NULL),
+        field_data(fields.capacity())
 {
-    // Validate the time and limit ranges.
-    if (read_lock.time_first > time_last)
-        return;
-    if (_t0 > _t1)
-        return;
-    if (_t1 < read_lock.time_first)
-        return;
-    if (_t0 > time_last)
-        return;
-    if (rem_limit == 0)
-        return;
+    // Fetch the schema and figure out which fields we are going to return.
+    // We are sure to keep the fields vector in the same order as the field
+    // names that were passed in; this is the order in which we will return
+    // the data points.
+    if (!field_names.empty())
+    {
+        for (const auto& fn : field_names)
+        {
+            bool found = false;
+            for (size_t i=0; i<read_lock.m.fields.size(); ++i)
+            {
+                const auto& sf = read_lock.m.fields[i];
+                if (sf.name == fn)
+                {
+                    fields.emplace_back(sf);
+                    field_indices.emplace_back(i);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                throw tsdb::no_such_field_exception();
+        }
+    }
+    else
+    {
+        for (size_t i=0; i<read_lock.m.fields.size(); ++i)
+        {
+            const auto& sf = read_lock.m.fields[i];
+            fields.emplace_back(sf);
+            field_indices.emplace_back(i);
+        }
+    }
+    for (size_t i=0; i<fields.size(); ++i)
+    {
+        field_mappings.emplace_back();
+        bitmap_mappings.emplace_back();
+        field_data.emplace_back((void*)NULL);
+    }
 
     // Map the index.  Since time_first <= time_last, there must be at least one
     // measurement, which means there must be at least one chunk, which means
@@ -61,130 +89,62 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
                       index_fd.fd,0),
     index_begin = (const index_entry*)index_mapping.addr;
     index_end = index_begin + index_mapping.len / sizeof(index_entry);
-
-    // Fetch the schema and figure out which fields we are going to return.
-    // We are sure to keep the fields vector in the same order as the field
-    // names that were passed in; this is the order in which we will return
-    // the data points.
-    if (!field_names.empty())
-    {
-        for (const auto& fn : field_names)
-        {
-            bool found = false;
-            for (const auto& sf : read_lock.m.fields)
-            {
-                if (sf.name == fn)
-                {
-                    fields.emplace_back(sf);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-                throw tsdb::no_such_field_exception();
-        }
-    }
-    else
-    {
-        for (const auto& sf : read_lock.m.fields)
-            fields.emplace_back(sf);
-    }
 }
 
 void
-tsdb::select_op::_advance(bool is_first)
+tsdb::select_op::next()
 {
-    if (!is_first)
+    if (!npoints)
+        return;
+    if (rem_limit == 0)
     {
-        if (is_last)
-            throw tsdb::end_of_select_exception();
-        ++index_slot;
+        npoints = 0;
+        return;
+    }
+    if (++index_slot == index_end)
+    {
+        npoints = 0;
+        return;
     }
 
-    // Map the timestamp file associated with the target slot.
+    // Map the next timestamp file; we access it from the beginning.
+    map_timestamps();
+
+    // We now have a pointer to the first timestamp.  Find the last timestamp.
+    // There will be at least one point available.
+    timestamps_end = std::upper_bound(timestamps_begin,timestamps_end,t1);
+    npoints = timestamps_end - timestamps_begin;
+    npoints = MIN(npoints,rem_limit);
+    timestamps_end = timestamps_begin + npoints;
+    rem_limit -= npoints;
+    map_data();
+}
+
+void
+tsdb::select_op::map_timestamps()
+{
+    // Map the timestamp file associated with the current index_slot.
     futil::directory time_ns_dir(read_lock.series_dir,"time_ns");
     futil::file timestamp_fd(time_ns_dir,index_slot->timestamp_file,O_RDONLY);
     off_t timestamp_fd_size = timestamp_fd.lseek(0,SEEK_END);
-    const uint64_t* timestamps_begin;
-    if (mmap_timestamps)
-    {
-        futil::mmap(timestamp_mapping.addr,timestamp_fd_size,PROT_READ,
-                    MAP_SHARED | MAP_FIXED,timestamp_fd.fd,0);
-        timestamps_begin = (const uint64_t*)timestamp_mapping.addr;
-    }
-    else
-    {
-        timestamp_fd.lseek(0,SEEK_SET);
-        timestamp_fd.read_all(timestamp_buf,timestamp_fd_size);
-        timestamps_begin = (const uint64_t*)timestamp_buf.data;
-    }
-    const auto* timestamps_end = timestamps_begin + timestamp_fd_size/8;
+    timestamp_fd.lseek(0,SEEK_SET);
+    timestamp_fd.read_all(timestamp_buf,timestamp_fd_size);
+    timestamps_begin = (const uint64_t*)timestamp_buf.data;
+    timestamps_end = timestamps_begin + timestamp_fd_size/8;
+}
 
-    // Find the first timestamp >= t0.
-    size_t start_index;
-    if (!is_first)
-    {
-        // The first timestamp in our range is right at the start of the file.
-        timestamp_data = timestamps_begin;
-        start_index = 0;
-    }
-    else
-    {
-        // The first timestamp could be partway through the file.
-        timestamp_data = std::lower_bound(timestamps_begin,timestamps_end,t0);
-
-        // The first timestamp could even be in the gap between this slot
-        // and the next one, which is yuck.  We can't know that until we've
-        // mapped everything and done the search though.
-        if (timestamp_data == timestamps_end)
-        {
-            // Increment to the next slot (which we know must exist since we
-            // know that there is still data to return), then open and map it,
-            // overwriting the previous mapping.
-            ++index_slot;
-            timestamp_fd.open(time_ns_dir,index_slot->timestamp_file,O_RDONLY);
-            timestamp_fd_size = timestamp_fd.lseek(0,SEEK_END);
-            if (mmap_timestamps)
-            {
-                futil::mmap(timestamp_mapping.addr,timestamp_fd_size,PROT_READ,
-                            MAP_SHARED | MAP_FIXED,timestamp_fd.fd,0);
-            }
-            else
-            {
-                timestamp_fd.lseek(0,SEEK_SET);
-                timestamp_fd.read_all(timestamp_buf,timestamp_fd_size);
-            }
-            timestamp_data = timestamps_begin;
-            timestamps_end = timestamps_begin + timestamp_fd_size/8;
-        }
-
-        start_index = timestamp_data - timestamps_begin;
-    }
-
-    // Find the first timestamp > t1.
-    auto* last_timestamp = std::upper_bound(timestamp_data,timestamps_end,t1);
-    npoints = last_timestamp - timestamp_data;
-
-    // Figure out if this is the last chunk of data.
-    if (npoints < rem_limit && last_timestamp == timestamps_end &&
-        index_slot + 1 != index_end && index_slot[1].time_ns <= t1)
-    {
-        is_last = false;
-    }
-    else
-        is_last = true;
-
-    // Cap the number of returned points.
-    npoints = MIN(npoints,rem_limit);
-    rem_limit -= npoints;
-
-    // Map or decompress the data points.
+void
+tsdb::select_op::map_data()
+{
+    // Map or decompress the data points associated with the current index_slot.
     futil::directory fields_dir(read_lock.series_dir,"fields");
+    size_t start_index = timestamps_begin - (const uint64_t*)timestamp_buf.data;
+    size_t end_index = timestamps_end - (const uint64_t*)timestamp_buf.data;
     for (size_t i=0; i<fields.size(); ++i)
     {
         const auto& f = fields[i];
         const auto* fti = &ftinfos[f.type];
-        size_t len = (timestamp_fd_size/8)*fti->nbytes;
+        size_t len = end_index*fti->nbytes;
 
         //  Try opening an uncompressed file first.  If one exists, we must use
         //  it; any compressed file that exists could be the result of a
@@ -195,20 +155,9 @@ tsdb::select_op::_advance(bool is_first)
                                  futil::path(f.name,index_slot->timestamp_file),
                                  O_RDONLY);
 
-            if (is_first)
-            {
-                field_mappings.emplace_back((void*)NULL,len,PROT_READ,
-                                            MAP_SHARED,field_fd.fd,0);
-                field_data.emplace_back((const char*)field_mappings[i].addr +
-                                        start_index*fti->nbytes);
-            }
-            else
-            {
-                futil::mmap(field_mappings[i].addr,len,PROT_READ,
-                            MAP_SHARED | MAP_FIXED,field_fd.fd,0);
-                field_data[i] = field_mappings[i].addr;
-            }
-
+            field_mappings[i].map(NULL,len,PROT_READ,MAP_SHARED,field_fd.fd,0);
+            field_data[i] = (const char*)field_mappings[i].addr +
+                            start_index*fti->nbytes;
             continue;
         }
         catch (const futil::errno_exception& e)
@@ -219,19 +168,10 @@ tsdb::select_op::_advance(bool is_first)
 
         // No uncompressed file exists.  Try with a compressed file.  First,
         // make an anonymous backing region to hold the uncompressed data.
-        if (is_first)
-        {
-            field_mappings.emplace_back((void*)NULL,len,PROT_READ | PROT_WRITE,
-                                        MAP_ANONYMOUS | MAP_PRIVATE,-1,0);
-            field_data.emplace_back((const char*)field_mappings[i].addr +
-                                    start_index*fti->nbytes);
-        }
-        else
-        {
-            futil::mmap(field_mappings[i].addr,len,PROT_READ | PROT_WRITE,
-                        MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,-1,0);
-            field_data[i] = field_mappings[i].addr;
-        }
+        field_mappings[i].map(NULL,len,PROT_READ | PROT_WRITE,
+                              MAP_ANONYMOUS | MAP_PRIVATE,-1,0);
+        field_data[i] = (const char*)field_mappings[i].addr +
+                        start_index*fti->nbytes;
 
         // Now, try and open the file and unzip it into the backing region.
         char gz_name[TIMESTAMP_FILE_NAME_LEN + 3];
@@ -253,16 +193,8 @@ tsdb::select_op::_advance(bool is_first)
         const auto& f = fields[i];
         futil::path bitmap_path(f.name,index_slot->timestamp_file);
         futil::file bitmap_fd(bitmaps_dir,bitmap_path,O_RDONLY);
-        if (is_first)
-        {
-            bitmap_mappings.emplace_back((void*)NULL,BITMAP_FILE_SIZE,PROT_READ,
-                                         MAP_SHARED,bitmap_fd.fd,0);
-        }
-        else
-        {
-            futil::mmap(bitmap_mappings[i].addr,BITMAP_FILE_SIZE,PROT_READ,
-                        MAP_SHARED | MAP_FIXED,bitmap_fd.fd,0);
-        }
+        bitmap_mappings[i].map(NULL,BITMAP_FILE_SIZE,PROT_READ,MAP_SHARED,
+                               bitmap_fd.fd,0);
     }
 }
 
@@ -271,10 +203,6 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
     uint64_t _t0, uint64_t _t1, uint64_t limit):
         select_op(read_lock,field_names,_t0,_t1,limit)
 {
-    // If we have no work to do, return.
-    if (fields.empty())
-        return;
-
     // Log what we are going to do.
     printf("SELECT [ ");
     for (const auto& f : fields)
@@ -291,11 +219,40 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
     // preceding it - IF t0 appears at all.  It could be the case that t0 is
     // a value in the gap between slots.
     index_slot = std::upper_bound(index_begin,index_end,t0);
-    kassert(index_slot != index_begin);
+    if (index_slot == index_begin)
+        return;
     --index_slot;
 
-    // And map it all.
-    _advance(true);
+    // Map the timestamp data.
+    map_timestamps();
+
+    // The first timestamp could be partway through the file.
+    timestamps_begin = std::lower_bound(timestamps_begin,timestamps_end,t0);
+
+    // The first timestamp could even be in the gap between this slot
+    // and the next one, which is yuck.  We can't know that until we've
+    // mapped everything and done the search though.
+    if (timestamps_begin == timestamps_end)
+    {
+        // Increment to the next slot (which we know must exist since we
+        // know that there is still data to return), then open and map it,
+        // overwriting the previous mapping.
+        if (++index_slot == index_end)
+            return;
+        map_timestamps();
+    }
+
+    // We now have a pointer to the first timestamp.  Find the last timestamp.
+    // There will be at least one point available.
+    timestamps_end = std::upper_bound(timestamps_begin,timestamps_end,t1);
+    if (timestamps_end > timestamps_begin)
+    {
+        npoints = timestamps_end - timestamps_begin;
+        npoints = MIN(npoints,rem_limit);
+        timestamps_end = timestamps_begin + npoints;
+        rem_limit -= npoints;
+        map_data();
+    }
 }
 
 tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
@@ -303,10 +260,6 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     uint64_t _t0, uint64_t _t1, uint64_t limit):
         select_op(read_lock,field_names,_t0,_t1,limit)
 {
-    // If we have no work to do, return.
-    if (fields.empty())
-        return;
-
     // Log what we are going to do.
     printf("SELECT [ ");
     for (const auto& f : fields)
@@ -321,8 +274,10 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     // Find the location of both t0 and t1.
     auto* t0_index_slot = std::upper_bound(index_begin,index_end,t0);
     auto* t1_index_slot = std::upper_bound(index_begin,index_end,t1);
-    kassert(t0_index_slot != index_begin);
-    kassert(t1_index_slot != index_begin);
+    if (t0_index_slot == index_begin || t1_index_slot == index_begin)
+        return;
+    if (t1_index_slot < t0_index_slot)
+        return;
     --t0_index_slot;
     --t1_index_slot;
 
@@ -365,7 +320,11 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
             CHUNK_NPOINTS*n_middle_slots;
     }
     else
+    {
+        if (t1_index <= t0_index)
+            return;
         t0_avail_points = t1_avail_points = avail_points = t1_index - t0_index;
+    }
 
     // If there are more points available than requested, then we need to
     // seek forward.
@@ -375,7 +334,8 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         size_t seek_points = avail_points - rem_limit;
         while (seek_points >= t0_avail_points)
         {
-            kassert(t0_index_slot != t1_index_slot);
+            if (t0_index_slot == t1_index_slot)
+                return;
             seek_points -= t0_avail_points;
             if (++t0_index_slot == t1_index_slot)
                 t0_avail_points = t1_avail_points;
@@ -385,9 +345,9 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
 
         // Extract the timestamp from the right index.
         size_t t1_index = t1_upper - t1_data_begin;
-        size_t index = (t1_index - rem_limit) % CHUNK_NPOINTS;
+        t0_index = (t1_index - rem_limit) % CHUNK_NPOINTS;
         t0_file.open(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
-        t0_file.lseek(index*8,SEEK_SET);
+        t0_file.lseek(t0_index*8,SEEK_SET);
         t0 = t0_file.read_u64();
     }
     else
@@ -404,7 +364,17 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
            " LIMIT %" PRIu64 "\n",
            series_id.c_str(),t0,t1,rem_limit);
 
-    // And map it all.
+    // Map the timestamp data.
     index_slot = t0_index_slot;
-    _advance(true);
+    map_timestamps();
+    if (t0_index_slot == t1_index_slot)
+        timestamps_end = timestamps_begin + t1_index;
+    else
+        timestamps_end = timestamps_begin + CHUNK_NPOINTS;
+    timestamps_begin += t0_index;
+    npoints = timestamps_end - timestamps_begin;
+    npoints = MIN(npoints,rem_limit);
+    timestamps_end = timestamps_begin + npoints;
+    rem_limit -= npoints;
+    map_data();
 }

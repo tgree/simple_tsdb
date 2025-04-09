@@ -417,8 +417,8 @@ handle_write_points(tcp::stream& s,
         s.recv_all(data,ch.data_len);
 
         printf("WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
-        tsdb::write_series(write_lock,ch.npoints,ch.bitmap_offset,ch.data_len,
-                           data);
+        tsdb::write_wal(write_lock,ch.npoints,ch.bitmap_offset,ch.data_len,
+                        data);
     }
 }
 
@@ -439,24 +439,20 @@ handle_delete_points(tcp::stream& s,
 }
 
 static void
-_handle_select_points(tcp::stream& s, tsdb::select_op& op)
+_handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
+    size_t N)
 {
-    if (!op.npoints)
+    while (op.npoints)
     {
-        uint32_t dt = DT_END;
-        s.send_all(&dt,sizeof(dt));
-        return;
-    }
+        N -= op.npoints;
 
-    for (;;)
-    {
         size_t len = op.compute_chunk_len();
         uint32_t tokens[4] = {DT_CHUNK,(uint32_t)op.npoints,
                               (uint32_t)(op.bitmap_offset % 64),(uint32_t)len};
         s.send_all(tokens,sizeof(tokens));
 
         // Start by sending timestamp data.
-        s.send_all(op.timestamp_data,8*op.npoints);
+        s.send_all(op.timestamps_begin,8*op.npoints);
 
         // Send each field in turn.
         size_t bitmap_index = op.bitmap_offset / 64;
@@ -478,15 +474,75 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op)
                 s.send_all(pad_bytes,8 - (data_len % 8));
         }
 
-        if (op.is_last)
-        {
-            uint32_t dt = DT_END;
-            s.send_all(&dt,sizeof(dt));
-            return;
-        }
-
-        op.advance();
+        op.next();
     }
+    if (N && wq.nentries)
+    {
+        // We are going to assume that the WAL is small compared to the maximum
+        // chunk size, so we won't be allocating a horrible amount of memory.
+        // Typically the maximum WAL size will be 1024 entries since we don't
+        // really need a very large WAL in order to shrink the main storage
+        // write overhead to a very small number.
+        N = MIN(N,wq.nentries);
+
+        size_t len = op.compute_new_chunk_len(N);
+        uint32_t tokens[4] = {DT_CHUNK,(uint32_t)N,0,(uint32_t)len};
+        s.send_all(tokens,sizeof(tokens));
+
+        // Generate and send the timestamp data.  We reuse the same buffer for
+        // everything.
+        auto_buf u64_buf(sizeof(uint64_t)*N);
+        auto* timestamps = (uint64_t*)u64_buf.data;
+        for (size_t i=0; i<N; ++i)
+            timestamps[i] = wq[i].time_ns;
+        s.send_all(timestamps,N*sizeof(uint64_t));
+
+        // Generate and send each field in turn.
+        void* data = u64_buf.data;
+        auto* bitmap = (uint64_t*)u64_buf.data;
+        size_t bitmap_len = ceil_div<size_t>(N,64)*sizeof(uint64_t);
+        for (size_t i=0; i<op.fields.size(); ++i)
+        {
+            auto& fti = tsdb::ftinfos[op.fields[i].type];
+            size_t field_index = op.field_indices[i];
+
+            // Generate and send the bitmap.
+            for (size_t j=0; j<N; ++j)
+            {
+                tsdb::set_bitmap_bit(bitmap,j,
+                                     wq[j].get_bitmap_bit(field_index));
+            }
+            s.send_all(bitmap,bitmap_len);
+
+            // Generate and send the field data.
+            switch (fti.nbytes)
+            {
+                case 1:
+                    for (size_t j=0; j<N; ++j)
+                        ((uint8_t*)data)[j] = wq[j].fields[field_index].u8;
+                break;
+
+                case 4:
+                    for (size_t j=0; j<N; ++j)
+                        ((uint32_t*)data)[j] = wq[j].fields[field_index].u32;
+                break;
+
+                case 8:
+                    for (size_t j=0; j<N; ++j)
+                        ((uint64_t*)data)[j] = wq[j].fields[field_index].u64;
+                break;
+            }
+            size_t data_len = fti.nbytes*N;
+            s.send_all(data,data_len);
+
+            // Finally, pad to 8 bytes if necessary.
+            if (data_len % 8)
+                s.send_all(pad_bytes,8 - (data_len % 8));
+        }
+    }
+
+    uint32_t dt = DT_END;
+    s.send_all(&dt,sizeof(dt));
 }
 
 static void
@@ -508,8 +564,9 @@ handle_select_points_limit(tcp::stream& s,
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
+    tsdb::wal_query wq(read_lock,t0,t1);
     tsdb::select_op_first op(read_lock,path,str::split(field_list,","),t0,t1,N);
-    _handle_select_points(s,op);
+    _handle_select_points(s,op,wq,N);
 }
 
 static void
@@ -531,8 +588,15 @@ handle_select_points_last(tcp::stream& s,
     tsdb::database db(database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
-    tsdb::select_op_last op(read_lock,path,str::split(field_list,","),t0,t1,N);
-    _handle_select_points(s,op);
+    tsdb::wal_query wq(read_lock,t0,t1);
+    if (wq.nentries > N)
+    {
+        wq._begin += (wq.nentries - N);
+        wq.nentries = N;
+    }
+    tsdb::select_op_last op(read_lock,path,str::split(field_list,","),t0,t1,
+                            N - wq.nentries);
+    _handle_select_points(s,op,wq,N);
 }
 
 static void
@@ -568,12 +632,16 @@ handle_sum_points(tcp::stream& s,
         field_npoints[i].reserve(1024);
     }
 
-    while (!op.is_done)
+    bool done = false;
+    while (!done)
     {
         while (timestamps.size() < 1024)
         {
             if (!op.next())
+            {
+                done = true;
                 break;
+            }
 
             timestamps.emplace_back(op.range_t0);
             for (size_t j=0; j<nfields; ++j)
@@ -604,7 +672,6 @@ handle_sum_points(tcp::stream& s,
         }
     }
 
-    kassert(!op.next());
     data_token dt = DT_END;
     s.send_all(&dt,sizeof(dt));
 }

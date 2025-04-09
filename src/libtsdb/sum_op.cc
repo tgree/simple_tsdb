@@ -10,7 +10,9 @@ tsdb::sum_op::sum_op(const series_read_lock& read_lock,
         t1(_t1),
         window_ns(window_ns),
         is_first(true),
-        is_done(false),
+        wq(read_lock,t0,t1),
+        wqiter(wq.begin()),
+        windices(read_lock.m.gen_indices(field_names)),
         op(read_lock,series_id,field_names,t0,t1,-1),
         op_index(0),
         range_t0(t0)
@@ -20,9 +22,6 @@ tsdb::sum_op::sum_op(const series_read_lock& read_lock,
 bool
 tsdb::sum_op::next()
 {
-    if (op.fields.empty() || is_done)
-        return false;
-
     if (!is_first)
         range_t0 += window_ns;
     else
@@ -33,18 +32,15 @@ tsdb::sum_op::next()
     npoints.clear();
     npoints.resize(op.fields.size());
     size_t range_npoints = 0;
-    for (;;)
+
+    while (op.npoints)
     {
         // Advance the op if needed.
         if (op_index == op.npoints)
         {
-            if (op.is_last)
-            {
-                is_done = true;
-                return range_npoints != 0;
-            }
-            op.advance();
+            op.next();
             op_index = 0;
+            continue;
         }
 
         // Advance the op if we need to to get to the start of this range.
@@ -55,15 +51,12 @@ tsdb::sum_op::next()
         // at a time (probably in 16K chunks).  Changing select_op over to use
         // a simple read() to load the entire timestamp file leads to a
         // massive speedup.
-        if (range_t0 > op.timestamp_data[op_index])
-        {
-            ++op_index;
-            continue;
-        }
+        uint64_t time_ns = op.timestamps_begin[op_index];
+        kassert(range_t0 <= time_ns);
 
-        // If we have gone past the end of this range, break.
-        if (range_t0 + window_ns <= op.timestamp_data[op_index])
-            break;
+        // If we have gone past the end of this range, return.
+        if (range_t0 + window_ns <= time_ns)
+            return true;
 
         // Compute sums.
         for (size_t j=0; j<op.fields.size(); ++j)
@@ -108,5 +101,59 @@ tsdb::sum_op::next()
         ++range_npoints;
     }
 
-    return true;
+    // We have consumed all points from the select_op, but haven't gone past the
+    // end of the range yet.  Consume points from the WAL now.
+    while (wqiter != wq.end())
+    {
+        kassert(range_t0 <= wqiter->time_ns);
+
+        // If we have gone past the end of this range, return.
+        if (range_t0 + window_ns <= wqiter->time_ns)
+            return true;
+
+        // Compute sums.
+        for (size_t j=0; j<sums.size(); ++j)
+        {
+            size_t field_index = windices[j];
+            if (wqiter->is_field_null(field_index))
+                continue;
+
+            switch (wq.read_lock.m.fields[field_index].type)
+            {
+                case tsdb::FT_BOOL:
+                    sums[j] += wqiter->get_field<uint8_t>(field_index);
+                break;
+
+                case tsdb::FT_U32:
+                    sums[j] += wqiter->get_field<uint32_t>(field_index);
+                break;
+
+                case tsdb::FT_U64:
+                    sums[j] += wqiter->get_field<uint64_t>(field_index);
+                break;
+
+                case tsdb::FT_F32:
+                    sums[j] += wqiter->get_field<float>(field_index);
+                break;
+
+                case tsdb::FT_F64:
+                    sums[j] += wqiter->get_field<double>(field_index);
+                break;
+
+                case tsdb::FT_I32:
+                    sums[j] += wqiter->get_field<int32_t>(field_index);
+                break;
+
+                case tsdb::FT_I64:
+                    sums[j] += wqiter->get_field<int64_t>(field_index);
+                break;
+            }
+            ++npoints[j];
+        }
+
+        ++wqiter;
+        ++range_npoints;
+    }
+
+    return range_npoints != 0;
 }

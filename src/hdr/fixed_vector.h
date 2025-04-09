@@ -15,9 +15,10 @@ struct fixed_vector
     size_t          n;
     T*              elems;
 
-    constexpr bool full() const   {return n == N;}
-    constexpr bool empty() const  {return n == 0;}
-    constexpr size_t size() const {return n;}
+    constexpr bool full() const       {return n == N;}
+    constexpr bool empty() const      {return n == 0;}
+    constexpr size_t size() const     {return n;}
+    constexpr size_t capacity() const {return N;}
 
     void clear()
     {

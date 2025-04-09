@@ -18,7 +18,6 @@ namespace tsdb
         // deleting points during the query.  For time_last, we don't care if
         // someone adds points later, we only return the points from our
         // current snapshot of the live range.
-        const bool              mmap_timestamps;
         const series_read_lock& read_lock;
         const uint64_t          time_last;
         futil::file             index_fd;
@@ -31,6 +30,7 @@ namespace tsdb
         uint64_t                    t1;
         uint64_t                    rem_limit;
         fixed_vector<schema_entry>  fields;
+        fixed_vector<size_t>        field_indices;
 
         // Mapping objects to track mmap()-ed files.
         const index_entry*              index_slot;
@@ -40,20 +40,17 @@ namespace tsdb
         fixed_vector<futil::mapping>    bitmap_mappings;
 
         // State of the current set of results.
-        bool                            is_last;
         size_t                          npoints;
         size_t                          bitmap_offset;
-        const uint64_t*                 timestamp_data;
+        const uint64_t*                 timestamps_begin;
+        const uint64_t*                 timestamps_end;
         fixed_vector<const void*>       field_data;
 
-        inline void advance()
-        {
-            _advance(false);
-        }
+        void next();
 
-        constexpr size_t compute_chunk_len() const
+        constexpr size_t compute_new_chunk_len(size_t N,
+                                               size_t _bitmap_offset = 0) const
         {
-            size_t N = npoints;
             size_t M = fields.size();
             size_t S = 0;
             for (size_t i=0; i<M; ++i)
@@ -62,10 +59,15 @@ namespace tsdb
                 const auto* fti = &ftinfos[f.type];
                 S += round_up_pow2(N*fti->nbytes,8);
             }
-            size_t bitmap_begin = bitmap_offset / 64;
-            size_t bitmap_end = ceil_div<size_t>(bitmap_offset + N,64);
+            size_t bitmap_begin = _bitmap_offset / 64;
+            size_t bitmap_end = ceil_div<size_t>(_bitmap_offset + N,64);
             size_t bitmap_n = bitmap_end - bitmap_begin;
             return 8*(N + bitmap_n*M) + S;
+        }
+
+        constexpr size_t compute_chunk_len() const
+        {
+            return compute_new_chunk_len(npoints,bitmap_offset);
         }
 
         constexpr bool get_bitmap_bit(size_t field_index, size_t i) const
@@ -87,12 +89,12 @@ namespace tsdb
         }
 
     protected:
-        void _advance(bool is_first);
+        void map_timestamps();
+        void map_data();
 
         select_op(const series_read_lock& read_lock,
                   const std::vector<std::string>& field_names,
-                  uint64_t t0, uint64_t t1, uint64_t limit,
-                  bool mmap_timestamps = false);
+                  uint64_t t0, uint64_t t1, uint64_t limit);
     };
 
     struct select_op_first : public select_op

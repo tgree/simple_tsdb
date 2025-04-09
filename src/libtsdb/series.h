@@ -34,9 +34,9 @@ namespace tsdb
     constexpr void set_bitmap_bit(uint64_t* bitmap, size_t index, bool v)
     {
         if (v)
-            bitmap[index / 64] |= (((uint64_t)v) << (index % 64));
+            bitmap[index / 64] |= (1ULL << (index % 64));
         else
-            bitmap[index / 64] &= ~(((uint64_t)v) << (index % 64));
+            bitmap[index / 64] &= ~(1ULL << (index % 64));
     }
 
     struct _series_lock
@@ -63,34 +63,64 @@ namespace tsdb
     };
 
     // Obtains a read lock on a series.
+    // This acquires a shared lock on time_first so that no delete operation
+    // can happen while we are reading and a shared lock on time_last so that
+    // no commit/truncate WAL operation can happen while we may be accessing it.
+    //
+    // Order of operations:
+    //  1. Acquire shared lock on time_first_fd.
+    //  2. Acquire shared lock on time_last_fd.
+    //
+    // Danger!  Do not use exclusive locks at all when acquiring read locks
+    // otherwise we will deadlock with write locking.
     struct series_read_lock : public _series_lock
     {
+        futil::file time_last_fd;
+        uint64_t    time_last;
+
         series_read_lock(const measurement& m, const futil::path& series):
-            _series_lock(m,series,O_RDONLY)
+            _series_lock(m,series,O_RDONLY),
+            time_last_fd(series_dir,"time_last",O_RDONLY),
+            time_last(time_last_fd.flock(LOCK_SH).read_u64())
         {
         }
 
     protected:
+        // Passing up an already-opened time_last_fd that has an exclusive
+        // lock - this is so that write_lock can also be a read_lock.
         series_read_lock(const measurement& m, const futil::path& series,
-                         int oflag):
-            _series_lock(m,series,oflag)
+                         futil::file&& _time_last_fd):
+            _series_lock(m,series,O_RDWR),
+            time_last_fd(std::move(_time_last_fd)),
+            time_last(time_last_fd.read_u64())
         {
         }
     };
 
     // Obtains a write lock on a series.
+    // This acquires a shared lock on time_first so that no delete operation
+    // can happen while we are writing, and it acquires an exclusive lock on
+    // time_last so that nobody else can write new data points while we are
+    // (not that that should ever happen).
+    //
+    // A write lock can be substituted in calls where only a read lock is
+    // needed; this allows for instance a select operation to take place inside
+    // a write method to handle overwrite.
+    //
+    // Order of operations:
+    //  1. Acquire exclusive lock on time_last_fd.
+    //  2. Acquire shared lock on time_first_fd.
+    //
+    // Danger!  This order of locking is the opposite order that a read lock
+    // takes, because we acquire the time_last_fd exclusive lock inside
+    // open_or_create_and_lock_series().  However, because the read lock only
+    // takes shared locks we avoid deadlock here.
     struct series_write_lock : public series_read_lock
     {
-        futil::file time_last_fd;
-        uint64_t    time_last;
-
-        // Transfer ownership of an O_EXLOCK exclusive lock fd on time_last to
-        // us.
+        // Transfer ownership of an exclusive lock on time_last to us.
         series_write_lock(const measurement& m, const futil::path& series,
                           futil::file&& _time_last_fd):
-            series_read_lock(m,series,O_RDWR),
-            time_last_fd(std::move(_time_last_fd)),
-            time_last(time_last_fd.read_u64())
+            series_read_lock(m,series,std::move(_time_last_fd))
         {
         }
     };

@@ -151,8 +151,9 @@ handle_select_1(
     tsdb::database db(ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
+    tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
     tsdb::select_op_first op(read_lock,ss.series,fs.fields,tr.t0,tr.t1,n.n);
-    print_op_results(op);
+    print_op_results(fs,op,wq,n.n);
 }
 
 static void
@@ -169,8 +170,15 @@ handle_select_2(
     tsdb::database db(ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
-    tsdb::select_op_last op(read_lock,ss.series,fs.fields,tr.t0,tr.t1,n.n);
-    print_op_results(op);
+    tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
+    if (wq.nentries > n.n)
+    {
+        wq._begin += (wq.nentries - n.n);
+        wq.nentries = n.n;
+    }
+    tsdb::select_op_last op(read_lock,ss.series,fs.fields,tr.t0,tr.t1,
+                            n.n - wq.nentries);
+    print_op_results(fs,op,wq,n.n);
 }
 
 static void
