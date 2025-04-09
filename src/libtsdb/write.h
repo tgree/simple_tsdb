@@ -32,6 +32,14 @@ namespace tsdb
                                         bitmap_offset + i);
         }
 
+        void set_bitmap_bit(size_t field_index, size_t i, bool v)
+        {
+            kassert(field_index < fields.size());
+            kassert(i < npoints);
+            tsdb::set_bitmap_bit(fields[field_index].bitmap_ptr,
+                                 bitmap_offset + i,v);
+        }
+
         write_chunk_index(const measurement& m, size_t npoints,
                           size_t bitmap_offset, size_t data_len,
                           void* data);
