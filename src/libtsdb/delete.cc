@@ -35,42 +35,56 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     // Find the target slot.  std::upper_bound returns the first slot greater
     // than the requested value, meaning that t must appear in the slot
     // preceding it - IF t appears at all.  It could be the case that t is
-    // a value in the gap between slots.
+    // a value in the gap between slots.  It could also be the case that the
+    // index is completely empty (everything is in the WAL) and so no index
+    // slot exists to even hold t.
     auto* index_slot = std::upper_bound(index_begin,index_end,t);
-    kassert(index_slot != index_begin);
-    --index_slot;
+    if (index_slot != index_begin)
+    {
+        --index_slot;
 
-    // Map the timestamp chunk and search it for t.  The std::upper_bound will
-    // find the timestamp after t, unless it is the end of the chunk.
-    futil::file timestamp_fd(time_ns_dir,index_slot->timestamp_file,O_RDONLY);
-    auto timestamp_m = timestamp_fd.mmap(NULL,timestamp_fd.lseek(0,SEEK_END),
-                                         PROT_READ,MAP_SHARED,0);
-    auto* timestamps_begin = (const uint64_t*)timestamp_m.addr;
-    auto* timestamps_end = timestamps_begin + timestamp_m.len / 8;
-    auto* timestamp_slot = std::upper_bound(timestamps_begin,timestamps_end,t);
-    if (timestamp_slot < timestamps_end)
-    {
-        // We can delete all chunks before this one.  Set time_first to the
-        // first live timestamp >= t.
-        time_first = *timestamp_slot;
-    }
-    else if (index_slot < index_end - 1)
-    {
-        // This is not the last chunk, so it must be full.  We can delete all
-        // chunks up to and including this one.  Set time_first to the first
-        // timestamp of the next index slot.
-        ++index_slot;
-        time_first = index_slot->time_ns;
+        // Map the timestamp chunk and search it for t.  The std::upper_bound
+        // will find the timestamp after t, unless it is the end of the chunk.
+        futil::file timestamp_fd(time_ns_dir,index_slot->timestamp_file,
+                                 O_RDONLY);
+        auto timestamp_m = timestamp_fd.mmap(NULL,
+                                             timestamp_fd.lseek(0,SEEK_END),
+                                             PROT_READ,MAP_SHARED,0);
+        auto* timestamps_begin = (const uint64_t*)timestamp_m.addr;
+        auto* timestamps_end = timestamps_begin + timestamp_m.len / 8;
+        auto* timestamp_slot = std::upper_bound(timestamps_begin,
+                                                timestamps_end,t);
+        if (timestamp_slot < timestamps_end)
+        {
+            // We can delete all chunks before this one.  Set time_first to the
+            // first live timestamp >= t.
+            time_first = *timestamp_slot;
+        }
+        else if (index_slot < index_end - 1)
+        {
+            // This is not the last chunk, so it must be full.  We can delete
+            // all chunks up to and including this one.  Set time_first to the
+            // first timestamp of the next index slot.
+            ++index_slot;
+            time_first = index_slot->time_ns;
+        }
+        else
+        {
+            // This is equivalent to t >= time_last (which maybe we could have
+            // checked above?).  We can delete every single chunk in the series.
+            // Set time_first to t + 1.  This has the effect of "deleting from
+            // the future", while also trivially deleting from the WAL.  We have
+            // already checked that t >= time_first, therefore this update will
+            // always increase time_first to a higher value.
+            ++index_slot;
+            time_first = t + 1;
+        }
     }
     else
     {
-        // This is equivalent to t >= time_last (which maybe we could have
-        // checked above?).  We can delete every single chunk in the series.
-        // Set time_first to t + 1.  This has the effect of "deleting from the
-        // future", while also trivially deleting from the WAL.  We have
-        // already checked that t >= time_first, therefore this update will
-        // always increase time_first to a higher value.
-        ++index_slot;
+        // No index slots exist, so everything is in the WAL.  Just increment
+        // time_first past the deletion time and a future WAL commit will take
+        // care of discarding deleted points.
         time_first = t + 1;
     }
 
@@ -78,7 +92,8 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     time_first_fd.lseek(0,SEEK_SET);
     time_first_fd.write_all(&time_first,8);
 
-    // If we are keeping all the index slots, then we are done now.
+    // If we are keeping all the index slots or we have an empty index, then we
+    // are done now.
     if (index_slot == index_begin)
     {
         time_first_fd.fsync_and_flush();
