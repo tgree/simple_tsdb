@@ -36,13 +36,6 @@ tsdb::write_chunk_index::write_chunk_index(const measurement& m,
                expected_len,data_len);
         throw tsdb::incorrect_write_chunk_len_exception(expected_len,data_len);
     }
-
-    // Ensure that the timestamps are in strictly-increasing order.
-    for (size_t i=1; i<npoints; ++i)
-    {
-        if (timestamps[i] <= timestamps[i-1])
-            throw tsdb::out_of_order_timestamps_exception();
-    }
 }
 
 void
