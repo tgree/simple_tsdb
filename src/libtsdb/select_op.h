@@ -47,9 +47,9 @@ namespace tsdb
 
         void next();
 
-        constexpr size_t compute_chunk_len() const
+        constexpr size_t compute_new_chunk_len(size_t N,
+                                               size_t _bitmap_offset = 0) const
         {
-            size_t N = npoints;
             size_t M = fields.size();
             size_t S = 0;
             for (size_t i=0; i<M; ++i)
@@ -58,10 +58,15 @@ namespace tsdb
                 const auto* fti = &ftinfos[f.type];
                 S += round_up_pow2(N*fti->nbytes,8);
             }
-            size_t bitmap_begin = bitmap_offset / 64;
-            size_t bitmap_end = ceil_div<size_t>(bitmap_offset + N,64);
+            size_t bitmap_begin = _bitmap_offset / 64;
+            size_t bitmap_end = ceil_div<size_t>(_bitmap_offset + N,64);
             size_t bitmap_n = bitmap_end - bitmap_begin;
             return 8*(N + bitmap_n*M) + S;
+        }
+
+        constexpr size_t compute_chunk_len() const
+        {
+            return compute_new_chunk_len(npoints,bitmap_offset);
         }
 
         constexpr bool get_bitmap_bit(size_t field_index, size_t i) const
