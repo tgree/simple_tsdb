@@ -467,7 +467,7 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
             s.send_all(&bitmap[bitmap_index],bitmap_n*8);
 
             // Next we send the field data.
-            const auto* fti = &tsdb::ftinfos[op.fields[i].type];
+            const auto* fti = &tsdb::ftinfos[op.fields[i]->type];
             size_t data_len = op.npoints*fti->nbytes;
             s.send_all(op.field_data[i],data_len);
 
@@ -505,8 +505,8 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
         size_t bitmap_len = ceil_div<size_t>(N,64)*sizeof(uint64_t);
         for (size_t i=0; i<op.fields.size(); ++i)
         {
-            auto& fti = tsdb::ftinfos[op.fields[i].type];
-            size_t field_index = op.field_indices[i];
+            auto& fti = tsdb::ftinfos[op.fields[i]->type];
+            size_t field_index = op.fields[i]->index;
 
             // Generate and send the bitmap.
             for (size_t j=0; j<N; ++j)

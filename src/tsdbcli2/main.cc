@@ -203,8 +203,8 @@ handle_mean(
     tsdb::sum_op op(read_lock,ss.series,fs.fields,tr.t0,tr.t1,wn.n);
 
     printf("%20s ","time_ns");
-    for (const auto& f : op.op.fields)
-        printf("%20s ",f.name);
+    for (const auto* f : op.op.fields)
+        printf("%20s ",f->name);
     printf("\n");
     for (size_t i=0; i<op.op.fields.size() + 1; ++i)
         printf("-------------------- ");

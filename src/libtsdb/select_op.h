@@ -26,11 +26,10 @@ namespace tsdb
         const index_entry*      index_end;
 
         // Query parameters.
-        uint64_t                    t0;
-        uint64_t                    t1;
-        uint64_t                    rem_limit;
-        fixed_vector<schema_entry>  fields;
-        fixed_vector<size_t>        field_indices;
+        uint64_t                            t0;
+        uint64_t                            t1;
+        uint64_t                            rem_limit;
+        fixed_vector<const schema_entry*>   fields;
 
         // Mapping objects to track mmap()-ed files.
         const index_entry*              index_slot;
@@ -56,7 +55,7 @@ namespace tsdb
             for (size_t i=0; i<M; ++i)
             {
                 const auto& f = fields[i];
-                const auto* fti = &ftinfos[f.type];
+                const auto* fti = &ftinfos[f->type];
                 S += round_up_pow2(N*fti->nbytes,8);
             }
             size_t bitmap_begin = _bitmap_offset / 64;
