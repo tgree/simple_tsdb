@@ -2,7 +2,8 @@
 // All rights reserved.
 #include "wal.h"
 #include "write.h"
-#include "tsdb.h"
+#include "select_op.h"
+#include "constants.h"
 #include <hdr/auto_buf.h>
 #include <hdr/kmath.h>
 
