@@ -16,6 +16,21 @@ tsdb::sum_op::sum_op(const series_read_lock& read_lock,
         op_index(0),
         range_t0(t0)
 {
+    for (size_t i=0; i<op.fields.size(); ++i)
+    {
+        sums.push_back(0);
+        npoints.push_back(0);
+    }
+}
+
+void
+tsdb::sum_op::zero()
+{
+    for (size_t i=0; i<sums.size(); ++i)
+    {
+        sums[i] = 0;
+        npoints[i] = 0;
+    }
 }
 
 bool
@@ -26,10 +41,7 @@ tsdb::sum_op::next()
     else
         is_first = false;
 
-    sums.clear();
-    sums.resize(op.fields.size());
-    npoints.clear();
-    npoints.resize(op.fields.size());
+    zero();
     size_t range_npoints = 0;
 
     while (op.npoints)
