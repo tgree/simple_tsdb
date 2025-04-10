@@ -138,6 +138,46 @@ namespace str
         free(buf);
         return s;
     }
+
+    // Decodes a string that has a suffix in power-of-2 style.
+    inline uint64_t
+    decode_number_units_pow2(const std::string& s)
+    {
+        if (s.empty())
+            throw std::invalid_argument("Empty string");
+
+        uint64_t multiplier = 1;
+        uint64_t expected_pos = s.size();
+        switch (s[s.size()-1])
+        {
+            case 'T':
+                multiplier = 1024ULL*1024ULL*1024ULL*1024ULL;
+                --expected_pos;
+            break;
+
+            case 'G':
+                multiplier = 1024ULL*1024ULL*1024ULL;
+                --expected_pos;
+            break;
+
+            case 'M':
+                multiplier = 1024ULL*1024ULL;
+                --expected_pos;
+            break;
+
+            case 'K':
+                multiplier = 1024ULL;
+                --expected_pos;
+            break;
+        }
+
+        size_t pos;
+        uint64_t v = std::stoul(s,&pos);
+        if (pos != expected_pos)
+            throw std::invalid_argument("Extra characters");
+
+        return multiplier*v;
+    }
 }
 
 #endif /* __SRC_STRUTIL_STRUTIL_H */
