@@ -12,6 +12,7 @@ const tsdb::configuration tsdb::default_configuration =
 {
     DEFAULT_CHUNK_SIZE_M*1024*1024,
     DEFAULT_WAL_MAX_ENTRIES,
+    DEFAULT_WRITE_THROTTLE_NS,
 };
 
 static tsdb::configuration
@@ -38,6 +39,8 @@ load_configuration(const tsdb::root* r) try
         }
         else if (parts[0] == "wal_max_entries")
             config.wal_max_entries = str::decode_number_units_pow2(parts[1]);
+        else if (parts[0] == "write_throttle_ns")
+            config.write_throttle_ns = str::decode_number_units_pow2(parts[1]);
         else
             throw tsdb::invalid_config_file_exception();
     }

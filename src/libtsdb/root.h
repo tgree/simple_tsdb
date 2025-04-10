@@ -13,6 +13,7 @@ namespace tsdb
     {
         size_t      chunk_size;
         size_t      wal_max_entries;
+        size_t      write_throttle_ns;
     };
     static inline std::string to_string(const configuration& c)
     {
