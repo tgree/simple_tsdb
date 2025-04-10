@@ -61,7 +61,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
 
 static void
 print_wq_entries(const tsdb::wal_query& wq,
-    const fixed_vector<const tsdb::schema_entry*>& fields, size_t index,
+    const tsdb::field_vector<const tsdb::schema_entry*>& fields, size_t index,
     size_t n)
 {
     for (size_t i=index; i<index + n; ++i)

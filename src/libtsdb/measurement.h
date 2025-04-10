@@ -4,15 +4,19 @@
 #define __SRC_LIBTSDB_MEASUREMENT_H
 
 #include "exception.h"
+#include "constants.h"
 #include <futil/futil.h>
 #include <span>
 #include <hdr/kassert.h>
 #include <hdr/kmath.h>
-#include <hdr/fixed_vector.h>
+#include <hdr/static_vector.h>
 
 namespace tsdb
 {
     struct database;
+
+    template<typename T>
+    using field_vector = static_vector<T,MAX_FIELDS>;
 
     enum field_type : uint8_t
     {
@@ -87,13 +91,12 @@ namespace tsdb
             return len;
         }
 
-        fixed_vector<const schema_entry*> gen_entries(
+        field_vector<const schema_entry*> gen_entries(
             const std::vector<std::string>& field_names) const
         {
             // Generate a lookup table for the specified field names.  An empty
             // list is assumed to mean all fields in their natural order.
-            size_t n = field_names.empty() ? fields.size() : field_names.size();
-            fixed_vector<const schema_entry*> entries(n);
+            field_vector<const schema_entry*> entries;
             if (!field_names.empty())
             {
                 for (auto& field_name : field_names)
