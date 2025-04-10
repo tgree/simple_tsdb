@@ -3,12 +3,14 @@
 #ifndef __SRC_LIBTSDB_DATABASE_H
 #define __SRC_LIBTSDB_DATABASE_H
 
-#include <futil/futil.h>
+#include "exception.h"
+#include "root.h"
 
 namespace tsdb
 {
     struct database
     {
+        const struct root&  root;
         futil::directory    dir;
 
         // Lists all the measurements in the database.
@@ -17,15 +19,18 @@ namespace tsdb
             return dir.listdirs();
         }
 
-        database(const futil::path& path);
+        database(const struct root& root, const futil::path& path) try :
+            root(root),
+            dir(root.databases_dir,path)
+        {
+        }
+        catch (const futil::errno_exception& e)
+        {
+            if (e.errnov == ENOENT)
+                throw tsdb::no_such_database_exception();
+            throw;
+        }
     };
-
-    // Creates a new database in the TSDB instance rooted at the current working
-    // directory.
-    void create_database(const char* name);
-
-    // Returns a list of all databases.
-    std::vector<std::string> list_databases();
 }
 
 #endif /* __SRC_LIBTSDB_DATABASE_H */

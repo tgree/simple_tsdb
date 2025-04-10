@@ -27,21 +27,14 @@
 
 DECL_KEYWORD(FROM);
 
-static void
-handle_init()
-{
-    // Handles:
-    // INIT
-    printf("Initializing TSDB directories...\n");
-    tsdb::init();
-}
+static tsdb::root* root;
 
 static void
 handle_add_user(const std::string& username, const std::string& password)
 {
     // Handles:
     // ADD USER <username> <password>
-    tsdb::add_user(username,password);
+    root->add_user(username,password);
     printf("Added user %s.\n",username.c_str());
 }
 
@@ -50,7 +43,7 @@ handle_auth_user(const std::string& username, const std::string& password)
 {
     // Handles:
     // AUTH <username> <password>
-    if (tsdb::verify_user(username,password))
+    if (root->verify_user(username,password))
         printf("Authentication successful.\n");
     else
         printf("Authentication failed.\n");
@@ -62,7 +55,7 @@ handle_create_database(const database_specifier& ds)
     // Handles:
     // CREATE DATABASE <database>
     printf("Creating database \"%s\"...\n",ds.database.c_str());
-    tsdb::create_database(ds.database.c_str());
+    root->create_database(ds.database.c_str());
 }
 
 static void
@@ -71,7 +64,7 @@ handle_create_measurement(const measurement_specifier& ms,
 {
     // Handles:
     // CREATE MEASUREMENT <database/measurement> WITH FIELDS <field_spec>
-    tsdb::database db(ms.database);
+    tsdb::database db(*root,ms.database);
     tsdb::create_measurement(db,ms.measurement,fs.fields);
 }
 
@@ -80,7 +73,7 @@ handle_list_databases()
 {
     // Handles:
     // LIST DATABASES
-    auto dbs = tsdb::list_databases();
+    auto dbs = root->list_databases();
     for (const auto& s : dbs)
         printf("%s\n",s.c_str());
 }
@@ -90,7 +83,7 @@ handle_list_measurements(const FROM_keyword, const database_specifier& ds)
 {
     // Handles:
     // LIST MEASUREMENTS FROM <database/measurement>
-    tsdb::database db(ds.database);
+    tsdb::database db(*root,ds.database);
     auto ms = db.list_measurements();
     for (const auto& s : ms)
         printf("%s\n",s.c_str());
@@ -101,7 +94,7 @@ handle_list_series(const FROM_keyword, const measurement_specifier& ms)
 {
     // Handles:
     // LIST SERIES FROM <database/measurement>
-    tsdb::database db(ms.database);
+    tsdb::database db(*root,ms.database);
     tsdb::measurement m(db,ms.measurement);
     auto ss = m.list_series();
     for (const auto& s : ss)
@@ -113,7 +106,7 @@ handle_list_schema(const FROM_keyword, const measurement_specifier& ms)
 {
     // Handles:
     // LIST SCHEMA FROM <database/measurement>
-    tsdb::database db(ms.database);
+    tsdb::database db(*root,ms.database);
     tsdb::measurement m(db,ms.measurement);
     for (const auto& se : m.fields)
         printf("%4s %s\n",tsdb::ftinfos[se.type].name,se.name);
@@ -125,7 +118,7 @@ handle_count(
     const series_specifier& ss,
     const select_time_range& tr)
 {
-    tsdb::database db(ss.database);
+    tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
     auto cr = tsdb::count_points(read_lock,tr.t0,tr.t1);
@@ -148,7 +141,7 @@ handle_select_1(
     // Handles:
     // SELECT <fields> FROM <database/measurement/series>
     //      [WHERE ...time_ns...] LIMIT N
-    tsdb::database db(ss.database);
+    tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
     tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
@@ -167,7 +160,7 @@ handle_select_2(
     // Handles:
     // SELECT <fields> FROM <database/measurement/series>
     //      [WHERE ...time_ns...] LAST N
-    tsdb::database db(ss.database);
+    tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
     tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
@@ -204,7 +197,7 @@ handle_mean(
     // Handles:
     // MEAN <fields> FROM <database/measurement/series>
     //      [WHERE ...time_ns...] window_ns N
-    tsdb::database db(ss.database);
+    tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
     tsdb::sum_op op(read_lock,ss.series,fs.fields,tr.t0,tr.t1,wn.n);
@@ -237,7 +230,7 @@ handle_delete(
     const series_specifier& ss,
     const delete_time_range& tr)
 {
-    tsdb::database db(ss.database);
+    tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::delete_points(m,ss.series,tr.t);
 }
@@ -250,7 +243,6 @@ struct command_handler
 
 static const command_handler command_handlers[] =
 {
-    {"INIT",{XLATE(handle_init)}},
     {"ADD USER",{XLATE(handle_add_user)}},
     {"AUTH",{XLATE(handle_auth_user)}},
     {"CREATE DATABASE",{XLATE(handle_create_database)}},
@@ -296,6 +288,59 @@ handle_command(
 int
 main(int argc, const char* argv[])
 {
+    bool init_root = false;
+
+    std::vector<const char*> unused_args;
+    for (size_t i=1; i<argc; ++i)
+    {
+        if (!strcmp(argv[i],"--init-root"))
+            init_root = true;
+        else
+            unused_args.push_back(argv[i]);
+    }
+
+    if (unused_args.size() > 1)
+    {
+        printf("Unrecognized arguments.\n");
+        return -1;
+    }
+
+    std::string root_path(unused_args.empty() ? "." : unused_args[0]);
+    try
+    {
+        root = new tsdb::root(root_path);
+    }
+    catch (const tsdb::not_a_tsdb_root& e)
+    {
+        if (!init_root)
+        {
+            printf("Failed to open TSDB root: %s\n",e.what());
+            return -1;
+        }
+    }
+    if (!root)
+    {
+        try
+        {
+            tsdb::create_root(root_path);
+        }
+        catch (const std::exception& e)
+        {
+            printf("Failed to create TSDB root: %s\n",e.what());
+            return -1;
+        }
+
+        try
+        {
+            root = new tsdb::root(root_path);
+        }
+        catch (const std::exception& e)
+        {
+            printf("Failed to open new TSDB root: %s\n",e.what());
+            return -1;
+        }
+    }
+
     char* home_dir = getenv("HOME");
     futil::path history_path(home_dir,".tsdbcli_history");
     read_history(history_path);

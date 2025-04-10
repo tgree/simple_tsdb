@@ -64,8 +64,7 @@ tsdb::create_measurement(const database& db, const futil::path& name,
         }
 
         // The measurement doesn't exist.  Create it in the tmp directory first.
-        futil::directory tmp_dir("tmp");
-        futil::xact_mkdtemp m_dir(tmp_dir,0770);
+        futil::xact_mkdtemp m_dir(db.root.tmp_dir,0770);
         futil::xact_creat csl_fd(m_dir,"create_series_lock",
                                  O_WRONLY | O_CREAT | O_EXCL,0660);
         futil::xact_creat schema_fd(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL,
@@ -78,8 +77,8 @@ tsdb::create_measurement(const database& db, const futil::path& name,
         schema_fd.fsync_and_barrier();
 
         // Try to move the newly-created measurement into place.
-        if (futil::rename_if_not_exists(tmp_dir,(const char*)m_dir.name,db.dir,
-                                        name))
+        if (futil::rename_if_not_exists(db.root.tmp_dir,(const char*)m_dir.name,
+                                        db.dir,name))
         {
             m_dir.fsync_and_flush();
             schema_fd.commit();

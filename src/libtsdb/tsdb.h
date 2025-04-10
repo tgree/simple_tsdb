@@ -4,6 +4,7 @@
 #define __SRC_LIBTSDB_TSDB_H
 
 #include "exception.h"
+#include "root.h"
 #include "database.h"
 #include "measurement.h"
 #include "series.h"
@@ -24,17 +25,5 @@
 
 // Maximum number of entries in the WAL.
 #define WAL_MAX_ENTRIES     128
-
-namespace tsdb
-{
-    // Adds a new user to the passwd file.
-    void add_user(const std::string& username, const std::string& password);
-
-    // Verifies a username and password against the passwd file.
-    bool verify_user(const std::string& username, const std::string& password);
-
-    // Creates a new TSDB instance rooted at the current working directory.
-    void init();
-}
 
 #endif /* __SRC_LIBTSDB_TSDB_H */
