@@ -99,6 +99,7 @@ namespace tsdb
             field_vector<const schema_entry*> entries;
             if (!field_names.empty())
             {
+                uint64_t field_mask = 0;
                 for (auto& field_name : field_names)
                 {
                     bool found = false;
@@ -106,6 +107,9 @@ namespace tsdb
                     {
                         if (field_name == f.name)
                         {
+                            if (field_mask & (1 << f.index))
+                                throw duplicate_field_exception();
+                            field_mask |= (1 << f.index);
                             entries.emplace_back(&f);
                             found = true;
                             break;
