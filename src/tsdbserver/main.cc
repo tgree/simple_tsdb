@@ -220,6 +220,25 @@ static const uint8_t pad_bytes[8] = {};
 
 static tsdb::root* root;
 
+static uint64_t
+time_ns()
+{
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
+    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
+}
+
+static void
+sleep_for_ns(uint64_t nsec)
+{
+    struct timespec rqtp;
+    struct timespec rmtp;
+    rqtp.tv_sec  = (nsec / 1000000000);
+    rqtp.tv_nsec = (nsec % 1000000000);
+    while (nanosleep(&rqtp,&rmtp) != 0)
+        rqtp = rmtp;
+}
+
 static void
 handle_create_database(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
@@ -818,25 +837,6 @@ request_handler(std::unique_ptr<tcp::stream> s)
 
     printf("Teardown local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
-}
-
-static uint64_t
-time_ns()
-{
-    struct timespec tp;
-    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
-    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
-}
-
-static void
-sleep_for_ns(uint64_t nsec)
-{
-    struct timespec rqtp;
-    struct timespec rmtp;
-    rqtp.tv_sec  = (nsec / 1000000000);
-    rqtp.tv_nsec = (nsec % 1000000000);
-    while (nanosleep(&rqtp,&rmtp) != 0)
-        rqtp = rmtp;
 }
 
 static void
