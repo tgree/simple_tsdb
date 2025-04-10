@@ -217,6 +217,8 @@ static const command_syntax auth_command =
 
 static const uint8_t pad_bytes[8] = {};
 
+static tsdb::root* root;
+
 static void
 handle_create_database(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
@@ -224,14 +226,14 @@ handle_create_database(tcp::stream& s,
     // TODO: Use string_view.
     std::string database(tokens[0].data,tokens[0].len);
     printf("CREATE DATABASE %s\n",database.c_str());
-    tsdb::create_database(database.c_str());
+    root->create_database(database.c_str());
 }
 
 static void
 handle_list_databases(tcp::stream& s,
     const std::vector<parsed_data_token>& tokens)
 {
-    auto dbs = tsdb::list_databases();
+    auto dbs = root->list_databases();
     printf("LIST DATABASES\n");
     for (const auto& d_name : dbs)
     {
@@ -286,7 +288,7 @@ handle_create_measurement(tcp::stream& s,
     }
 
     printf("CREATE MEASUREMENT %s\n",path.c_str());
-    tsdb::database db(database);
+    tsdb::database db(*root,database);
     tsdb::create_measurement(db,measurement,fields);
 }
 
@@ -299,7 +301,7 @@ handle_get_schema(tcp::stream& s,
     futil::path measurement_path(database,measurement);
 
     printf("GET SCHEMA FOR %s\n",measurement_path.c_str());
-    tsdb::database db(tokens[0].to_string());
+    tsdb::database db(*root,tokens[0].to_string());
     tsdb::measurement m(db,tokens[1].to_string());
     for (const auto& f : m.fields)
     {
@@ -317,7 +319,7 @@ handle_list_measurements(tcp::stream& s,
 {
     std::string db_name(tokens[0].data,tokens[0].len);
     printf("LIST MEASUREMENTS FROM %s\n",db_name.c_str());
-    auto db = tsdb::database(db_name);
+    auto db = tsdb::database(*root,db_name);
     auto ms = db.list_measurements();
     for (const auto& m_name : ms)
     {
@@ -336,7 +338,7 @@ handle_list_series(tcp::stream& s,
     std::string db_name(tokens[0].data,tokens[0].len);
     std::string m_name(tokens[1].data,tokens[1].len);
     printf("LIST SERIES FROM %s/%s\n",db_name.c_str(),m_name.c_str());
-    auto db = tsdb::database(db_name);
+    auto db = tsdb::database(*root,db_name);
     auto m = tsdb::measurement(db,m_name);
     auto ss = m.list_series();
     for (const auto& s_name : ss)
@@ -362,7 +364,7 @@ handle_count_points(tcp::stream& s,
     futil::path path(database,measurement,series);
     printf("COUNT FROM %s\n",path.c_str());
 
-    tsdb::database db(database);
+    tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
     auto cr = tsdb::count_points(read_lock,t0,t1);
@@ -390,7 +392,7 @@ handle_write_points(tcp::stream& s,
     futil::path path(database,measurement,series);
 
     printf("WRITE TO %s\n",path.c_str());
-    tsdb::database db(tokens[0].to_string());
+    tsdb::database db(*root,tokens[0].to_string());
     tsdb::measurement m(db,tokens[1].to_string());
     auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
 
@@ -433,7 +435,7 @@ handle_delete_points(tcp::stream& s,
     uint64_t t = tokens[3].u64;
 
     printf("DELETE FROM %s WHERE time_ns <= %" PRIu64 "\n",path.c_str(),t);
-    tsdb::database db(database);
+    tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::delete_points(m,series,t);
 }
@@ -561,7 +563,7 @@ handle_select_points_limit(tcp::stream& s,
     printf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
            " LIMIT %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
-    tsdb::database db(database);
+    tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
     tsdb::wal_query wq(read_lock,t0,t1);
@@ -585,7 +587,7 @@ handle_select_points_last(tcp::stream& s,
     printf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
            " LAST %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,N);
-    tsdb::database db(database);
+    tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
     tsdb::wal_query wq(read_lock,t0,t1);
@@ -615,7 +617,7 @@ handle_sum_points(tcp::stream& s,
     printf("SUM %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
            " WINDOW_NS %" PRIu64 "\n",
            field_list.c_str(),path.c_str(),t0,t1,window_ns);
-    tsdb::database db(database);
+    tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
     tsdb::sum_op op(read_lock,path,str::split(field_list,","),t0,t1,window_ns);
@@ -859,7 +861,7 @@ auth_request_handler(std::unique_ptr<tcp::stream> s)
         password = tokens[1].to_string();
         printf("Authenticating user %s from %s...\n",
                username.c_str(),s->remote_addr_string().c_str());
-        if (!tsdb::verify_user(username,password))
+        if (!root->verify_user(username,password))
             throw futil::errno_exception(EPERM);
         printf("Authentication from %s for user %s succeeded.\n",
                s->remote_addr_string().c_str(),
@@ -938,12 +940,17 @@ ssl_workloop(const char* cert_file, const char* key_file)
 int
 main(int argc, const char* argv[])
 {
+    const char* root_path;
     if (argc == 2 || argc == 4)
-        futil::chdir(argv[1]);
+        root_path = argv[1];
+    else
+        root_path = ".";
 
     printf("%s\n",GIT_VERSION);
 
     signal(SIGPIPE,SIG_IGN);
+
+    root = new tsdb::root(root_path);
 
     if (argc == 1 || argc == 2)
         socket4_workloop();

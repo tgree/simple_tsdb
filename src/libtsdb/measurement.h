@@ -55,6 +55,7 @@ namespace tsdb
 
     struct measurement
     {
+        const database&                 db;
         futil::directory                dir;
         futil::file                     schema_fd;
         futil::mapping                  schema_mapping;
