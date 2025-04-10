@@ -254,16 +254,13 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     // Write points.  The variable pos is the absolute position in the
     // timestamp file; this should be used to calculate the index for other
     // field sizes.
-#if ENABLE_COMPRESSION
     field_vector<futil::path> unlink_field_paths;
-#endif
     while (wci.npoints)
     {
         // If we have overflowed the timestamp file, or we have an empty index,
         // we need to grow into a new timestamp file.
         if (!avail_points)
         {
-#if ENABLE_COMPRESSION
             // If we have open file descriptors, then we are done with them and
             // they are now full.  Compress them.
             if (!field_fds.empty())
@@ -298,7 +295,6 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                     printf("Done.\n");
                 }
             }
-#endif
 
             // Figure out what to name the new files.
             std::string time_data_str = std::to_string(wci.timestamps[0]);
@@ -413,7 +409,6 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
         write_lock.time_last_fd.lseek(0,SEEK_SET);
         write_lock.time_last_fd.write_all(&write_lock.time_last,
                                               sizeof(uint64_t));
-#if ENABLE_COMPRESSION
         if (!unlink_field_paths.empty())
         {
             write_lock.time_last_fd.fsync_and_barrier();
@@ -423,7 +418,6 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
 
             unlink_field_paths.clear();
         }
-#endif
 
         // Advance to the next set of points.
         wci.bitmap_offset += write_points;
