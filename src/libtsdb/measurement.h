@@ -45,10 +45,13 @@ namespace tsdb
         [tsdb::FT_I64]  = {tsdb::FT_I64,8,"i64"},
     };
 
+#define SCHEMA_VERSION  1
     struct schema_entry
     {
         field_type  type;
-        uint8_t     rsrv[3];
+        uint8_t     version;
+        uint16_t    index : 6,
+                    offset : 10;
         char        name[124];
     };
     KASSERT(sizeof(schema_entry) == 128);
