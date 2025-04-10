@@ -459,16 +459,21 @@ namespace futil
             }
         }
 
-        directory(const directory& d, const path& p)
+        directory(int at_fd, const path& p)
         {
             for (;;)
             {
-                fd = ::openat(d.fd,p,O_DIRECTORY | O_RDONLY);
+                fd = ::openat(at_fd,p,O_DIRECTORY | O_RDONLY);
                 if (fd != -1)
                     return;
                 if (errno != EINTR)
                     throw errno_exception(errno);
             }
+        };
+
+        directory(const directory& d, const path& p):
+            directory(d.fd,p)
+        {
         }
     };
 
