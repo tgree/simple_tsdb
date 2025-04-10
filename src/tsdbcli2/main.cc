@@ -235,6 +235,72 @@ handle_delete(
     tsdb::delete_points(m,ss.series,tr.t);
 }
 
+static void
+handle_update_schema()
+{
+    for (const auto& db_name : root->list_databases())
+    {
+        tsdb::database db(*root,db_name);
+        for (const auto& m_name : db.list_measurements())
+        {
+            futil::directory m_dir(db.dir,m_name);
+            futil::fchmod(m_dir,"schema",0660);
+            try
+            {
+                futil::file schema_fd(m_dir,"schema",O_RDWR);
+                auto mm = schema_fd.mmap(0,schema_fd.lseek(0,SEEK_END),
+                                         PROT_READ | PROT_WRITE,MAP_SHARED,0);
+                kassert(mm.len > 0);
+                kassert(mm.len % sizeof(tsdb::schema_entry) == 0);
+                const size_t nentries = mm.len / sizeof(tsdb::schema_entry);
+
+                auto* entries = (tsdb::schema_entry*)mm.addr;
+                if (entries[0].version != SCHEMA_VERSION)
+                {
+                    printf("Updating %s/%s...\n",
+                           db_name.c_str(),m_name.c_str());
+                    size_t offset = 0;
+                    for (size_t i=0; i<nentries; ++i)
+                    {
+                        entries[i].version = SCHEMA_VERSION;
+                        entries[i].index = i;
+                        entries[i].offset = offset;
+                        offset += tsdb::ftinfos[entries[i].type].nbytes;
+                    }
+                    mm.msync();
+                }
+
+                printf("Validating %s/%s...\n",db_name.c_str(),m_name.c_str());
+                size_t offset = 0;
+                for (size_t i=0; i<nentries; ++i)
+                {
+                    if (entries[i].version != SCHEMA_VERSION)
+                    {
+                        printf("Entry [%zu] has version %u.\n",
+                               i,entries[i].version);
+                    }
+                    if (entries[i].index != i)
+                    {
+                        printf("Entry [%zu] has index %u.\n",
+                               i,entries[i].index);
+                    }
+                    if (entries[i].offset != offset)
+                    {
+                        printf("Entry [%zu] as offset %u (expected %zu).\n",
+                               i,entries[i].offset,offset);
+                    }
+                    offset += tsdb::ftinfos[entries[i].type].nbytes;
+                }
+            }
+            catch (...)
+            {
+                futil::fchmod(m_dir,"schema",0440);
+                throw;
+            }
+        }
+    }
+}
+
 struct command_handler
 {
     const std::string keyword;
@@ -256,6 +322,7 @@ static const command_handler command_handlers[] =
                XLATE(handle_select_3)}},
     {"MEAN",{XLATE(handle_mean)}},
     {"DELETE",{XLATE(handle_delete)}},
+    {"UPDATE SCHEMA",{XLATE(handle_update_schema)}},
 };
 
 static void
