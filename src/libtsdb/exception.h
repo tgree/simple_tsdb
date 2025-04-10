@@ -36,6 +36,7 @@ namespace tsdb
         NO_SUCH_USER                    = -22,
         NOT_A_TSDB_ROOT                 = -23,
         DUPLICATE_FIELD                 = -24,
+        TOO_MANY_FIELDS                 = -25,
     };
 
     struct exception : public std::exception
@@ -379,7 +380,7 @@ namespace tsdb
 
     struct duplicate_field_exception : public exception
     {
-        // Duplicate field requested in a select operation.
+        // Duplicate field requested in a select or create operation.
         virtual const char* what() const noexcept override
         {
             return "Duplicate field requested.";
@@ -387,6 +388,20 @@ namespace tsdb
 
         duplicate_field_exception():
             exception(DUPLICATE_FIELD)
+        {
+        }
+    };
+
+    struct too_many_fields_exception : public exception
+    {
+        // Too many fields when creating a measurement.
+        virtual const char* what() const noexcept override
+        {
+            return "Too many fields.";
+        }
+
+        too_many_fields_exception():
+            exception(TOO_MANY_FIELDS)
         {
         }
     };

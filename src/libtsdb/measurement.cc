@@ -42,6 +42,8 @@ tsdb::create_measurement(const database& db, const futil::path& name,
 {
     if (name.empty() || name[0] == '/' || name.count_components() > 1)
         throw tsdb::invalid_measurement_exception();
+    if (fields.size() > MAX_FIELDS)
+        throw tsdb::too_many_fields_exception();
 
     // Validate the schema.
     size_t offset = 0;
@@ -54,6 +56,11 @@ tsdb::create_measurement(const database& db, const futil::path& name,
         kassert(se.name[NELEMS(se.name)-1] == '\0');
         kassert(se.type && se.type <= LAST_FIELD_TYPE);
         offset += ftinfos[se.type].nbytes;
+        for (size_t j=i+1; j<fields.size(); ++j)
+        {
+            if (!strcmp(se.name,fields[j].name))
+                throw tsdb::duplicate_field_exception();
+        }
     }
 
     for (;;)
