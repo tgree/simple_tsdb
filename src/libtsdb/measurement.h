@@ -87,26 +87,37 @@ namespace tsdb
             return len;
         }
 
-        fixed_vector<size_t> gen_indices(
+        fixed_vector<const schema_entry*> gen_entries(
             const std::vector<std::string>& field_names) const
         {
-            fixed_vector<size_t> indices(field_names.size());
-            for (auto& field_name : field_names)
+            // Generate a lookup table for the specified field names.  An empty
+            // list is assumed to mean all fields in their natural order.
+            size_t n = field_names.empty() ? fields.size() : field_names.size();
+            fixed_vector<const schema_entry*> entries(n);
+            if (!field_names.empty())
             {
-                bool found = false;
-                for (size_t i=0; i<fields.size(); ++i)
+                for (auto& field_name : field_names)
                 {
-                    if (field_name == fields[i].name)
+                    bool found = false;
+                    for (auto& f : fields)
                     {
-                        indices.emplace_back(i);
-                        found = true;
-                        break;
+                        if (field_name == f.name)
+                        {
+                            entries.emplace_back(&f);
+                            found = true;
+                            break;
+                        }
                     }
+                    if (!found)
+                        throw no_such_field_exception();
                 }
-                if (!found)
-                    throw no_such_field_exception();
             }
-            return indices;
+            else
+            {
+                for (auto& f : fields)
+                    entries.emplace_back(&f);
+            }
+            return entries;
         }
 
         measurement(const database& db, const futil::path& path);

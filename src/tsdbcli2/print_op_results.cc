@@ -24,7 +24,7 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
             }
 
             const auto* p = op.field_data[j];
-            switch (op.fields[j].type)
+            switch (op.fields[j]->type)
             {
                 case tsdb::FT_BOOL:
                     printf("%20s ",((const uint8_t*)p)[i] ? "true" : "false");
@@ -61,47 +61,50 @@ print_op_points(const tsdb::select_op& op, size_t index, size_t n)
 
 static void
 print_wq_entries(const tsdb::wal_query& wq,
-    const fixed_vector<size_t>& field_indices, size_t index, size_t n)
+    const fixed_vector<const tsdb::schema_entry*>& fields, size_t index,
+    size_t n)
 {
     for (size_t i=index; i<index + n; ++i)
     {
         printf("%20" PRIu64 " ",wq[i].time_ns);
-        for (size_t j : field_indices)
+        for (auto* f : fields)
         {
-            if (wq[i].is_field_null(j))
+            if (wq[i].is_field_null(f->index))
             {
                 printf("%20s ","null");
                 continue;
             }
 
-            switch (wq.read_lock.m.fields[j].type)
+            switch (wq.read_lock.m.fields[f->index].type)
             {
                 case tsdb::FT_BOOL:
-                    printf("%20s ",wq[i].get_field<bool>(j) ? "true" : "false");
+                    printf("%20s ",
+                           wq[i].get_field<bool>(f->index) ? "true" : "false");
                 break;
 
                 case tsdb::FT_U32:
-                    printf("%20u ",wq[i].get_field<uint32_t>(j));
+                    printf("%20u ",wq[i].get_field<uint32_t>(f->index));
                 break;
 
                 case tsdb::FT_U64:
-                    printf("%20" PRIu64 " ",wq[i].get_field<uint64_t>(j));
+                    printf("%20" PRIu64 " ",
+                           wq[i].get_field<uint64_t>(f->index));
                 break;
 
                 case tsdb::FT_F32:
-                    printf("%20f ",wq[i].get_field<float>(j));
+                    printf("%20f ",wq[i].get_field<float>(f->index));
                 break;
 
                 case tsdb::FT_F64:
-                    printf("%20f ",wq[i].get_field<double>(j));
+                    printf("%20f ",wq[i].get_field<double>(f->index));
                 break;
 
                 case tsdb::FT_I32:
-                    printf("%20d ",wq[i].get_field<int32_t>(j));
+                    printf("%20d ",wq[i].get_field<int32_t>(f->index));
                 break;
 
                 case tsdb::FT_I64:
-                    printf("%20" PRId64 " ",wq[i].get_field<int64_t>(j));
+                    printf("%20" PRId64 " ",wq[i].get_field<int64_t>(f->index));
                 break;
             }
         }
@@ -143,16 +146,15 @@ print_op_results(const fields_list& fs, tsdb::select_op& op,
             printf("---------WAL-------- ");
         printf("\n");
 
-        auto field_indices = wq.read_lock.m.gen_indices(fs.fields);
         size_t wal_nentries = MIN(N,wq.nentries);
         if (wal_nentries <= MAX_PRINT_RESULTS)
-            print_wq_entries(wq,field_indices,0,wal_nentries);
+            print_wq_entries(wq,op.fields,0,wal_nentries);
         else
         {
-            print_wq_entries(wq,field_indices,0,MAX_PRINT_RESULTS/2);
+            print_wq_entries(wq,op.fields,0,MAX_PRINT_RESULTS/2);
             printf("... [%zu points omitted] ...\n",
                    wal_nentries-MAX_PRINT_RESULTS);
-            print_wq_entries(wq,field_indices,wal_nentries-MAX_PRINT_RESULTS/2,
+            print_wq_entries(wq,op.fields,wal_nentries-MAX_PRINT_RESULTS/2,
                              MAX_PRINT_RESULTS/2);
         }
     }
