@@ -22,7 +22,7 @@ namespace tsdb
         size_t                          npoints;
         size_t                          bitmap_offset;
         uint64_t*                       timestamps;
-        std::vector<write_field_info>   fields;
+        field_vector<write_field_info>  fields;
 
         constexpr uint64_t get_bitmap_bit(size_t field_index, size_t i) const
         {

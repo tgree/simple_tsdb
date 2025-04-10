@@ -17,7 +17,6 @@ tsdb::write_chunk_index::write_chunk_index(const measurement& m,
     // data, and then validate the data length.
     timestamps = (uint64_t*)data;
     auto* data_ptr = (char*)data + npoints*8;
-    fields.reserve(m.fields.size());
     for (auto& f : m.fields)
     {
         const auto* fti     = &ftinfos[f.type];
