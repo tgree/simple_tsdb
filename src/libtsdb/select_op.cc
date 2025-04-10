@@ -24,13 +24,10 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         timestamp_mapping(NULL,CHUNK_FILE_SIZE,PROT_NONE,
                           MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
         timestamp_buf(CHUNK_FILE_SIZE),
-        field_mappings(fields.capacity()),
-        bitmap_mappings(fields.capacity()),
         npoints(0),
         bitmap_offset(0),
         timestamps_begin(NULL),
-        timestamps_end(NULL),
-        field_data(fields.capacity())
+        timestamps_end(NULL)
 {
     for (size_t i=0; i<fields.size(); ++i)
     {

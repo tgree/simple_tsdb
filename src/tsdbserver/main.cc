@@ -3,6 +3,7 @@
 #include <version.h>
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
+#include <hdr/fixed_vector.h>
 #include <strutil/strutil.h>
 #include <futil/ipv4.h>
 #include <futil/ssl.h>
@@ -624,8 +625,8 @@ handle_sum_points(tcp::stream& s,
 
     const size_t nfields = op.op.fields.size();
     fixed_vector<uint64_t> timestamps(1024);
-    fixed_vector<std::vector<double>> field_sums(nfields);
-    fixed_vector<std::vector<uint64_t>> field_npoints(nfields);
+    tsdb::field_vector<std::vector<double>> field_sums;
+    tsdb::field_vector<std::vector<uint64_t>> field_npoints;
     for (size_t i=0; i<nfields; ++i)
     {
         field_sums.emplace_back(std::vector<double>());

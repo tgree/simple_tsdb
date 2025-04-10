@@ -85,10 +85,10 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     futil::directory fields_dir(write_lock.series_dir,"fields");
     futil::directory bitmaps_dir(write_lock.series_dir,"bitmaps");
     futil::file tail_fd;
-    fixed_vector<futil::path> field_file_paths(write_lock.m.fields.size());
-    fixed_vector<futil::file> field_fds(write_lock.m.fields.size());
-    fixed_vector<futil::path> bitmap_file_paths(write_lock.m.fields.size());
-    fixed_vector<futil::file> bitmap_fds(write_lock.m.fields.size());
+    field_vector<futil::path> field_file_paths;
+    field_vector<futil::file> field_fds;
+    field_vector<futil::path> bitmap_file_paths;
+    field_vector<futil::file> bitmap_fds;
     off_t index_len = index_fd.lseek(0,SEEK_END);
     size_t nindices = index_len / sizeof(index_entry);
     size_t avail_points = 0;
@@ -256,7 +256,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     // timestamp file; this should be used to calculate the index for other
     // field sizes.
 #if ENABLE_COMPRESSION
-    fixed_vector<futil::path> unlink_field_paths(write_lock.m.fields.size());
+    field_vector<futil::path> unlink_field_paths;
 #endif
     while (wci.npoints)
     {

@@ -4,7 +4,6 @@
 #define __SRC_LIBTSDB_SELECT_OP_H
 
 #include "series.h"
-#include <hdr/fixed_vector.h>
 #include <hdr/auto_buf.h>
 #include <hdr/kmath.h>
 
@@ -29,21 +28,21 @@ namespace tsdb
         uint64_t                            t0;
         uint64_t                            t1;
         uint64_t                            rem_limit;
-        fixed_vector<const schema_entry*>   fields;
+        field_vector<const schema_entry*>   fields;
 
         // Mapping objects to track mmap()-ed files.
         const index_entry*              index_slot;
         futil::mapping                  timestamp_mapping;
         auto_buf                        timestamp_buf;
-        fixed_vector<futil::mapping>    field_mappings;
-        fixed_vector<futil::mapping>    bitmap_mappings;
+        field_vector<futil::mapping>    field_mappings;
+        field_vector<futil::mapping>    bitmap_mappings;
 
         // State of the current set of results.
         size_t                          npoints;
         size_t                          bitmap_offset;
         const uint64_t*                 timestamps_begin;
         const uint64_t*                 timestamps_end;
-        fixed_vector<const void*>       field_data;
+        field_vector<const void*>       field_data;
 
         void next();
 
