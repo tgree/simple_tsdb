@@ -34,6 +34,7 @@ namespace tsdb
         MEASUREMENT_EXISTS              = -20,
         USER_EXISTS                     = -21,
         NO_SUCH_USER                    = -22,
+        NOT_A_TSDB_ROOT                 = -23,
     };
 
     struct exception : public std::exception
@@ -357,6 +358,20 @@ namespace tsdb
 
         no_such_user_exception():
             exception(NO_SUCH_USER)
+        {
+        }
+    };
+
+    struct not_a_tsdb_root : public exception
+    {
+        // Failed to open the expected files at the specified root location.
+        virtual const char* what() const noexcept override
+        {
+            return "Not a TSDB root directory.";
+        }
+
+        not_a_tsdb_root():
+            exception(NOT_A_TSDB_ROOT)
         {
         }
     };

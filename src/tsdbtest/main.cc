@@ -102,6 +102,8 @@ std::mt19937_64 mt(std::mt19937_64::default_seed + 1);
 std::vector<series_state> states;
 std::vector<std::string> field_names;
 
+static tsdb::root* root;
+
 static void
 push_bitmap(std::vector<uint64_t>& data, const bool* is_null, size_t npoints)
 {
@@ -158,7 +160,7 @@ static void
 write_series(series_state& ss, size_t offset, size_t npoints)
 {
     // Acquire the write lock.
-    tsdb::database db(ss.database);
+    tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
     auto write_lock = tsdb::open_or_create_and_lock_series(m,ss.series);
 
@@ -365,7 +367,7 @@ select_test()
     size_t npoints = lp - fp;
 
     // Perform the query.
-    tsdb::database db(ss.database);
+    tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
     tsdb::series_read_lock read_lock(m,ss.series);
     tsdb::wal_query wq(read_lock,t0,t1);
@@ -455,7 +457,7 @@ rotate_test()
         return;
 
     // Delete from the front of the database.
-    tsdb::database db(ss.database);
+    tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
     printf("DELETE FROM %s WHERE time_ns < %" PRIu64 "\n",
            ss.dms_path.c_str(),t);
@@ -502,17 +504,17 @@ main(int argc, const char* argv[])
     char tmp[] = "/tmp/tsdbtest.XXXXXX";
 #endif
     futil::mkdtemp(tmp);
-    futil::chdir(tmp);
 
     // Initialize the database directory.
     printf("Initializing test databases in %s...\n",tmp);
-    tsdb::init();
+    tsdb::create_root(tmp);
+    root = new tsdb::root(tmp);
 
     // Create some test databases.
     for (const auto* db : databases)
     {
-        tsdb::create_database(db);
-        tsdb::database _db(db);
+        root->create_database(db);
+        tsdb::database _db(*root,db);
         for (const auto* m : measurements)
         {
             tsdb::create_measurement(_db,m,fields);

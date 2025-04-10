@@ -1,8 +1,9 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
 #include "delete.h"
-#include "measurement.h"
 #include "series.h"
+#include "measurement.h"
+#include "database.h"
 #include <futil/xact.h>
 #include <algorithm>
 
@@ -130,12 +131,11 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     // file being deleted might no longer exist.
 
     // Shift the index file appropriately.
-    futil::directory tmp_dir("tmp");
-    futil::xact_mktemp tmp_index_fd(tmp_dir,0660);
+    futil::xact_mktemp tmp_index_fd(m.db.root.tmp_dir,0660);
     tmp_index_fd.write_all(index_slot,
                            (index_end - index_slot)*sizeof(index_entry));
     tmp_index_fd.fsync_and_barrier();
-    futil::rename(tmp_dir,tmp_index_fd.name,series_dir,"index");
+    futil::rename(m.db.root.tmp_dir,tmp_index_fd.name,series_dir,"index");
     tmp_index_fd.commit();
     series_dir.fsync_and_flush();
     printf("Deleted %zu slots from the start of the index file.\n",
