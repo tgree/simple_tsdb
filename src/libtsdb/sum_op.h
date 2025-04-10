@@ -28,9 +28,10 @@ namespace tsdb
 
         // Latest result.
         uint64_t                range_t0;
-        std::vector<double>     sums;
-        std::vector<uint64_t>   npoints;
+        field_vector<double>    sums;
+        field_vector<uint64_t>  npoints;
 
+        void zero();
         bool next();
 
         sum_op(const series_read_lock& read_lock,
