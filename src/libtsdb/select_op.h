@@ -25,24 +25,28 @@ namespace tsdb
         const index_entry*      index_end;
 
         // Query parameters.
-        uint64_t                            t0;
-        uint64_t                            t1;
-        uint64_t                            rem_limit;
-        field_vector<const schema_entry*>   fields;
+        uint64_t                t0;
+        uint64_t                t1;
+        uint64_t                rem_limit;
 
         // Mapping objects to track mmap()-ed files.
-        const index_entry*              index_slot;
-        futil::mapping                  timestamp_mapping;
-        auto_buf                        timestamp_buf;
-        field_vector<futil::mapping>    field_mappings;
-        field_vector<futil::mapping>    bitmap_mappings;
+        const index_entry*      index_slot;
+        futil::mapping          timestamp_mapping;
+        auto_buf                timestamp_buf;
 
         // State of the current set of results.
-        size_t                          npoints;
-        size_t                          bitmap_offset;
-        const uint64_t*                 timestamps_begin;
-        const uint64_t*                 timestamps_end;
-        field_vector<const void*>       field_data;
+        size_t                  npoints;
+        size_t                  bitmap_offset;
+        const uint64_t*         timestamps_begin;
+        const uint64_t*         timestamps_end;
+
+        // Fields we are querying.
+        const field_vector<const schema_entry*> fields;
+
+        // Query mapping results.
+        field_vector<futil::mapping>            field_mappings;
+        field_vector<futil::mapping>            bitmap_mappings;
+        field_vector<const void*>               field_data;
 
         void next();
 

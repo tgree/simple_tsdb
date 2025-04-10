@@ -19,7 +19,6 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         t0(MAX(_t0,read_lock.time_first)),
         t1(MIN(_t1,time_last)),
         rem_limit(limit),
-        fields(read_lock.m.gen_entries(field_names)),
         index_slot(NULL),
         timestamp_mapping(NULL,CHUNK_FILE_SIZE,PROT_NONE,
                           MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
@@ -27,7 +26,8 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         npoints(0),
         bitmap_offset(0),
         timestamps_begin(NULL),
-        timestamps_end(NULL)
+        timestamps_end(NULL),
+        fields(read_lock.m.gen_entries(field_names))
 {
     for (size_t i=0; i<fields.size(); ++i)
     {
