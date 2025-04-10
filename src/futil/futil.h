@@ -820,6 +820,17 @@ namespace futil
         }
     }
 
+    inline void fchmod(const directory& d, const path& p, mode_t mode)
+    {
+        for (;;)
+        {
+            if (!::fchmodat(d.fd,p,mode,0))
+                return;
+            if (errno != EINTR)
+                throw errno_exception(errno);
+        }
+    }
+
     inline int openat(const directory& d, const path& p, int oflag)
     {
         if (oflag & O_CREAT)
