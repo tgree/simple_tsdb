@@ -35,6 +35,7 @@ namespace tsdb
         USER_EXISTS                     = -21,
         NO_SUCH_USER                    = -22,
         NOT_A_TSDB_ROOT                 = -23,
+        DUPLICATE_FIELD                 = -24,
     };
 
     struct exception : public std::exception
@@ -372,6 +373,20 @@ namespace tsdb
 
         not_a_tsdb_root():
             exception(NOT_A_TSDB_ROOT)
+        {
+        }
+    };
+
+    struct duplicate_field_exception : public exception
+    {
+        // Duplicate field requested in a select operation.
+        virtual const char* what() const noexcept override
+        {
+            return "Duplicate field requested.";
+        }
+
+        duplicate_field_exception():
+            exception(DUPLICATE_FIELD)
         {
         }
     };
