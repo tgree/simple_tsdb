@@ -3,17 +3,18 @@
 #ifndef __SRC_LIBTSDB_CONSTANTS_H
 #define __SRC_LIBTSDB_CONSTANTS_H
 
+#include <hdr/kmath.h>
+
 // Constants defining how the database is stored in disk.
-#define CHUNK_FILE_SIZE     (32*1024*1024)
-#define CHUNK_NPOINTS       (CHUNK_FILE_SIZE/8)
-#define BITMAP_FILE_SIZE    (CHUNK_NPOINTS/8)
+#define DEFAULT_CHUNK_SIZE_M        2
+KASSERT(is_pow2(DEFAULT_CHUNK_SIZE_M));
+
+// Maximum number of entries in the WAL.
+#define DEFAULT_WAL_MAX_ENTRIES     128
 
 // Maximum number of fields in a measurement.  This is partly defined by things
 // like the size of the index field in a schema_entry, so increasing this past
 // 64 here is insufficient; reducing it below 64 should be fine.
-#define MAX_FIELDS          64
-
-// Maximum number of entries in the WAL.
-#define WAL_MAX_ENTRIES     128
+#define MAX_FIELDS                  64
 
 #endif /* __SRC_LIBTSDB_CONSTANTS_H */

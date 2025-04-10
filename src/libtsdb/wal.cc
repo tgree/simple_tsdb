@@ -3,7 +3,7 @@
 #include "wal.h"
 #include "write.h"
 #include "select_op.h"
-#include "constants.h"
+#include "database.h"
 #include <hdr/auto_buf.h>
 #include <hdr/kmath.h>
 
@@ -257,14 +257,15 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
     }
 
     // See if we need to commit.
-    if (wal_nentries + wci.npoints > WAL_MAX_ENTRIES)
+    const size_t wal_max_entries = write_lock.m.db.root.config.wal_max_entries;
+    if (wal_nentries + wci.npoints > wal_max_entries)
     {
         tsdb::commit_wal(write_lock);
         wal_nentries = 0;
 
         // The WAL is now empty.  If the client is giving us a large chunk of
         // points then that should also go directly into the main data store.
-        if (wci.npoints > WAL_MAX_ENTRIES)
+        if (wci.npoints > wal_max_entries)
         {
             tsdb::write_series(write_lock,wci);
             return;

@@ -507,7 +507,7 @@ main(int argc, const char* argv[])
 
     // Initialize the database directory.
     printf("Initializing test databases in %s...\n",tmp);
-    tsdb::create_root(tmp);
+    tsdb::create_root(tmp,tsdb::default_configuration);
     root = new tsdb::root(tmp);
 
     // Create some test databases.

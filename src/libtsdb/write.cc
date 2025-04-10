@@ -1,7 +1,7 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
 #include "write.h"
-#include "constants.h"
+#include "database.h"
 #include <hdr/auto_buf.h>
 #include <algorithm>
 
@@ -91,6 +91,8 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     off_t index_len = index_fd.lseek(0,SEEK_END);
     size_t nindices = index_len / sizeof(index_entry);
     size_t avail_points = 0;
+    const size_t chunk_size = write_lock.m.db.root.config.chunk_size;
+    const size_t chunk_npoints = chunk_size/8;
     index_entry ie;
     off_t pos;
     for (size_t i=0; i<nindices; ++i)
@@ -116,7 +118,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
 
         // Validate the file size.
         pos = tail_fd.lseek(0,SEEK_END);
-        if (pos > CHUNK_FILE_SIZE)
+        if (pos > chunk_size)
             throw tsdb::tail_file_too_big_exception(pos);
         if (pos % sizeof(uint64_t))
             throw tsdb::tail_file_invalid_size_exception(pos);
@@ -149,7 +151,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                     bitmap_fds.emplace_back(bitmaps_dir,bitmap_file_paths[j],
                                             O_RDWR);
                 }
-                avail_points = (CHUNK_FILE_SIZE - pos) / sizeof(uint64_t);
+                avail_points = (chunk_size - pos) / sizeof(uint64_t);
                 break;
             }
 
@@ -224,7 +226,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                     bitmap_fds.emplace_back(bitmaps_dir,bitmap_file_paths[j],
                                             O_RDWR);
                 }
-                avail_points = (CHUNK_FILE_SIZE - pos) / sizeof(uint64_t);
+                avail_points = (chunk_size - pos) / sizeof(uint64_t);
                 break;
             }
 
@@ -265,11 +267,11 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             // they are now full.  Compress them.
             if (!field_fds.empty())
             {
-                auto_buf file_buf(CHUNK_FILE_SIZE);
+                auto_buf file_buf(chunk_size);
                 for (size_t i=0; i<write_lock.m.fields.size(); ++i)
                 {
                     const auto* fti = &ftinfos[write_lock.m.fields[i].type];
-                    size_t chunk_len = CHUNK_NPOINTS*fti->nbytes;
+                    size_t chunk_len = chunk_npoints*fti->nbytes;
 
                     // Read the source file.
                     std::string src_name(ie.timestamp_file);
@@ -317,7 +319,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                                         futil::path(write_lock.m.fields[i].name,
                                                     time_data_str),
                                         O_CREAT | O_TRUNC | O_RDWR,0660);
-                bitmap_fds[i].truncate(CHUNK_NPOINTS/8);
+                bitmap_fds[i].truncate(chunk_npoints/8);
                 bitmap_fds[i].fsync();
             }
             fields_dir.fsync();
@@ -330,7 +332,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             tail_fd.open(time_ns_dir,time_data_str,O_CREAT | O_TRUNC | O_WRONLY,
                          0660);
             time_ns_dir.fsync();
-            avail_points = CHUNK_NPOINTS;
+            avail_points = chunk_npoints;
             pos = 0;
 
             // TODO: If we crash here, there is now a dangling, empty timestamp
@@ -385,7 +387,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
         // Update all the bitmap files.
         for (size_t i=0; i<write_lock.m.fields.size(); ++i)
         {
-            auto m = bitmap_fds[i].mmap(0,CHUNK_NPOINTS/8,
+            auto m = bitmap_fds[i].mmap(0,chunk_npoints/8,
                                         PROT_READ | PROT_WRITE,MAP_SHARED,0);
             auto* bitmap = (uint64_t*)m.addr;
             size_t bitmap_index = timestamp_index;
@@ -429,7 +431,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
         {
             write_lock.time_last_fd.fsync();
             kassert(avail_points == 0);
-            kassert(pos == CHUNK_NPOINTS*sizeof(uint64_t));
+            kassert(pos == chunk_npoints*sizeof(uint64_t));
         }
     }
 
