@@ -1,7 +1,7 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
 #include "select_op.h"
-#include "constants.h"
+#include "database.h"
 #include <inttypes.h>
 #include <algorithm>
 
@@ -20,9 +20,9 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         t1(MIN(_t1,time_last)),
         rem_limit(limit),
         index_slot(NULL),
-        timestamp_mapping(NULL,CHUNK_FILE_SIZE,PROT_NONE,
+        timestamp_mapping(NULL,read_lock.m.db.root.config.chunk_size,PROT_NONE,
                           MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
-        timestamp_buf(CHUNK_FILE_SIZE),
+        timestamp_buf(read_lock.m.db.root.config.chunk_size),
         npoints(0),
         bitmap_offset(0),
         timestamps_begin(NULL),
@@ -131,6 +131,7 @@ tsdb::select_op::map_data()
 
         // No uncompressed file exists.  Try with a compressed file.  First,
         // make an anonymous backing region to hold the uncompressed data.
+        // TODO: Only unzip the part of the file we care about.
         field_mappings[i].map(NULL,len,PROT_READ | PROT_WRITE,
                               MAP_ANONYMOUS | MAP_PRIVATE,-1,0);
         field_data[i] = (const char*)field_mappings[i].addr +
@@ -156,8 +157,8 @@ tsdb::select_op::map_data()
         const auto& f = fields[i];
         futil::path bitmap_path(f->name,index_slot->timestamp_file);
         futil::file bitmap_fd(bitmaps_dir,bitmap_path,O_RDONLY);
-        bitmap_mappings[i].map(NULL,BITMAP_FILE_SIZE,PROT_READ,MAP_SHARED,
-                               bitmap_fd.fd,0);
+        bitmap_mappings[i].map(NULL,read_lock.m.db.root.config.chunk_size/64,
+                               PROT_READ,MAP_SHARED,bitmap_fd.fd,0);
     }
 }
 
@@ -275,12 +276,13 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     size_t t0_avail_points;
     size_t t1_avail_points;
     size_t avail_points;
+    const size_t chunk_npoints = read_lock.m.db.root.config.chunk_size/8;
     if (t0_index_slot != t1_index_slot)
     {
         t0_avail_points = t0_mmap.len/8 - (t0_lower - t0_data_begin);
         t1_avail_points = t1_upper - t1_data_begin;
         avail_points = t0_avail_points + t1_avail_points +
-            CHUNK_NPOINTS*n_middle_slots;
+            chunk_npoints*n_middle_slots;
     }
     else
     {
@@ -303,12 +305,12 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
             if (++t0_index_slot == t1_index_slot)
                 t0_avail_points = t1_avail_points;
             else
-                t0_avail_points = CHUNK_NPOINTS;
+                t0_avail_points = chunk_npoints;
         }
 
         // Extract the timestamp from the right index.
         size_t t1_index = t1_upper - t1_data_begin;
-        t0_index = (t1_index - rem_limit) % CHUNK_NPOINTS;
+        t0_index = (t1_index - rem_limit) & (chunk_npoints - 1);
         t0_file.open(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
         t0_file.lseek(t0_index*8,SEEK_SET);
         t0 = t0_file.read_u64();
@@ -333,7 +335,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     if (t0_index_slot == t1_index_slot)
         timestamps_end = timestamps_begin + t1_index;
     else
-        timestamps_end = timestamps_begin + CHUNK_NPOINTS;
+        timestamps_end = timestamps_begin + chunk_npoints;
     timestamps_begin += t0_index;
     npoints = timestamps_end - timestamps_begin;
     npoints = MIN(npoints,rem_limit);

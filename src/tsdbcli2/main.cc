@@ -355,13 +355,26 @@ handle_command(
 int
 main(int argc, const char* argv[])
 {
+    printf("%s\n",GIT_VERSION);
+
     bool init_root = false;
+    size_t chunk_size = 0;
 
     std::vector<const char*> unused_args;
     for (size_t i=1; i<argc; ++i)
     {
+        size_t rem = argc - i - 1;
         if (!strcmp(argv[i],"--init-root"))
+        {
+            if (!rem)
+            {
+                printf("Expected chunk size argument to --init-root.\n");
+                return -1;
+            }
             init_root = true;
+            chunk_size = str::decode_number_units_pow2(argv[i+1]);
+            ++i;
+        }
         else
             unused_args.push_back(argv[i]);
     }
@@ -376,6 +389,11 @@ main(int argc, const char* argv[])
     try
     {
         root = new tsdb::root(root_path);
+        if (init_root)
+        {
+            printf("TSDB root already exists but --init-root supplied.\n");
+            return -1;
+        }
     }
     catch (const tsdb::not_a_tsdb_root& e)
     {
@@ -385,11 +403,18 @@ main(int argc, const char* argv[])
             return -1;
         }
     }
+    catch (const std::exception& e)
+    {
+        printf("Failed to open TSDB root: %s\n",e.what());
+        return -1;
+    }
     if (!root)
     {
         try
         {
-            tsdb::create_root(root_path);
+            auto config = tsdb::default_configuration;
+            config.chunk_size = chunk_size;
+            tsdb::create_root(root_path,config);
         }
         catch (const std::exception& e)
         {
@@ -408,11 +433,13 @@ main(int argc, const char* argv[])
         }
     }
 
+    printf("Chunk size: %zu bytes\n",root->config.chunk_size);
+    printf("  WAL size: %zu points\n",root->config.wal_max_entries);
+
     char* home_dir = getenv("HOME");
     futil::path history_path(home_dir,".tsdbcli_history");
     read_history(history_path);
 
-    printf("%s\n",GIT_VERSION);
     char* p;
     while ((p = readline("tsdbcli2> ")) != NULL)
     {

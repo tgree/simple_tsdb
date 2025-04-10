@@ -37,6 +37,8 @@ namespace tsdb
         NOT_A_TSDB_ROOT                 = -23,
         DUPLICATE_FIELD                 = -24,
         TOO_MANY_FIELDS                 = -25,
+        INVALID_CONFIG_FILE             = -26,
+        INVALID_CHUNK_SIZE              = -27,
     };
 
     struct exception : public std::exception
@@ -223,6 +225,10 @@ DEFINE_TSDB_EXCEPTION(duplicate_field_exception,DUPLICATE_FIELD,
                       "Duplicate field requested.");
 DEFINE_TSDB_EXCEPTION(too_many_fields_exception,TOO_MANY_FIELDS,
                       "Too many fields.");
+DEFINE_TSDB_EXCEPTION(invalid_config_file_exception,INVALID_CONFIG_FILE,
+                      "Invalid configuration file.");
+DEFINE_TSDB_EXCEPTION(invalid_chunk_size_exception,INVALID_CHUNK_SIZE,
+                      "Invalid chunk size.");
 }
 
 #endif /* __SRC_LIBTSDB_EXCEPTION_H */
