@@ -82,17 +82,6 @@ namespace tsdb
         {
         }
     };
-    
-    struct no_such_database_exception : public exception
-    {
-        // The specified database does not exist.
-        virtual const char* what() const noexcept override
-        {
-            return "No such database.";
-        }
-
-        no_such_database_exception():exception(NO_SUCH_DATABASE) {}
-    };
 
     struct create_measurement_io_error_exception : public errno_exception
     {
@@ -105,95 +94,6 @@ namespace tsdb
             errno_exception(CREATE_MEASUREMENT_IO_ERROR,errnov)
         {
         }
-    };
-
-    struct no_such_measurement_exception : public exception
-    {
-        // The specified measurement does not exist.
-        virtual const char* what() const noexcept override
-        {
-            return "No such measurement.";
-        }
-
-        no_such_measurement_exception():exception(NO_SUCH_MEASUREMENT) {}
-    };
-
-    struct invalid_measurement_exception : public exception
-    {
-        // The specified path is not in <database>/<measurement> form.
-        virtual const char* what() const noexcept override
-        {
-            return "Invalid measurement path.";
-        }
-
-        invalid_measurement_exception():exception(INVALID_MEASUREMENT) {}
-    };
-
-    struct measurement_exists_exception : public exception
-    {
-        // The specified measurement already exists and has a different schema
-        // from the one we tried to create.
-        virtual const char* what() const noexcept override
-        {
-            return "Measurement already exists.";
-        }
-
-        measurement_exists_exception():exception(MEASUREMENT_EXISTS) {}
-    };
-
-    struct invalid_series_exception : public exception
-    {
-        // The specified path is not in <database>/<measurement>/<series> form.
-        virtual const char* what() const noexcept override
-        {
-            return "Invalid series path.";
-        }
-
-        invalid_series_exception():exception(INVALID_SERIES) {}
-    };
-
-    struct no_such_series_exception : public exception
-    {
-        // The specified series does not exist.
-        virtual const char* what() const noexcept override
-        {
-            return "No such series.";
-        }
-
-        no_such_series_exception():exception(NO_SUCH_SERIES) {}
-    };
-
-    struct corrupt_schema_file_exception : public exception
-    {
-        // The schema.txt file being parsed was malformed.
-        virtual const char* what() const noexcept override
-        {
-            return "Invalid schema file.";
-        }
-
-        corrupt_schema_file_exception():exception(CORRUPT_SCHEMA_FILE) {}
-    };
-
-    struct no_such_field_exception : public exception
-    {
-        // The specified field was not part of a measurement's schema.
-        virtual const char* what() const noexcept override
-        {
-            return "No such field.";
-        }
-
-        no_such_field_exception():exception(NO_SUCH_FIELD) {}
-    };
-
-    struct end_of_select_exception : public exception
-    {
-        // Tried to advance() past the end of a select_op result.
-        virtual const char* what() const noexcept override
-        {
-            return "End of select_op.";
-        }
-
-        end_of_select_exception():exception(END_OF_SELECT) {}
     };
 
     struct incorrect_write_chunk_len_exception : public exception
@@ -214,63 +114,6 @@ namespace tsdb
             exception(INCORRECT_WRITE_CHUNK_LEN),
             expected_len(expected_len),
             chunk_len(chunk_len)
-        {
-        }
-    };
-
-    struct out_of_order_timestamps_exception : public exception
-    {
-        // The timestamps passed to write_series() were not in strictly-
-        // increasing order.
-        virtual const char* what() const noexcept override
-        {
-            return "Out of order timestamps.";
-        }
-
-        out_of_order_timestamps_exception():exception(OUT_OF_ORDER_TIMESTAMPS) {}
-    };
-
-    struct timestamp_overwrite_mismatch_exception : public exception
-    {
-        // When overwriting the tail of a series, the new timestamps didn't
-        // match the old timestamps.
-        virtual const char* what() const noexcept override
-        {
-            return "Timestamp overwrite mismatch.";
-        }
-
-        timestamp_overwrite_mismatch_exception():
-            exception(TIMESTAMP_OVERWRITE_MISMATCH)
-        {
-        }
-    };
-
-    struct field_overwrite_mismatch_exception : public exception
-    {
-        // When overwriting the tail of a series, the new field contents didn't
-        // match the old field contents for a given timestamp.
-        virtual const char* what() const noexcept override
-        {
-            return "Field overwrite mistmatch.";
-        }
-
-        field_overwrite_mismatch_exception():
-            exception(FIELD_OVERWRITE_MISMATCH)
-        {
-        }
-    };
-
-    struct bitmap_overwrite_mismatch_exception : public exception
-    {
-        // When overwriting the tail of a series, the new bitmap contents didn't
-        // match the old bitmap contents for a given timestamp.
-        virtual const char* what() const noexcept override
-        {
-            return "Bitmap overwrite mistmatch.";
-        }
-
-        bitmap_overwrite_mismatch_exception():
-            exception(BITMAP_OVERWRITE_MISMATCH)
         {
         }
     };
@@ -335,76 +178,51 @@ namespace tsdb
         {
         }
     };
+    
+#define DEFINE_TSDB_EXCEPTION(ename,eval,estr)\
+    struct ename : public exception \
+    { \
+        virtual const char* what() const noexcept override \
+        { \
+            return estr; \
+        } \
+        ename():exception(eval) {} \
+    }
 
-    struct user_exists_exception : public exception
-    {
-        // tsdb::add_user() was called for a user that already exists.
-        virtual const char* what() const noexcept override
-        {
-            return "User already exists.";
-        }
-
-        user_exists_exception():
-            exception(USER_EXISTS)
-        {
-        }
-    };
-
-    struct no_such_user_exception : public exception
-    {
-        // tsdb::verify_user() was called for a user that doesn't exist.
-        virtual const char* what() const noexcept override
-        {
-            return "No such user.";
-        }
-
-        no_such_user_exception():
-            exception(NO_SUCH_USER)
-        {
-        }
-    };
-
-    struct not_a_tsdb_root : public exception
-    {
-        // Failed to open the expected files at the specified root location.
-        virtual const char* what() const noexcept override
-        {
-            return "Not a TSDB root directory.";
-        }
-
-        not_a_tsdb_root():
-            exception(NOT_A_TSDB_ROOT)
-        {
-        }
-    };
-
-    struct duplicate_field_exception : public exception
-    {
-        // Duplicate field requested in a select or create operation.
-        virtual const char* what() const noexcept override
-        {
-            return "Duplicate field requested.";
-        }
-
-        duplicate_field_exception():
-            exception(DUPLICATE_FIELD)
-        {
-        }
-    };
-
-    struct too_many_fields_exception : public exception
-    {
-        // Too many fields when creating a measurement.
-        virtual const char* what() const noexcept override
-        {
-            return "Too many fields.";
-        }
-
-        too_many_fields_exception():
-            exception(TOO_MANY_FIELDS)
-        {
-        }
-    };
+DEFINE_TSDB_EXCEPTION(no_such_database_exception,NO_SUCH_DATABASE,
+                      "No such database.");
+DEFINE_TSDB_EXCEPTION(no_such_measurement_exception,NO_SUCH_MEASUREMENT,
+                      "No such measurement.");
+DEFINE_TSDB_EXCEPTION(invalid_measurement_exception,INVALID_MEASUREMENT,
+                      "Invalid measurement path.");
+DEFINE_TSDB_EXCEPTION(measurement_exists_exception,MEASUREMENT_EXISTS,
+                      "Measurement already exists.");
+DEFINE_TSDB_EXCEPTION(invalid_series_exception,INVALID_SERIES,
+                      "Invalid series path.");
+DEFINE_TSDB_EXCEPTION(no_such_series_exception,NO_SUCH_SERIES,
+                      "No such series.");
+DEFINE_TSDB_EXCEPTION(corrupt_schema_file_exception,CORRUPT_SCHEMA_FILE,
+                      "Invalid schema file.");
+DEFINE_TSDB_EXCEPTION(no_such_field_exception,NO_SUCH_FIELD,"No such field.");
+DEFINE_TSDB_EXCEPTION(end_of_select_exception,END_OF_SELECT,
+                      "End of select_op.");
+DEFINE_TSDB_EXCEPTION(out_of_order_timestamps_exception,OUT_OF_ORDER_TIMESTAMPS,
+                      "Out of order timestamps.");
+DEFINE_TSDB_EXCEPTION(timestamp_overwrite_mismatch_exception,
+                      TIMESTAMP_OVERWRITE_MISMATCH,
+                      "Timestamp overwrite mismatch.");
+DEFINE_TSDB_EXCEPTION(field_overwrite_mismatch_exception,
+                      FIELD_OVERWRITE_MISMATCH,"Field overwrite mistmatch.");
+DEFINE_TSDB_EXCEPTION(bitmap_overwrite_mismatch_exception,
+                      BITMAP_OVERWRITE_MISMATCH,"Bitmap overwrite mistmatch.");
+DEFINE_TSDB_EXCEPTION(user_exists_exception,USER_EXISTS,"User already exists.");
+DEFINE_TSDB_EXCEPTION(no_such_user_exception,NO_SUCH_USER,"No such user.");
+DEFINE_TSDB_EXCEPTION(not_a_tsdb_root,NOT_A_TSDB_ROOT,
+                      "Not a TSDB root directory.");
+DEFINE_TSDB_EXCEPTION(duplicate_field_exception,DUPLICATE_FIELD,
+                      "Duplicate field requested.");
+DEFINE_TSDB_EXCEPTION(too_many_fields_exception,TOO_MANY_FIELDS,
+                      "Too many fields.");
 }
 
 #endif /* __SRC_LIBTSDB_EXCEPTION_H */
