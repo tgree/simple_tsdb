@@ -1,7 +1,8 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
 #include "count.h"
-#include "tsdb.h"
+#include "wal.h"
+#include "constants.h"
 #include <algorithm>
 
 tsdb::count_result
