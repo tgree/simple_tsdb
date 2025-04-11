@@ -104,6 +104,7 @@ struct chunk_header
 struct connection
 {
     tcp::stream&    s;
+    uint64_t        last_write_ns;
 };
 
 struct command_syntax
@@ -419,8 +420,17 @@ handle_write_points(connection& conn,
     printf("WRITE TO %s\n",path.c_str());
     tsdb::database db(*root,tokens[0].to_string());
     tsdb::measurement m(db,tokens[1].to_string());
-    auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
 
+    uint64_t now = time_ns();
+    const size_t write_throttle_ns = db.root.config.write_throttle_ns;
+    if (now - conn.last_write_ns < write_throttle_ns)
+    {
+        sleep_for_ns(conn.last_write_ns + write_throttle_ns - now);
+        now = time_ns();
+    }
+    conn.last_write_ns = now;
+
+    auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
     for (;;)
     {
         uint32_t tokens[2] = {DT_READY_FOR_CHUNK,10*1024*1024};
@@ -839,7 +849,7 @@ request_handler(std::unique_ptr<tcp::stream> s)
     printf("Handling local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
-    connection conn{*s};
+    connection conn{*s,0};
     process_stream(conn);
 
     printf("Teardown local %s remote %s.\n",
@@ -959,6 +969,9 @@ main(int argc, const char* argv[])
     signal(SIGPIPE,SIG_IGN);
 
     root = new tsdb::root(root_path);
+    printf("    Chunk size: %zu bytes\n",root->config.chunk_size);
+    printf("      WAL size: %zu points\n",root->config.wal_max_entries);
+    printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
 
     if (argc == 1 || argc == 2)
         socket4_workloop();
