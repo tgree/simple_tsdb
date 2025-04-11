@@ -2,14 +2,61 @@
 // All rights reserved.
 #include "root.h"
 #include "exception.h"
+#include "constants.h"
+#include <hdr/kmath.h>
 #include <futil/xact.h>
 #include <futil/ssl.h>
 #include <strutil/strutil.h>
 
+const tsdb::configuration tsdb::default_configuration =
+{
+    DEFAULT_CHUNK_SIZE_M*1024*1024,
+    DEFAULT_WAL_MAX_ENTRIES,
+    DEFAULT_WRITE_THROTTLE_NS,
+};
+
+static tsdb::configuration
+load_configuration(const tsdb::root* r) try
+{
+    futil::file config_fd(r->root_dir,"config.txt",O_RDONLY);
+    tsdb::configuration config = tsdb::default_configuration;
+    for (;;)
+    {
+        auto line = config_fd.read_line();
+        if (line.empty())
+            break;
+        if (line[0] == '#')
+            continue;
+
+        std::vector<std::string> parts = str::split(line);
+        if (parts.size() != 2)
+            throw tsdb::invalid_config_file_exception();
+        if (parts[0] == "chunk_size")
+        {
+            config.chunk_size = str::decode_number_units_pow2(parts[1]);
+            if (!is_pow2(config.chunk_size))
+                throw tsdb::invalid_chunk_size_exception();
+        }
+        else if (parts[0] == "wal_max_entries")
+            config.wal_max_entries = str::decode_number_units_pow2(parts[1]);
+        else if (parts[0] == "write_throttle_ns")
+            config.write_throttle_ns = str::decode_number_units_pow2(parts[1]);
+        else
+            throw tsdb::invalid_config_file_exception();
+    }
+
+    return config;
+}
+catch (const std::invalid_argument&)
+{
+    throw tsdb::invalid_config_file_exception();
+}
+
 tsdb::root::root(const futil::path& root_path) try :
     root_dir(root_path),
     tmp_dir(root_dir,"tmp"),
-    databases_dir(root_dir,"databases")
+    databases_dir(root_dir,"databases"),
+    config(load_configuration(this))
 {
 }
 catch (const futil::errno_exception& e)
@@ -22,7 +69,8 @@ catch (const futil::errno_exception& e)
 tsdb::root::root() try :
     root_dir(AT_FDCWD,"."),
     tmp_dir(root_dir,"tmp"),
-    databases_dir(root_dir,"databases")
+    databases_dir(root_dir,"databases"),
+    config(load_configuration(this))
 {
 }
 catch (const futil::errno_exception& e)
@@ -98,14 +146,21 @@ tsdb::root::list_databases()
 }
 
 void
-tsdb::create_root(const futil::path& path) try
+tsdb::create_root(const futil::path& path, const configuration& config) try
 {
+    auto config_str = to_string(config);
+    if (!is_pow2(config.chunk_size))
+        throw invalid_chunk_size_exception();
+
     futil::directory root_dir(path);
     futil::xact_creat passwd_lock_fd(root_dir,"passwd.lock",O_RDWR | O_CREAT,
                                      0660);
     futil::xact_creat passwd_fd(root_dir,"passwd",O_RDWR | O_CREAT,0660);
     futil::xact_mkdir tmp_dir(root_dir,"tmp",0770);
     futil::xact_mkdir databases_dir(root_dir,"databases",0770);
+    futil::xact_creat config_fd(root_dir,"config.txt",O_RDWR | O_CREAT,0440);
+    config_fd.write_all(&config_str[0],config_str.size());
+    config_fd.commit();
     databases_dir.commit();
     tmp_dir.commit();
     passwd_fd.commit();

@@ -3,6 +3,7 @@
 #include <version.h>
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
+#include <hdr/fixed_vector.h>
 #include <strutil/strutil.h>
 #include <futil/ipv4.h>
 #include <futil/ssl.h>
@@ -100,40 +101,46 @@ struct chunk_header
     uint8_t     data[];
 };
 
+struct connection
+{
+    tcp::stream&    s;
+    uint64_t        last_write_ns;
+};
+
 struct command_syntax
 {
-    void (* const handler)(tcp::stream& s,
+    void (* const handler)(connection& c,
                            const std::vector<parsed_data_token>& tokens);
     const command_token cmd_token;
     const std::vector<data_token> data_tokens;
 };
 
 static void handle_create_database(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_list_databases(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_create_measurement(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_list_measurements(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_list_series(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_get_schema(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_count_points(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_write_points(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_delete_points(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_limit(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_select_points_last(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_sum_points(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_nop(
-    tcp::stream& s, const std::vector<parsed_data_token>& tokens);
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 
 static const command_syntax commands[] =
 {
@@ -219,8 +226,27 @@ static const uint8_t pad_bytes[8] = {};
 
 static tsdb::root* root;
 
+static uint64_t
+time_ns()
+{
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
+    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
+}
+
 static void
-handle_create_database(tcp::stream& s,
+sleep_for_ns(uint64_t nsec)
+{
+    struct timespec rqtp;
+    struct timespec rmtp;
+    rqtp.tv_sec  = (nsec / 1000000000);
+    rqtp.tv_nsec = (nsec % 1000000000);
+    while (nanosleep(&rqtp,&rmtp) != 0)
+        rqtp = rmtp;
+}
+
+static void
+handle_create_database(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     // TODO: Use string_view.
@@ -230,7 +256,7 @@ handle_create_database(tcp::stream& s,
 }
 
 static void
-handle_list_databases(tcp::stream& s,
+handle_list_databases(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     auto dbs = root->list_databases();
@@ -239,14 +265,14 @@ handle_list_databases(tcp::stream& s,
     {
         uint32_t dt  = DT_DATABASE;
         uint16_t len = d_name.size();
-        s.send_all(&dt,sizeof(dt));
-        s.send_all(&len,sizeof(len));
-        s.send_all(d_name.c_str(),len);
+        conn.s.send_all(&dt,sizeof(dt));
+        conn.s.send_all(&len,sizeof(len));
+        conn.s.send_all(d_name.c_str(),len);
     }
 }
 
 static void
-handle_create_measurement(tcp::stream& s,
+handle_create_measurement(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -293,7 +319,7 @@ handle_create_measurement(tcp::stream& s,
 }
 
 static void
-handle_get_schema(tcp::stream& s,
+handle_get_schema(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -306,15 +332,15 @@ handle_get_schema(tcp::stream& s,
     for (const auto& f : m.fields)
     {
         uint32_t ft[3] = {DT_FIELD_TYPE, f.type, DT_FIELD_NAME};
-        s.send_all(&ft,sizeof(ft));
+        conn.s.send_all(&ft,sizeof(ft));
         uint16_t len = strlen(f.name);
-        s.send_all(&len,sizeof(len));
-        s.send_all(f.name,len);
+        conn.s.send_all(&len,sizeof(len));
+        conn.s.send_all(f.name,len);
     }
 }
 
 static void
-handle_list_measurements(tcp::stream& s,
+handle_list_measurements(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string db_name(tokens[0].data,tokens[0].len);
@@ -325,14 +351,14 @@ handle_list_measurements(tcp::stream& s,
     {
         uint32_t dt  = DT_MEASUREMENT;
         uint16_t len = m_name.size();
-        s.send_all(&dt,sizeof(dt));
-        s.send_all(&len,sizeof(len));
-        s.send_all(m_name.c_str(),len);
+        conn.s.send_all(&dt,sizeof(dt));
+        conn.s.send_all(&len,sizeof(len));
+        conn.s.send_all(m_name.c_str(),len);
     }
 }
 
 static void
-handle_list_series(tcp::stream& s,
+handle_list_series(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string db_name(tokens[0].data,tokens[0].len);
@@ -345,14 +371,14 @@ handle_list_series(tcp::stream& s,
     {
         uint32_t dt  = DT_SERIES;
         uint16_t len = s_name.size();
-        s.send_all(&dt,sizeof(dt));
-        s.send_all(&len,sizeof(len));
-        s.send_all(s_name.c_str(),len);
+        conn.s.send_all(&dt,sizeof(dt));
+        conn.s.send_all(&len,sizeof(len));
+        conn.s.send_all(s_name.c_str(),len);
     }
 }
 
 static void
-handle_count_points(tcp::stream& s,
+handle_count_points(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -370,20 +396,20 @@ handle_count_points(tcp::stream& s,
     auto cr = tsdb::count_points(read_lock,t0,t1);
 
     uint32_t dt = DT_TIME_FIRST;
-    s.send_all(&dt,sizeof(dt));
-    s.send_all(&cr.time_first,sizeof(cr.time_first));
+    conn.s.send_all(&dt,sizeof(dt));
+    conn.s.send_all(&cr.time_first,sizeof(cr.time_first));
 
     dt = DT_TIME_LAST;
-    s.send_all(&dt,sizeof(dt));
-    s.send_all(&cr.time_last,sizeof(cr.time_last));
+    conn.s.send_all(&dt,sizeof(dt));
+    conn.s.send_all(&cr.time_last,sizeof(cr.time_last));
 
     dt = DT_NPOINTS;
-    s.send_all(&dt,sizeof(dt));
-    s.send_all(&cr.npoints,sizeof(cr.npoints));
+    conn.s.send_all(&dt,sizeof(dt));
+    conn.s.send_all(&cr.npoints,sizeof(cr.npoints));
 }
 
 static void
-handle_write_points(tcp::stream& s,
+handle_write_points(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -394,14 +420,23 @@ handle_write_points(tcp::stream& s,
     printf("WRITE TO %s\n",path.c_str());
     tsdb::database db(*root,tokens[0].to_string());
     tsdb::measurement m(db,tokens[1].to_string());
-    auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
 
+    uint64_t now = time_ns();
+    const size_t write_throttle_ns = db.root.config.write_throttle_ns;
+    if (now - conn.last_write_ns < write_throttle_ns)
+    {
+        sleep_for_ns(conn.last_write_ns + write_throttle_ns - now);
+        now = time_ns();
+    }
+    conn.last_write_ns = now;
+
+    auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
     for (;;)
     {
         uint32_t tokens[2] = {DT_READY_FOR_CHUNK,10*1024*1024};
-        s.send_all(tokens,sizeof(tokens));
+        conn.s.send_all(tokens,sizeof(tokens));
 
-        uint32_t dt = s.pop<uint32_t>();
+        uint32_t dt = conn.s.pop<uint32_t>();
         if (dt == DT_END)
         {
             printf("WRITE END\n");
@@ -410,13 +445,13 @@ handle_write_points(tcp::stream& s,
         if (dt != DT_CHUNK)
             throw futil::errno_exception(EINVAL);
 
-        chunk_header ch = s.pop<chunk_header>();
+        chunk_header ch = conn.s.pop<chunk_header>();
         if (ch.data_len > 10*1024*1024)
             throw futil::errno_exception(ENOMEM);
 
         printf("RECV %u BYTES\n",ch.data_len);
         auto_buf data(ch.data_len);
-        s.recv_all(data,ch.data_len);
+        conn.s.recv_all(data,ch.data_len);
 
         printf("WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
         tsdb::write_wal(write_lock,ch.npoints,ch.bitmap_offset,ch.data_len,
@@ -425,7 +460,7 @@ handle_write_points(tcp::stream& s,
 }
 
 static void
-handle_delete_points(tcp::stream& s,
+handle_delete_points(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -441,7 +476,7 @@ handle_delete_points(tcp::stream& s,
 }
 
 static void
-_handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
+_handle_select_points(connection& conn, tsdb::select_op& op, tsdb::wal_query& wq,
     size_t N)
 {
     while (op.npoints)
@@ -451,10 +486,10 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
         size_t len = op.compute_chunk_len();
         uint32_t tokens[4] = {DT_CHUNK,(uint32_t)op.npoints,
                               (uint32_t)(op.bitmap_offset % 64),(uint32_t)len};
-        s.send_all(tokens,sizeof(tokens));
+        conn.s.send_all(tokens,sizeof(tokens));
 
         // Start by sending timestamp data.
-        s.send_all(op.timestamps_begin,8*op.npoints);
+        conn.s.send_all(op.timestamps_begin,8*op.npoints);
 
         // Send each field in turn.
         size_t bitmap_index = op.bitmap_offset / 64;
@@ -464,16 +499,16 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
         {
             // First we send the bitmap.
             auto* bitmap = (const uint64_t*)op.bitmap_mappings[i].addr;
-            s.send_all(&bitmap[bitmap_index],bitmap_n*8);
+            conn.s.send_all(&bitmap[bitmap_index],bitmap_n*8);
 
             // Next we send the field data.
-            const auto* fti = &tsdb::ftinfos[op.fields[i].type];
+            const auto* fti = &tsdb::ftinfos[op.fields[i]->type];
             size_t data_len = op.npoints*fti->nbytes;
-            s.send_all(op.field_data[i],data_len);
+            conn.s.send_all(op.field_data[i],data_len);
 
             // Finally, pad to 8 bytes if necessary.
             if (data_len % 8)
-                s.send_all(pad_bytes,8 - (data_len % 8));
+                conn.s.send_all(pad_bytes,8 - (data_len % 8));
         }
 
         op.next();
@@ -489,7 +524,7 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
 
         size_t len = op.compute_new_chunk_len(N);
         uint32_t tokens[4] = {DT_CHUNK,(uint32_t)N,0,(uint32_t)len};
-        s.send_all(tokens,sizeof(tokens));
+        conn.s.send_all(tokens,sizeof(tokens));
 
         // Generate and send the timestamp data.  We reuse the same buffer for
         // everything.
@@ -497,7 +532,7 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
         auto* timestamps = (uint64_t*)u64_buf.data;
         for (size_t i=0; i<N; ++i)
             timestamps[i] = wq[i].time_ns;
-        s.send_all(timestamps,N*sizeof(uint64_t));
+        conn.s.send_all(timestamps,N*sizeof(uint64_t));
 
         // Generate and send each field in turn.
         void* data = u64_buf.data;
@@ -505,8 +540,8 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
         size_t bitmap_len = ceil_div<size_t>(N,64)*sizeof(uint64_t);
         for (size_t i=0; i<op.fields.size(); ++i)
         {
-            auto& fti = tsdb::ftinfos[op.fields[i].type];
-            size_t field_index = op.field_indices[i];
+            auto& fti = tsdb::ftinfos[op.fields[i]->type];
+            size_t field_index = op.fields[i]->index;
 
             // Generate and send the bitmap.
             for (size_t j=0; j<N; ++j)
@@ -514,7 +549,7 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
                 tsdb::set_bitmap_bit(bitmap,j,
                                      wq[j].get_bitmap_bit(field_index));
             }
-            s.send_all(bitmap,bitmap_len);
+            conn.s.send_all(bitmap,bitmap_len);
 
             // Generate and send the field data.
             switch (fti.nbytes)
@@ -535,20 +570,20 @@ _handle_select_points(tcp::stream& s, tsdb::select_op& op, tsdb::wal_query& wq,
                 break;
             }
             size_t data_len = fti.nbytes*N;
-            s.send_all(data,data_len);
+            conn.s.send_all(data,data_len);
 
             // Finally, pad to 8 bytes if necessary.
             if (data_len % 8)
-                s.send_all(pad_bytes,8 - (data_len % 8));
+                conn.s.send_all(pad_bytes,8 - (data_len % 8));
         }
     }
 
     uint32_t dt = DT_END;
-    s.send_all(&dt,sizeof(dt));
+    conn.s.send_all(&dt,sizeof(dt));
 }
 
 static void
-handle_select_points_limit(tcp::stream& s,
+handle_select_points_limit(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -568,11 +603,11 @@ handle_select_points_limit(tcp::stream& s,
     tsdb::series_read_lock read_lock(m,series);
     tsdb::wal_query wq(read_lock,t0,t1);
     tsdb::select_op_first op(read_lock,path,str::split(field_list,","),t0,t1,N);
-    _handle_select_points(s,op,wq,N);
+    _handle_select_points(conn,op,wq,N);
 }
 
 static void
-handle_select_points_last(tcp::stream& s,
+handle_select_points_last(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -598,11 +633,11 @@ handle_select_points_last(tcp::stream& s,
     }
     tsdb::select_op_last op(read_lock,path,str::split(field_list,","),t0,t1,
                             N - wq.nentries);
-    _handle_select_points(s,op,wq,N);
+    _handle_select_points(conn,op,wq,N);
 }
 
 static void
-handle_sum_points(tcp::stream& s,
+handle_sum_points(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string database(tokens[0].data,tokens[0].len);
@@ -624,8 +659,8 @@ handle_sum_points(tcp::stream& s,
 
     const size_t nfields = op.op.fields.size();
     fixed_vector<uint64_t> timestamps(1024);
-    fixed_vector<std::vector<double>> field_sums(nfields);
-    fixed_vector<std::vector<uint64_t>> field_npoints(nfields);
+    tsdb::field_vector<std::vector<double>> field_sums;
+    tsdb::field_vector<std::vector<uint64_t>> field_npoints;
     for (size_t i=0; i<nfields; ++i)
     {
         field_sums.emplace_back(std::vector<double>());
@@ -657,29 +692,30 @@ handle_sum_points(tcp::stream& s,
         if (chunk_npoints)
         {
             data_token dt = DT_SUMS_CHUNK;
-            s.send_all(&dt,sizeof(dt));
-            s.send_all(&chunk_npoints,sizeof(chunk_npoints));
-            s.send_all(&timestamps[0],chunk_npoints*sizeof(uint64_t));
+            conn.s.send_all(&dt,sizeof(dt));
+            conn.s.send_all(&chunk_npoints,sizeof(chunk_npoints));
+            conn.s.send_all(&timestamps[0],chunk_npoints*sizeof(uint64_t));
             timestamps.clear();
             for (size_t j=0; j<nfields; ++j)
             {
-                s.send_all(&field_sums[j][0],chunk_npoints*sizeof(double));
+                conn.s.send_all(&field_sums[j][0],chunk_npoints*sizeof(double));
                 field_sums[j].clear();
             }
             for (size_t j=0; j<nfields; ++j)
             {
-                s.send_all(&field_npoints[j][0],chunk_npoints*sizeof(uint64_t));
+                conn.s.send_all(&field_npoints[j][0],
+                                chunk_npoints*sizeof(uint64_t));
                 field_npoints[j].clear();
             }
         }
     }
 
     data_token dt = DT_END;
-    s.send_all(&dt,sizeof(dt));
+    conn.s.send_all(&dt,sizeof(dt));
 }
 
 static void
-handle_nop(tcp::stream& s, const std::vector<parsed_data_token>& tokens)
+handle_nop(connection& conn, const std::vector<parsed_data_token>& tokens)
 {
     // Do nothing.
 }
@@ -750,15 +786,15 @@ parse_cmd(tcp::stream& s, const command_syntax& cs,
 }
 
 static void
-parse_and_exec(tcp::stream& s, const command_syntax& cs)
+parse_and_exec(connection& conn, const command_syntax& cs)
 {
     std::vector<parsed_data_token> tokens;
-    parse_cmd(s,cs,tokens);
+    parse_cmd(conn.s,cs,tokens);
 
     uint32_t status[2] = {DT_STATUS_CODE, 0};
     try
     {
-        cs.handler(s,tokens);
+        cs.handler(conn,tokens);
     }
     catch (const tsdb::exception& e)
     {
@@ -767,24 +803,24 @@ parse_and_exec(tcp::stream& s, const command_syntax& cs)
     }
     
     printf("Sending status...\n");
-    s.send_all(&status,sizeof(status));
+    conn.s.send_all(&status,sizeof(status));
 }
 
 static void
-process_stream(tcp::stream& s)
+process_stream(connection& conn)
 {
     try
     {
         for (;;)
         {
-            uint32_t ct = s.pop<uint32_t>();
+            uint32_t ct = conn.s.pop<uint32_t>();
 
             bool found = false;
             for (auto& cmd : commands)
             {
                 if (cmd.cmd_token == ct)
                 {
-                    parse_and_exec(s,cmd);
+                    parse_and_exec(conn,cmd);
                     found = true;
                     break;
                 }
@@ -813,29 +849,11 @@ request_handler(std::unique_ptr<tcp::stream> s)
     printf("Handling local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
-    process_stream(*s);
+    connection conn{*s,0};
+    process_stream(conn);
 
     printf("Teardown local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
-}
-
-static uint64_t
-time_ns()
-{
-    struct timespec tp;
-    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
-    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
-}
-
-static void
-sleep_for_ns(uint64_t nsec)
-{
-    struct timespec rqtp;
-    struct timespec rmtp;
-    rqtp.tv_sec  = (nsec / 1000000000);
-    rqtp.tv_nsec = (nsec % 1000000000);
-    while (nanosleep(&rqtp,&rmtp) != 0)
-        rqtp = rmtp;
 }
 
 static void
@@ -951,6 +969,9 @@ main(int argc, const char* argv[])
     signal(SIGPIPE,SIG_IGN);
 
     root = new tsdb::root(root_path);
+    printf("    Chunk size: %zu bytes\n",root->config.chunk_size);
+    printf("      WAL size: %zu points\n",root->config.wal_max_entries);
+    printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
 
     if (argc == 1 || argc == 2)
         socket4_workloop();

@@ -1,7 +1,7 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
 #include "select_op.h"
-#include "tsdb.h"
+#include "database.h"
 #include <inttypes.h>
 #include <algorithm>
 
@@ -19,53 +19,16 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         t0(MAX(_t0,read_lock.time_first)),
         t1(MIN(_t1,time_last)),
         rem_limit(limit),
-        fields(field_names.size() ?: read_lock.m.fields.size()),
-        field_indices(fields.capacity()),
         index_slot(NULL),
-        timestamp_mapping(NULL,CHUNK_FILE_SIZE,PROT_NONE,
+        timestamp_mapping(NULL,read_lock.m.db.root.config.chunk_size,PROT_NONE,
                           MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
-        timestamp_buf(CHUNK_FILE_SIZE),
-        field_mappings(fields.capacity()),
-        bitmap_mappings(fields.capacity()),
+        timestamp_buf(read_lock.m.db.root.config.chunk_size),
         npoints(0),
         bitmap_offset(0),
         timestamps_begin(NULL),
         timestamps_end(NULL),
-        field_data(fields.capacity())
+        fields(read_lock.m.gen_entries(field_names))
 {
-    // Fetch the schema and figure out which fields we are going to return.
-    // We are sure to keep the fields vector in the same order as the field
-    // names that were passed in; this is the order in which we will return
-    // the data points.
-    if (!field_names.empty())
-    {
-        for (const auto& fn : field_names)
-        {
-            bool found = false;
-            for (size_t i=0; i<read_lock.m.fields.size(); ++i)
-            {
-                const auto& sf = read_lock.m.fields[i];
-                if (sf.name == fn)
-                {
-                    fields.emplace_back(sf);
-                    field_indices.emplace_back(i);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-                throw tsdb::no_such_field_exception();
-        }
-    }
-    else
-    {
-        for (size_t i=0; i<read_lock.m.fields.size(); ++i)
-        {
-            const auto& sf = read_lock.m.fields[i];
-            fields.emplace_back(sf);
-            field_indices.emplace_back(i);
-        }
-    }
     for (size_t i=0; i<fields.size(); ++i)
     {
         field_mappings.emplace_back();
@@ -143,7 +106,7 @@ tsdb::select_op::map_data()
     for (size_t i=0; i<fields.size(); ++i)
     {
         const auto& f = fields[i];
-        const auto* fti = &ftinfos[f.type];
+        const auto* fti = &ftinfos[f->type];
         size_t len = end_index*fti->nbytes;
 
         //  Try opening an uncompressed file first.  If one exists, we must use
@@ -151,9 +114,9 @@ tsdb::select_op::map_data()
         //  partial compression operation that then crashed before completing.
         try
         {
-            futil::file field_fd(fields_dir,
-                                 futil::path(f.name,index_slot->timestamp_file),
-                                 O_RDONLY);
+            futil::file field_fd(
+                fields_dir,futil::path(f->name,index_slot->timestamp_file),
+                O_RDONLY);
 
             field_mappings[i].map(NULL,len,PROT_READ,MAP_SHARED,field_fd.fd,0);
             field_data[i] = (const char*)field_mappings[i].addr +
@@ -168,6 +131,7 @@ tsdb::select_op::map_data()
 
         // No uncompressed file exists.  Try with a compressed file.  First,
         // make an anonymous backing region to hold the uncompressed data.
+        // TODO: Only unzip the part of the file we care about.
         field_mappings[i].map(NULL,len,PROT_READ | PROT_WRITE,
                               MAP_ANONYMOUS | MAP_PRIVATE,-1,0);
         field_data[i] = (const char*)field_mappings[i].addr +
@@ -177,7 +141,7 @@ tsdb::select_op::map_data()
         char gz_name[TIMESTAMP_FILE_NAME_LEN + 3];
         auto* p = stpcpy(gz_name,index_slot->timestamp_file);
         strcpy(p,".gz");
-        int field_fd = futil::openat(fields_dir,futil::path(f.name,gz_name),
+        int field_fd = futil::openat(fields_dir,futil::path(f->name,gz_name),
                                      O_RDONLY);
         gzFile gzf = zng_gzdopen(field_fd,"rb");
         int32_t zlen = zng_gzread(gzf,field_mappings[i].addr,len);
@@ -191,10 +155,10 @@ tsdb::select_op::map_data()
     for (size_t i=0; i<fields.size(); ++i)
     {
         const auto& f = fields[i];
-        futil::path bitmap_path(f.name,index_slot->timestamp_file);
+        futil::path bitmap_path(f->name,index_slot->timestamp_file);
         futil::file bitmap_fd(bitmaps_dir,bitmap_path,O_RDONLY);
-        bitmap_mappings[i].map(NULL,BITMAP_FILE_SIZE,PROT_READ,MAP_SHARED,
-                               bitmap_fd.fd,0);
+        bitmap_mappings[i].map(NULL,read_lock.m.db.root.config.chunk_size/64,
+                               PROT_READ,MAP_SHARED,bitmap_fd.fd,0);
     }
 }
 
@@ -207,8 +171,8 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
     printf("SELECT [ ");
     for (const auto& f : fields)
     {
-        const auto* ftinfo = &ftinfos[f.type];
-        printf("%s/%s ",f.name,ftinfo->name);
+        const auto* ftinfo = &ftinfos[f->type];
+        printf("%s/%s ",f->name,ftinfo->name);
     }
     printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
            " LIMIT %" PRIu64 "\n",
@@ -264,8 +228,8 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     printf("SELECT [ ");
     for (const auto& f : fields)
     {
-        const auto* ftinfo = &ftinfos[f.type];
-        printf("%s/%s ",f.name,ftinfo->name);
+        const auto* ftinfo = &ftinfos[f->type];
+        printf("%s/%s ",f->name,ftinfo->name);
     }
     printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
            " LAST %" PRIu64 "\n",
@@ -312,12 +276,13 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     size_t t0_avail_points;
     size_t t1_avail_points;
     size_t avail_points;
+    const size_t chunk_npoints = read_lock.m.db.root.config.chunk_size/8;
     if (t0_index_slot != t1_index_slot)
     {
         t0_avail_points = t0_mmap.len/8 - (t0_lower - t0_data_begin);
         t1_avail_points = t1_upper - t1_data_begin;
         avail_points = t0_avail_points + t1_avail_points +
-            CHUNK_NPOINTS*n_middle_slots;
+            chunk_npoints*n_middle_slots;
     }
     else
     {
@@ -340,12 +305,12 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
             if (++t0_index_slot == t1_index_slot)
                 t0_avail_points = t1_avail_points;
             else
-                t0_avail_points = CHUNK_NPOINTS;
+                t0_avail_points = chunk_npoints;
         }
 
         // Extract the timestamp from the right index.
         size_t t1_index = t1_upper - t1_data_begin;
-        t0_index = (t1_index - rem_limit) % CHUNK_NPOINTS;
+        t0_index = (t1_index - rem_limit) & (chunk_npoints - 1);
         t0_file.open(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
         t0_file.lseek(t0_index*8,SEEK_SET);
         t0 = t0_file.read_u64();
@@ -357,8 +322,8 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     printf("=> SELECT [ ");
     for (const auto& f : fields)
     {
-        const auto* ftinfo = &ftinfos[f.type];
-        printf("%s/%s ",f.name,ftinfo->name);
+        const auto* ftinfo = &ftinfos[f->type];
+        printf("%s/%s ",f->name,ftinfo->name);
     }
     printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
            " LIMIT %" PRIu64 "\n",
@@ -370,7 +335,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     if (t0_index_slot == t1_index_slot)
         timestamps_end = timestamps_begin + t1_index;
     else
-        timestamps_end = timestamps_begin + CHUNK_NPOINTS;
+        timestamps_end = timestamps_begin + chunk_npoints;
     timestamps_begin += t0_index;
     npoints = timestamps_end - timestamps_begin;
     npoints = MIN(npoints,rem_limit);

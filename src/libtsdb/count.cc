@@ -1,7 +1,8 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
 #include "count.h"
-#include "tsdb.h"
+#include "wal.h"
+#include "database.h"
 #include <algorithm>
 
 tsdb::count_result
@@ -59,7 +60,8 @@ tsdb::count_committed_points(const series_read_lock& read_lock, uint64_t t0,
 
     // Compute the result.
     size_t n_chunks = index_upper - index_lower;
-    size_t npoints = n_chunks*CHUNK_NPOINTS + tslot_upper - tslot_lower;
+    size_t chunk_npoints = read_lock.m.db.root.config.chunk_size/8;
+    size_t npoints = n_chunks*chunk_npoints + tslot_upper - tslot_lower;
     if (!npoints)
         return count_result{0,t0,t1};
     return count_result{npoints,*time_first_iter,*(time_last_iter - 1)};

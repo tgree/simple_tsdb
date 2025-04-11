@@ -4,6 +4,7 @@
 #include "database.h"
 #include "exception.h"
 #include <futil/xact.h>
+#include <hdr/types.h>
 
 tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     db(db),
@@ -15,13 +16,17 @@ tsdb::measurement::measurement(const database& db, const futil::path& path) try:
            (const schema_entry*)schema_mapping.addr +
            schema_mapping.len / sizeof(schema_entry))
 {
-    for (const auto& f : fields)
+    size_t offset = 0;
+    for (size_t i=0; i<fields.size(); ++i)
     {
+        const auto& f = fields[i];
         if (f.type == 0 || f.type > LAST_FIELD_TYPE || f.name[0] == '\0' ||
-            f.name[123] != '\0')
+            f.name[123] != '\0' || f.version != SCHEMA_VERSION ||
+            f.index != i || f.offset != offset)
         {
             throw tsdb::corrupt_schema_file_exception();
         }
+        offset += ftinfos[f.type].nbytes;
     }
 }
 catch (const futil::errno_exception& e)
@@ -37,6 +42,26 @@ tsdb::create_measurement(const database& db, const futil::path& name,
 {
     if (name.empty() || name[0] == '/' || name.count_components() > 1)
         throw tsdb::invalid_measurement_exception();
+    if (fields.size() > MAX_FIELDS)
+        throw tsdb::too_many_fields_exception();
+
+    // Validate the schema.
+    size_t offset = 0;
+    for (size_t i=0; i<fields.size(); ++i)
+    {
+        const schema_entry& se = fields[i];
+        kassert(se.version == SCHEMA_VERSION);
+        kassert(se.index == i);
+        kassert(se.offset == offset);
+        kassert(se.name[NELEMS(se.name)-1] == '\0');
+        kassert(se.type && se.type <= LAST_FIELD_TYPE);
+        offset += ftinfos[se.type].nbytes;
+        for (size_t j=i+1; j<fields.size(); ++j)
+        {
+            if (!strcmp(se.name,fields[j].name))
+                throw tsdb::duplicate_field_exception();
+        }
+    }
 
     for (;;)
     {

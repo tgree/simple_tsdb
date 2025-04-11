@@ -4,7 +4,6 @@
 #define __SRC_LIBTSDB_SELECT_OP_H
 
 #include "series.h"
-#include <hdr/fixed_vector.h>
 #include <hdr/auto_buf.h>
 #include <hdr/kmath.h>
 
@@ -26,25 +25,28 @@ namespace tsdb
         const index_entry*      index_end;
 
         // Query parameters.
-        uint64_t                    t0;
-        uint64_t                    t1;
-        uint64_t                    rem_limit;
-        fixed_vector<schema_entry>  fields;
-        fixed_vector<size_t>        field_indices;
+        uint64_t                t0;
+        uint64_t                t1;
+        uint64_t                rem_limit;
 
         // Mapping objects to track mmap()-ed files.
-        const index_entry*              index_slot;
-        futil::mapping                  timestamp_mapping;
-        auto_buf                        timestamp_buf;
-        fixed_vector<futil::mapping>    field_mappings;
-        fixed_vector<futil::mapping>    bitmap_mappings;
+        const index_entry*      index_slot;
+        futil::mapping          timestamp_mapping;
+        auto_buf                timestamp_buf;
 
         // State of the current set of results.
-        size_t                          npoints;
-        size_t                          bitmap_offset;
-        const uint64_t*                 timestamps_begin;
-        const uint64_t*                 timestamps_end;
-        fixed_vector<const void*>       field_data;
+        size_t                  npoints;
+        size_t                  bitmap_offset;
+        const uint64_t*         timestamps_begin;
+        const uint64_t*         timestamps_end;
+
+        // Fields we are querying.
+        const field_vector<const schema_entry*> fields;
+
+        // Query mapping results.
+        field_vector<futil::mapping>            field_mappings;
+        field_vector<futil::mapping>            bitmap_mappings;
+        field_vector<const void*>               field_data;
 
         void next();
 
@@ -56,7 +58,7 @@ namespace tsdb
             for (size_t i=0; i<M; ++i)
             {
                 const auto& f = fields[i];
-                const auto* fti = &ftinfos[f.type];
+                const auto* fti = &ftinfos[f->type];
                 S += round_up_pow2(N*fti->nbytes,8);
             }
             size_t bitmap_begin = _bitmap_offset / 64;

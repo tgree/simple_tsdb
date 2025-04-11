@@ -140,6 +140,60 @@ class tmock_test
         tmock::assert_equiv(v[2].c_str(),"6789");
         tmock::assert_equiv(v[3].c_str(),"10");
     }
+
+    TMOCK_TEST(test_decode_units_pow2)
+    {
+        tmock::assert_equiv(str::decode_number_units_pow2("12345678"),
+                            12345678UL);
+        tmock::assert_equiv(str::decode_number_units_pow2("12K"),
+                            12UL*1024UL);
+        tmock::assert_equiv(str::decode_number_units_pow2("12M"),
+                            12UL*1024UL*1024UL);
+        tmock::assert_equiv(str::decode_number_units_pow2("12G"),
+                            12UL*1024UL*1024UL*1024UL);
+        tmock::assert_equiv(str::decode_number_units_pow2("12T"),
+                            12UL*1024UL*1024UL*1024UL*1024UL);
+
+        try
+        {
+            str::decode_number_units_pow2("");
+            tmock::abort("Expected invalid_argument exception for empty "
+                         "string.");
+        }
+        catch (std::invalid_argument&)
+        {
+        }
+
+        try
+        {
+            str::decode_number_units_pow2("asdf");
+            tmock::abort("Expected invalid_argument exception for text "
+                         "string.");
+        }
+        catch (std::invalid_argument&)
+        {
+        }
+
+        try
+        {
+            str::decode_number_units_pow2("12asdf");
+            tmock::abort("Expected invalid_argument exception for garbage "
+                         "string.");
+        }
+        catch (std::invalid_argument&)
+        {
+        }
+
+        try
+        {
+            str::decode_number_units_pow2("12asdfM");
+            tmock::abort("Expected invalid_argument exception for garbage "
+                         "M string.");
+        }
+        catch (std::invalid_argument&)
+        {
+        }
+    }
 };
 
 TMOCK_MAIN();
