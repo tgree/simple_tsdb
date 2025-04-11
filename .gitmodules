@@ -3,4 +3,4 @@
 	url = https://git@github.com/zlib-ng/zlib-ng
 [submodule "third_party/editline"]
 	path = third_party/editline
-	url = git@github.com:troglobit/editline
+	url = https://git@github.com/troglobit/editline
