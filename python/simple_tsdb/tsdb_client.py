@@ -651,6 +651,30 @@ class Client:
 
         self._write_points_end()
 
+    def delete_points(self, database, measurement, series, t):
+        '''
+        Deletes all points up to and including t.
+        '''
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIQI' % (len(database),
+                                                    len(measurement),
+                                                    len(series)),
+                          CT_DELETE_POINTS,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_TIME_LAST, t,
+                          DT_END)
+        self._sendall(cmd)
+
+        dt = self._recv_u32()
+        assert dt == DT_STATUS_CODE
+        sc = self._recv_i32()
+        if sc != 0:
+            raise StatusException(sc)
+
     def select_points(self, database, measurement, series, schema, fields=None,
                       t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
         return SelectOP(self, CT_SELECT_POINTS_LIMIT, database, measurement,
