@@ -146,7 +146,7 @@ handle_select_1(
     tsdb::series_read_lock read_lock(m,ss.series);
     tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
     tsdb::select_op_first op(read_lock,ss.series,fs.fields,tr.t0,tr.t1,n.n);
-    print_op_results(fs,op,wq,n.n);
+    print_op_results(op,wq,n.n);
 }
 
 static void
@@ -171,7 +171,7 @@ handle_select_2(
     }
     tsdb::select_op_last op(read_lock,ss.series,fs.fields,tr.t0,tr.t1,
                             n.n - wq.nentries);
-    print_op_results(fs,op,wq,n.n);
+    print_op_results(op,wq,n.n);
 }
 
 static void
