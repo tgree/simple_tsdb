@@ -203,8 +203,8 @@ handle_mean(
     tsdb::sum_op op(read_lock,ss.series,fs.fields,tr.t0,tr.t1,wn.n);
 
     printf("%20s ","time_ns");
-    for (const auto& f : op.op.fields)
-        printf("%20s ",f.name);
+    for (const auto* f : op.op.fields)
+        printf("%20s ",f->name);
     printf("\n");
     for (size_t i=0; i<op.op.fields.size() + 1; ++i)
         printf("-------------------- ");
@@ -235,6 +235,72 @@ handle_delete(
     tsdb::delete_points(m,ss.series,tr.t);
 }
 
+static void
+handle_update_schema()
+{
+    for (const auto& db_name : root->list_databases())
+    {
+        tsdb::database db(*root,db_name);
+        for (const auto& m_name : db.list_measurements())
+        {
+            futil::directory m_dir(db.dir,m_name);
+            futil::fchmod(m_dir,"schema",0660);
+            try
+            {
+                futil::file schema_fd(m_dir,"schema",O_RDWR);
+                auto mm = schema_fd.mmap(0,schema_fd.lseek(0,SEEK_END),
+                                         PROT_READ | PROT_WRITE,MAP_SHARED,0);
+                kassert(mm.len > 0);
+                kassert(mm.len % sizeof(tsdb::schema_entry) == 0);
+                const size_t nentries = mm.len / sizeof(tsdb::schema_entry);
+
+                auto* entries = (tsdb::schema_entry*)mm.addr;
+                if (entries[0].version != SCHEMA_VERSION)
+                {
+                    printf("Updating %s/%s...\n",
+                           db_name.c_str(),m_name.c_str());
+                    size_t offset = 0;
+                    for (size_t i=0; i<nentries; ++i)
+                    {
+                        entries[i].version = SCHEMA_VERSION;
+                        entries[i].index = i;
+                        entries[i].offset = offset;
+                        offset += tsdb::ftinfos[entries[i].type].nbytes;
+                    }
+                    mm.msync();
+                }
+
+                printf("Validating %s/%s...\n",db_name.c_str(),m_name.c_str());
+                size_t offset = 0;
+                for (size_t i=0; i<nentries; ++i)
+                {
+                    if (entries[i].version != SCHEMA_VERSION)
+                    {
+                        printf("Entry [%zu] has version %u.\n",
+                               i,entries[i].version);
+                    }
+                    if (entries[i].index != i)
+                    {
+                        printf("Entry [%zu] has index %u.\n",
+                               i,entries[i].index);
+                    }
+                    if (entries[i].offset != offset)
+                    {
+                        printf("Entry [%zu] as offset %u (expected %zu).\n",
+                               i,entries[i].offset,offset);
+                    }
+                    offset += tsdb::ftinfos[entries[i].type].nbytes;
+                }
+            }
+            catch (...)
+            {
+                futil::fchmod(m_dir,"schema",0440);
+                throw;
+            }
+        }
+    }
+}
+
 struct command_handler
 {
     const std::string keyword;
@@ -256,6 +322,7 @@ static const command_handler command_handlers[] =
                XLATE(handle_select_3)}},
     {"MEAN",{XLATE(handle_mean)}},
     {"DELETE",{XLATE(handle_delete)}},
+    {"UPDATE SCHEMA",{XLATE(handle_update_schema)}},
 };
 
 static void
@@ -288,13 +355,26 @@ handle_command(
 int
 main(int argc, const char* argv[])
 {
+    printf("%s\n",GIT_VERSION);
+
     bool init_root = false;
+    size_t chunk_size = 0;
 
     std::vector<const char*> unused_args;
     for (size_t i=1; i<argc; ++i)
     {
+        size_t rem = argc - i - 1;
         if (!strcmp(argv[i],"--init-root"))
+        {
+            if (!rem)
+            {
+                printf("Expected chunk size argument to --init-root.\n");
+                return -1;
+            }
             init_root = true;
+            chunk_size = str::decode_number_units_pow2(argv[i+1]);
+            ++i;
+        }
         else
             unused_args.push_back(argv[i]);
     }
@@ -309,6 +389,11 @@ main(int argc, const char* argv[])
     try
     {
         root = new tsdb::root(root_path);
+        if (init_root)
+        {
+            printf("TSDB root already exists but --init-root supplied.\n");
+            return -1;
+        }
     }
     catch (const tsdb::not_a_tsdb_root& e)
     {
@@ -318,11 +403,18 @@ main(int argc, const char* argv[])
             return -1;
         }
     }
+    catch (const std::exception& e)
+    {
+        printf("Failed to open TSDB root: %s\n",e.what());
+        return -1;
+    }
     if (!root)
     {
         try
         {
-            tsdb::create_root(root_path);
+            auto config = tsdb::default_configuration;
+            config.chunk_size = chunk_size;
+            tsdb::create_root(root_path,config);
         }
         catch (const std::exception& e)
         {
@@ -341,11 +433,13 @@ main(int argc, const char* argv[])
         }
     }
 
+    printf("Chunk size: %zu bytes\n",root->config.chunk_size);
+    printf("  WAL size: %zu points\n",root->config.wal_max_entries);
+
     char* home_dir = getenv("HOME");
     futil::path history_path(home_dir,".tsdbcli_history");
     read_history(history_path);
 
-    printf("%s\n",GIT_VERSION);
     char* p;
     while ((p = readline("tsdbcli2> ")) != NULL)
     {

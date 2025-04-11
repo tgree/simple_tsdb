@@ -23,15 +23,15 @@ namespace tsdb
         // Select op that we are using to iterate.
         wal_query               wq;
         wal_entry_iterator      wqiter;
-        fixed_vector<size_t>    windices;
         select_op_first         op;
         size_t                  op_index;
 
         // Latest result.
         uint64_t                range_t0;
-        std::vector<double>     sums;
-        std::vector<uint64_t>   npoints;
+        field_vector<double>    sums;
+        field_vector<uint64_t>  npoints;
 
+        void zero();
         bool next();
 
         sum_op(const series_read_lock& read_lock,

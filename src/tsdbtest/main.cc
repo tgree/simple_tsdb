@@ -36,26 +36,26 @@ constexpr const char* measurements[] =
 
 std::vector<tsdb::schema_entry> fields =
 {
-    {tsdb::FT_BOOL,{},"field_bool"},
-    {tsdb::FT_U32,{},"field_u32_1"},
-    {tsdb::FT_U32,{},"field_u32_2"},
-    {tsdb::FT_U64,{},"field_u64"},
-    {tsdb::FT_F32,{},"field_f32"},
-    {tsdb::FT_F64,{},"field_f64"},
-    {tsdb::FT_I32,{},"field_i32"},
-    {tsdb::FT_I64,{},"field_i64"},
+    {tsdb::FT_BOOL,SCHEMA_VERSION,0,0,"field_bool"},
+    {tsdb::FT_U32,SCHEMA_VERSION,1,1,"field_u32_1"},
+    {tsdb::FT_U32,SCHEMA_VERSION,2,5,"field_u32_2"},
+    {tsdb::FT_U64,SCHEMA_VERSION,3,9,"field_u64"},
+    {tsdb::FT_F32,SCHEMA_VERSION,4,17,"field_f32"},
+    {tsdb::FT_F64,SCHEMA_VERSION,5,21,"field_f64"},
+    {tsdb::FT_I32,SCHEMA_VERSION,6,29,"field_i32"},
+    {tsdb::FT_I64,SCHEMA_VERSION,7,33,"field_i64"},
 };
 
 std::vector<tsdb::schema_entry> bad_fields =
 {
-    {tsdb::FT_I64,{},"field_i64"},
-    {tsdb::FT_BOOL,{},"field_bool"},
-    {tsdb::FT_U32,{},"field_u32_1"},
-    {tsdb::FT_U32,{},"field_u32_2"},
-    {tsdb::FT_U64,{},"field_u64"},
-    {tsdb::FT_F32,{},"field_f32"},
-    {tsdb::FT_F64,{},"field_f64"},
-    {tsdb::FT_I32,{},"field_i32"},
+    {tsdb::FT_I64,SCHEMA_VERSION,0,0,"field_i64"},
+    {tsdb::FT_BOOL,SCHEMA_VERSION,1,8,"field_bool"},
+    {tsdb::FT_U32,SCHEMA_VERSION,2,9,"field_u32_1"},
+    {tsdb::FT_U32,SCHEMA_VERSION,3,13,"field_u32_2"},
+    {tsdb::FT_U64,SCHEMA_VERSION,4,17,"field_u64"},
+    {tsdb::FT_F32,SCHEMA_VERSION,5,25,"field_f32"},
+    {tsdb::FT_F64,SCHEMA_VERSION,6,29,"field_f64"},
+    {tsdb::FT_I32,SCHEMA_VERSION,7,37,"field_i32"},
 };
 
 struct data_point
@@ -507,7 +507,7 @@ main(int argc, const char* argv[])
 
     // Initialize the database directory.
     printf("Initializing test databases in %s...\n",tmp);
-    tsdb::create_root(tmp);
+    tsdb::create_root(tmp,tsdb::default_configuration);
     root = new tsdb::root(tmp);
 
     // Create some test databases.

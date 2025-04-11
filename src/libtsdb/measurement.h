@@ -4,15 +4,19 @@
 #define __SRC_LIBTSDB_MEASUREMENT_H
 
 #include "exception.h"
+#include "constants.h"
 #include <futil/futil.h>
 #include <span>
 #include <hdr/kassert.h>
 #include <hdr/kmath.h>
-#include <hdr/fixed_vector.h>
+#include <hdr/static_vector.h>
 
 namespace tsdb
 {
     struct database;
+
+    template<typename T>
+    using field_vector = static_vector<T,MAX_FIELDS>;
 
     enum field_type : uint8_t
     {
@@ -45,10 +49,13 @@ namespace tsdb
         [tsdb::FT_I64]  = {tsdb::FT_I64,8,"i64"},
     };
 
+#define SCHEMA_VERSION  1
     struct schema_entry
     {
         field_type  type;
-        uint8_t     rsrv[3];
+        uint8_t     version;
+        uint16_t    index : 6,
+                    offset : 10;
         char        name[124];
     };
     KASSERT(sizeof(schema_entry) == 128);
@@ -84,26 +91,40 @@ namespace tsdb
             return len;
         }
 
-        fixed_vector<size_t> gen_indices(
+        field_vector<const schema_entry*> gen_entries(
             const std::vector<std::string>& field_names) const
         {
-            fixed_vector<size_t> indices(field_names.size());
-            for (auto& field_name : field_names)
+            // Generate a lookup table for the specified field names.  An empty
+            // list is assumed to mean all fields in their natural order.
+            field_vector<const schema_entry*> entries;
+            if (!field_names.empty())
             {
-                bool found = false;
-                for (size_t i=0; i<fields.size(); ++i)
+                uint64_t field_mask = 0;
+                for (auto& field_name : field_names)
                 {
-                    if (field_name == fields[i].name)
+                    bool found = false;
+                    for (auto& f : fields)
                     {
-                        indices.emplace_back(i);
-                        found = true;
-                        break;
+                        if (field_name == f.name)
+                        {
+                            if (field_mask & (1 << f.index))
+                                throw duplicate_field_exception();
+                            field_mask |= (1 << f.index);
+                            entries.emplace_back(&f);
+                            found = true;
+                            break;
+                        }
                     }
+                    if (!found)
+                        throw no_such_field_exception();
                 }
-                if (!found)
-                    throw no_such_field_exception();
             }
-            return indices;
+            else
+            {
+                for (auto& f : fields)
+                    entries.emplace_back(&f);
+            }
+            return entries;
         }
 
         measurement(const database& db, const futil::path& path);

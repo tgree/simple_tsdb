@@ -90,8 +90,10 @@ parse_type<fields_specifier>(
 
     std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(begin[2],",");
-    for (const auto& fs : field_specifiers)
+    size_t offset = 0;
+    for (size_t i=0; i<field_specifiers.size(); ++i)
     {
+        const auto& fs = field_specifiers[i];
         auto field_specifier = str::split(fs,"/");
         if (field_specifier.size() != 2 || field_specifier[0].empty() ||
             field_specifier[1].empty())
@@ -106,6 +108,9 @@ parse_type<fields_specifier>(
         }
 
         tsdb::schema_entry se{};
+        se.version = SCHEMA_VERSION;
+        se.index = i;
+        se.offset = offset;
         strcpy(se.name,field_specifier[0].c_str());
         if (field_specifier[1] == "bool")
             se.type = tsdb::FT_BOOL;
@@ -127,6 +132,7 @@ parse_type<fields_specifier>(
                 str::printf("Unrecognized field type '%s'.",
                             field_specifier[1].c_str()));
         }
+        offset += tsdb::ftinfos[se.type].nbytes;
 
         fields.push_back(se);
     }

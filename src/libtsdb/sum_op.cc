@@ -12,11 +12,25 @@ tsdb::sum_op::sum_op(const series_read_lock& read_lock,
         is_first(true),
         wq(read_lock,t0,t1),
         wqiter(wq.begin()),
-        windices(read_lock.m.gen_indices(field_names)),
         op(read_lock,series_id,field_names,t0,t1,-1),
         op_index(0),
         range_t0(t0)
 {
+    for (size_t i=0; i<op.fields.size(); ++i)
+    {
+        sums.push_back(0);
+        npoints.push_back(0);
+    }
+}
+
+void
+tsdb::sum_op::zero()
+{
+    for (size_t i=0; i<sums.size(); ++i)
+    {
+        sums[i] = 0;
+        npoints[i] = 0;
+    }
 }
 
 bool
@@ -27,10 +41,7 @@ tsdb::sum_op::next()
     else
         is_first = false;
 
-    sums.clear();
-    sums.resize(op.fields.size());
-    npoints.clear();
-    npoints.resize(op.fields.size());
+    zero();
     size_t range_npoints = 0;
 
     while (op.npoints)
@@ -64,7 +75,7 @@ tsdb::sum_op::next()
             if (op.is_field_null(j,op_index))
                 continue;
 
-            switch (op.fields[j].type)
+            switch (op.fields[j]->type)
             {
                 case tsdb::FT_BOOL:
                     sums[j] += ((uint8_t*)op.field_data[j])[op_index];
@@ -114,7 +125,7 @@ tsdb::sum_op::next()
         // Compute sums.
         for (size_t j=0; j<sums.size(); ++j)
         {
-            size_t field_index = windices[j];
+            size_t field_index = op.fields[j]->index;
             if (wqiter->is_field_null(field_index))
                 continue;
 
