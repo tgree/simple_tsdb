@@ -309,11 +309,14 @@ class SelectOP:
 
     def read_chunk(self):
         if self.last_token == DT_END:
-            assert self.client._recv_u32() == DT_STATUS_CODE
-            assert self.client._recv_i32() == 0
+            if self.client._recv_u32() != DT_STATUS_CODE:
+                raise ProtocolException('Expected DT_STATUS_CODE')
+            if self.client._recv_i32() != 0:
+                raise ProtocolException('Expected status 0')
             return None
 
-        assert self.last_token == DT_CHUNK
+        if self.last_token != DT_CHUNK:
+            raise ProtocolException('Expected DT_CHUNK')
         npoints       = self.client._recv_u32()
         bitmap_offset = self.client._recv_u32()
         data_len      = self.client._recv_u32()
@@ -368,11 +371,14 @@ class SumsOP:
 
     def read_chunk(self):
         if self.last_token == DT_END:
-            assert self.client._recv_u32() == DT_STATUS_CODE
-            assert self.client._recv_i32() == 0
+            if self.client._recv_u32() != DT_STATUS_CODE:
+                raise ProtocolException('Expected DT_STATUS_CODE')
+            if self.client._recv_i32() != 0:
+                raise ProtocolException('Expected status 0')
             return None
 
-        assert self.last_token == DT_SUMS_CHUNK
+        if self.last_token != DT_SUMS_CHUNK:
+            raise ProtocolException('Expected DT_SUMS_CHUNK')
         chunk_npoints = self.client._recv_u16()
         data_len      = chunk_npoints * (8 + len(self.fields) * 16)
         data          = self.client._recvall(data_len)
@@ -454,7 +460,8 @@ class Client:
         self._sendall(cmd)
 
         dt = self._recv_u32()
-        assert dt == DT_STATUS_CODE
+        if dt != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
         sc = self._recv_i32()
         if sc != 0:
             raise StatusException(sc)
@@ -508,7 +515,8 @@ class Client:
                     raise StatusException(sc)
                 return databases
 
-            assert dt == DT_DATABASE
+            if dt != DT_DATABASE:
+                raise ProtocolException('Expected DT_DATABASE')
             size = self._recv_u16()
             name = self._recvall(size)
             databases.append(name.decode())
@@ -529,7 +537,8 @@ class Client:
                     raise StatusException(sc)
                 return measurements
 
-            assert dt == DT_MEASUREMENT
+            if dt != DT_MEASUREMENT:
+                raise ProtocolException('Expected DT_MEASUREMENT')
             size = self._recv_u16()
             name = self._recvall(size)
             measurements.append(name.decode())
@@ -553,7 +562,8 @@ class Client:
                     raise StatusException(sc)
                 return series
 
-            assert dt == DT_SERIES
+            if dt != DT_SERIES:
+                raise ProtocolException('Expected DT_SERIES')
             size = self._recv_u16()
             name = self._recvall(size)
             series.append(name.decode())
@@ -577,10 +587,12 @@ class Client:
                     raise StatusException(sc)
                 return Schema(fields)
 
-            assert dt == DT_FIELD_TYPE
+            if dt != DT_FIELD_TYPE:
+                raise ProtocolException('Expected DT_FIELD_TYPE')
             data = self._recvall(10)
             typ, dt_field_name, size = struct.unpack('<IIH', data)
-            assert dt_field_name == DT_FIELD_NAME
+            if dt_field_name != DT_FIELD_NAME:
+                raise ProtocolException('Expected DT_FIELD_NAME')
 
             name = self._recvall(size)
             fields.append(Field(FIELD_TYPES[typ], name.decode()))
@@ -606,7 +618,7 @@ class Client:
         if dt == DT_STATUS_CODE:
             raise StatusException(self._recv_i32())
         if dt != DT_READY_FOR_CHUNK:
-            raise ProtocolException()
+            raise ProtocolException('Expected DT_READY_FOR_CHUNK')
         return self._recv_u32()
 
     def _write_points_chunk(self, npoints, bitmap_offset, data):
@@ -623,7 +635,7 @@ class Client:
         if dt == DT_STATUS_CODE:
             raise StatusException(self._recv_i32())
         if dt != DT_READY_FOR_CHUNK:
-            raise ProtocolException()
+            raise ProtocolException('Expected DT_READY_FOR_CHUNK')
         return self._recv_u32()
 
     def _write_points_end(self):
@@ -667,7 +679,8 @@ class Client:
         self._sendall(cmd)
 
         dt = self._recv_u32()
-        assert dt == DT_STATUS_CODE
+        if dt != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
         sc = self._recv_i32()
         if sc != 0:
             raise StatusException(sc)
@@ -704,20 +717,25 @@ class Client:
         if dt == DT_STATUS_CODE:
             raise StatusException(self._recv_i32())
 
-        assert dt == DT_TIME_FIRST
+        if dt != DT_TIME_FIRST:
+            raise ProtocolException('Expected DT_TIME_FIRST')
         time_first = self._recv_u64()
 
         dt = self._recv_u32()
-        assert dt == DT_TIME_LAST
+        if dt != DT_TIME_LAST:
+            raise ProtocolException('Expected DT_TIME_LAST')
         time_last = self._recv_u64()
 
         dt = self._recv_u32()
-        assert dt == DT_NPOINTS
+        if dt != DT_NPOINTS:
+            raise ProtocolException('Expected DT_NPOINTS')
         npoints = self._recv_u64()
 
         dt = self._recv_u32()
-        assert dt == DT_STATUS_CODE
-        assert self._recv_i32() == 0
+        if dt != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
+        if self._recv_i32() != 0:
+            raise ProtocolException('Expected status 0')
 
         return CountResult(time_first, time_last, npoints)
 
