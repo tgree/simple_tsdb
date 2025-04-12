@@ -415,7 +415,7 @@ class CountResult:
                                             self.npoints)
 
 
-class Client:
+class Connection:
     DEFAULT_SSL_CTX = None
 
     def __init__(self, host='127.0.0.1', port=4000, credentials=None):
@@ -423,13 +423,16 @@ class Client:
         self.raw_socket = socket.create_connection(self.addr)
         if credentials:
             assert len(credentials) == 2
-            if Client.DEFAULT_SSL_CTX is None:
-                Client.DEFAULT_SSL_CTX = ssl.create_default_context()
-            self.socket = Client.DEFAULT_SSL_CTX.wrap_socket(
+            if Connection.DEFAULT_SSL_CTX is None:
+                Connection.DEFAULT_SSL_CTX = ssl.create_default_context()
+            self.socket = Connection.DEFAULT_SSL_CTX.wrap_socket(
                     self.raw_socket, server_hostname=host)
             self.authenticate(*credentials)
         else:
             self.socket = self.raw_socket
+
+    def close(self):
+        self.socket.close()
 
     def _sendall(self, data):
         self.socket.sendall(data)
@@ -684,19 +687,17 @@ class Client:
         if sc != 0:
             raise StatusException(sc)
 
-    def select_points(self, database, measurement, series, schema, fields=None,
-                      t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+    def select_points(self, database, measurement, series, schema, fields, t0,
+                      t1, N):
         return SelectOP(self, CT_SELECT_POINTS_LIMIT, database, measurement,
                         series, schema, fields, t0, t1, N)
 
     def select_last_points(self, database, measurement, series, schema,
-                           fields=None, t0=0, t1=0xFFFFFFFFFFFFFFFF,
-                           N=0xFFFFFFFFFFFFFFFF):
+                           fields, t0, t1, N):
         return SelectOP(self, CT_SELECT_POINTS_LAST, database, measurement,
                         series, schema, fields, t0, t1, N)
 
-    def count_points(self, database, measurement, series, t0=0,
-                     t1=0xFFFFFFFFFFFFFFFF):
+    def count_points(self, database, measurement, series, t0, t1):
         database = database.encode()
         measurement = measurement.encode()
         series = series.encode()
@@ -742,3 +743,178 @@ class Client:
                    window_ns):
         return SumsOP(self, database, measurement, series, fields, t0, t1,
                       window_ns)
+
+
+class Client:
+    def __init__(self, host='127.0.0.1', port=4000, credentials=None):
+        self.host        = host
+        self.port        = port
+        self.credentials = credentials
+        self.conn        = None
+
+    def connect(self):
+        assert self.conn is None
+        self.conn = Connection(host=self.host, port=self.port,
+                               credentials=self.credentials)
+
+    def close(self):
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            finally:
+                self.conn = None
+
+    def create_database(self, database):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.create_database(database)
+        except ProtocolException:
+            self.close()
+            raise
+
+    def create_measurement(self, database, measurement, typed_fields):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.create_measurement(database, measurement,
+                                                typed_fields)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def list_databases(self):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.list_databases()
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def list_measurements(self, database):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.list_measurements(database)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def list_series(self, database, measurement):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.list_series(database, measurement)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def get_schema(self, database, measurement):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.get_schema(database, measurement)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def write_points(self, database, measurement, series, schema, points):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.write_points(database, measurement, series,
+                                          schema, points)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def delete_points(self, database, measurement, series, t):
+        '''
+        Deletes all points up to and including t.
+        '''
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.delete_points(database, measurement, series, t)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def select_points(self, database, measurement, series, schema, fields=None,
+                      t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.select_points(database, measurement, series,
+                                           schema, fields, t0, t1, N)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def select_last_points(self, database, measurement, series, schema,
+                           fields=None, t0=0, t1=0xFFFFFFFFFFFFFFFF,
+                           N=0xFFFFFFFFFFFFFFFF):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.select_last_points(database, measurement, series,
+                                                schema, fields, t0, t1, N)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def count_points(self, database, measurement, series, t0=0,
+                     t1=0xFFFFFFFFFFFFFFFF):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.count_points(database, measurement, series, t0, t1)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def sum_points(self, database, measurement, series, fields, t0, t1,
+                   window_ns):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.sum_points(database, measurement, series, fields,
+                                        t0, t1, window_ns)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
