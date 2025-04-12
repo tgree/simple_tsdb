@@ -640,10 +640,6 @@ class Client:
         while rem_points:
             n = min(rem_points, N)
             data = schema.pack_points(points, index, n)
-            # print('n %u  len(data) %u   max_data_len %u   '
-            #       'data_len_for_npoints %u'
-            #       % (n, len(data), max_data_len,
-            #          schema.data_len_for_npoints(n)))
             assert schema.data_len_for_npoints(n) == len(data)
             assert len(data) <= max_data_len
             self._write_points_chunk(n, 0, data)
