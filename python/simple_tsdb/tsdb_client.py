@@ -418,11 +418,10 @@ class CountResult:
 class Client:
     DEFAULT_SSL_CTX = None
 
-    def __init__(self, host='127.0.0.1', port=4000, use_ssl=False,
-                 credentials=None):
+    def __init__(self, host='127.0.0.1', port=4000, credentials=None):
         self.addr = (host, port)
         self.raw_socket = socket.create_connection(self.addr)
-        if use_ssl:
+        if credentials:
             assert len(credentials) == 2
             if Client.DEFAULT_SSL_CTX is None:
                 Client.DEFAULT_SSL_CTX = ssl.create_default_context()
