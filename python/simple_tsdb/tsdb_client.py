@@ -434,7 +434,7 @@ class Client:
         while len(data) != size:
             new_data = self.socket.recv(size - len(data))
             if not new_data:
-                raise ConnectionClosedException()
+                raise ConnectionClosedException('Connection closed.')
             data += new_data
         return data
 
