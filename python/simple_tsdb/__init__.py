@@ -5,6 +5,7 @@ from .client import (Client,
                      StatusCode,
                      ConnectionClosedException,
                      ProtocolException)
+from .push_queue import PushQueue
 
 
 __all__ = [
@@ -12,5 +13,6 @@ __all__ = [
     'StatusException',
     'StatusCode',
     'ConnectionClosedException',
-    'ProtocolException'
+    'ProtocolException',
+    'PushQueue',
 ]
