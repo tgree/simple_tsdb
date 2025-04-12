@@ -113,18 +113,18 @@ print_wq_entries(const tsdb::wal_query& wq,
 }
 
 void
-print_op_results(const fields_list& fs, tsdb::select_op& op,
+print_op_results(tsdb::select_op& op,
     tsdb::wal_query& wq, size_t N)
 {
     printf("%20s ","time_ns");
-    for (const auto& f : fs.fields)
-        printf("%20s ",f.c_str());
+    for (const auto& f : op.fields)
+        printf("%20s ",f->name);
     printf("\n");
 
     while (op.npoints)
     {
         N -= op.npoints;
-        for (size_t i=0; i<fs.fields.size() + 1; ++i)
+        for (size_t i=0; i<op.fields.size() + 1; ++i)
             printf("--------CHUNK------- ");
         printf("\n");
         if (op.npoints <= MAX_PRINT_RESULTS)
@@ -142,7 +142,7 @@ print_op_results(const fields_list& fs, tsdb::select_op& op,
     }
     if (N && wq.nentries)
     {
-        for (size_t i=0; i<fs.fields.size() + 1; ++i)
+        for (size_t i=0; i<op.fields.size() + 1; ++i)
             printf("---------WAL-------- ");
         printf("\n");
 
