@@ -131,7 +131,14 @@ tsdb::select_op::map_data()
 
         // No uncompressed file exists.  Try with a compressed file.  First,
         // make an anonymous backing region to hold the uncompressed data.
-        // TODO: Only unzip the part of the file we care about.
+        // TODO: Only unzip the part of the file we care about?
+        // TODO: Instead, in write_series() we will no longer keep .gz files if
+        //       they are larger than the raw data.  So a buffer of chunk_size
+        //       is big enough to hold the chunk file, whether it is compressed
+        //       or not.  We can read the whole file into a predefined buffer
+        //       (avoiding making new mappings all the time) and just ungzip
+        //       from that memory buffer which should be faster than
+        //       zng_gzread() file IO.
         field_mappings[i].map(NULL,len,PROT_READ | PROT_WRITE,
                               MAP_ANONYMOUS | MAP_PRIVATE,-1,0);
         field_data[i] = (const char*)field_mappings[i].addr +

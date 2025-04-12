@@ -10,19 +10,28 @@ parse_type<fields_list>(
     std::vector<std::string>::iterator& begin,
     std::vector<std::string>::iterator end)
 {
-    std::vector<std::string> fields;
-    while (begin != end)
-    {
-        auto v = str::split(*begin,",");
-        size_t n = begin->ends_with(",") ? v.size() - 1 : v.size();
-        for (size_t i=0; i<n; ++i)
-            fields.emplace_back(std::move(v[i]));
-        
-        if (!(*begin++).ends_with(","))
-            break;
-    }
-    if (fields.empty())
+    if (begin == end)
         throw parse_exception("Expected fields specifier.");
+
+    std::vector<std::string> fields;
+
+    if (*begin != "*")
+    {
+        while (begin != end)
+        {
+            auto v = str::split(*begin,",");
+            size_t n = begin->ends_with(",") ? v.size() - 1 : v.size();
+            for (size_t i=0; i<n; ++i)
+                fields.emplace_back(std::move(v[i]));
+            
+            if (!(*begin++).ends_with(","))
+                break;
+        }
+        if (fields.empty())
+            throw parse_exception("Expected fields specifier.");
+    }
+    else
+        ++begin;
 
     return fields_list{std::move(fields)};
 }
