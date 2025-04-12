@@ -20,10 +20,12 @@ namespace tsdb
         kassert(c.chunk_size % (1024*1024) == 0);
 
         std::string s;
-        s += "chunk_size      ";
+        s += "chunk_size        ";
         s += std::to_string(c.chunk_size/(1024*1024)) + "M\n";
-        s += "wal_max_entries ";
+        s += "wal_max_entries   ";
         s += std::to_string(c.wal_max_entries) + "\n";
+        s += "write_throttle_ns ";
+        s += std::to_string(c.write_throttle_ns) + "\n";
         return s;
     }
 

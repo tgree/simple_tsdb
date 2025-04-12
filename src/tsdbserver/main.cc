@@ -979,4 +979,14 @@ main(int argc, const char* argv[])
         ssl_workloop(argv[1],argv[2]);
     else if (argc == 4)
         ssl_workloop(argv[2],argv[3]);
+    else
+    {
+        printf("Usage: tsdbserver [cert_file key_file] [root_path]\n"
+               "   cert_file - path to certificate file\n"
+               "   key_file  - path to key file\n"
+               "   root_path - path to root directory of database\n"
+               "               (current working directory used if root_path\n"
+               "               not present)\n");
+        return -1;
+    }
 }

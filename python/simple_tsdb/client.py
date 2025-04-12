@@ -237,7 +237,8 @@ class FieldData:
     def get_bitmap_bit(self, i):
         bitmap_i = (self.bitmap_offset + i) // 64
         shift    = (self.bitmap_offset + i) % 64
-        return self.bitmap[bitmap_i] & (1 << shift)
+        v        = int(self.bitmap[bitmap_i])
+        return v & (1 << shift)
 
 
 class RXChunk:
@@ -308,11 +309,14 @@ class SelectOP:
 
     def read_chunk(self):
         if self.last_token == DT_END:
-            assert self.client._recv_u32() == DT_STATUS_CODE
-            assert self.client._recv_i32() == 0
+            if self.client._recv_u32() != DT_STATUS_CODE:
+                raise ProtocolException('Expected DT_STATUS_CODE')
+            if self.client._recv_i32() != 0:
+                raise ProtocolException('Expected status 0')
             return None
 
-        assert self.last_token == DT_CHUNK
+        if self.last_token != DT_CHUNK:
+            raise ProtocolException('Expected DT_CHUNK')
         npoints       = self.client._recv_u32()
         bitmap_offset = self.client._recv_u32()
         data_len      = self.client._recv_u32()
@@ -367,11 +371,14 @@ class SumsOP:
 
     def read_chunk(self):
         if self.last_token == DT_END:
-            assert self.client._recv_u32() == DT_STATUS_CODE
-            assert self.client._recv_i32() == 0
+            if self.client._recv_u32() != DT_STATUS_CODE:
+                raise ProtocolException('Expected DT_STATUS_CODE')
+            if self.client._recv_i32() != 0:
+                raise ProtocolException('Expected status 0')
             return None
 
-        assert self.last_token == DT_SUMS_CHUNK
+        if self.last_token != DT_SUMS_CHUNK:
+            raise ProtocolException('Expected DT_SUMS_CHUNK')
         chunk_npoints = self.client._recv_u16()
         data_len      = chunk_npoints * (8 + len(self.fields) * 16)
         data          = self.client._recvall(data_len)
@@ -408,22 +415,24 @@ class CountResult:
                                             self.npoints)
 
 
-class Client:
+class Connection:
     DEFAULT_SSL_CTX = None
 
-    def __init__(self, host='127.0.0.1', port=4000, use_ssl=False,
-                 credentials=None):
+    def __init__(self, host='127.0.0.1', port=4000, credentials=None):
         self.addr = (host, port)
         self.raw_socket = socket.create_connection(self.addr)
-        if use_ssl:
+        if credentials:
             assert len(credentials) == 2
-            if Client.DEFAULT_SSL_CTX is None:
-                Client.DEFAULT_SSL_CTX = ssl.create_default_context()
-            self.socket = Client.DEFAULT_SSL_CTX.wrap_socket(
+            if Connection.DEFAULT_SSL_CTX is None:
+                Connection.DEFAULT_SSL_CTX = ssl.create_default_context()
+            self.socket = Connection.DEFAULT_SSL_CTX.wrap_socket(
                     self.raw_socket, server_hostname=host)
             self.authenticate(*credentials)
         else:
             self.socket = self.raw_socket
+
+    def close(self):
+        self.socket.close()
 
     def _sendall(self, data):
         self.socket.sendall(data)
@@ -433,7 +442,7 @@ class Client:
         while len(data) != size:
             new_data = self.socket.recv(size - len(data))
             if not new_data:
-                raise ConnectionClosedException()
+                raise ConnectionClosedException('Connection closed.')
             data += new_data
         return data
 
@@ -453,7 +462,8 @@ class Client:
         self._sendall(cmd)
 
         dt = self._recv_u32()
-        assert dt == DT_STATUS_CODE
+        if dt != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
         sc = self._recv_i32()
         if sc != 0:
             raise StatusException(sc)
@@ -507,7 +517,8 @@ class Client:
                     raise StatusException(sc)
                 return databases
 
-            assert dt == DT_DATABASE
+            if dt != DT_DATABASE:
+                raise ProtocolException('Expected DT_DATABASE')
             size = self._recv_u16()
             name = self._recvall(size)
             databases.append(name.decode())
@@ -528,7 +539,8 @@ class Client:
                     raise StatusException(sc)
                 return measurements
 
-            assert dt == DT_MEASUREMENT
+            if dt != DT_MEASUREMENT:
+                raise ProtocolException('Expected DT_MEASUREMENT')
             size = self._recv_u16()
             name = self._recvall(size)
             measurements.append(name.decode())
@@ -552,7 +564,8 @@ class Client:
                     raise StatusException(sc)
                 return series
 
-            assert dt == DT_SERIES
+            if dt != DT_SERIES:
+                raise ProtocolException('Expected DT_SERIES')
             size = self._recv_u16()
             name = self._recvall(size)
             series.append(name.decode())
@@ -576,10 +589,12 @@ class Client:
                     raise StatusException(sc)
                 return Schema(fields)
 
-            assert dt == DT_FIELD_TYPE
+            if dt != DT_FIELD_TYPE:
+                raise ProtocolException('Expected DT_FIELD_TYPE')
             data = self._recvall(10)
             typ, dt_field_name, size = struct.unpack('<IIH', data)
-            assert dt_field_name == DT_FIELD_NAME
+            if dt_field_name != DT_FIELD_NAME:
+                raise ProtocolException('Expected DT_FIELD_NAME')
 
             name = self._recvall(size)
             fields.append(Field(FIELD_TYPES[typ], name.decode()))
@@ -605,7 +620,7 @@ class Client:
         if dt == DT_STATUS_CODE:
             raise StatusException(self._recv_i32())
         if dt != DT_READY_FOR_CHUNK:
-            raise ProtocolException()
+            raise ProtocolException('Expected DT_READY_FOR_CHUNK')
         return self._recv_u32()
 
     def _write_points_chunk(self, npoints, bitmap_offset, data):
@@ -622,7 +637,7 @@ class Client:
         if dt == DT_STATUS_CODE:
             raise StatusException(self._recv_i32())
         if dt != DT_READY_FOR_CHUNK:
-            raise ProtocolException()
+            raise ProtocolException('Expected DT_READY_FOR_CHUNK')
         return self._recv_u32()
 
     def _write_points_end(self):
@@ -639,10 +654,6 @@ class Client:
         while rem_points:
             n = min(rem_points, N)
             data = schema.pack_points(points, index, n)
-            # print('n %u  len(data) %u   max_data_len %u   '
-            #       'data_len_for_npoints %u'
-            #       % (n, len(data), max_data_len,
-            #          schema.data_len_for_npoints(n)))
             assert schema.data_len_for_npoints(n) == len(data)
             assert len(data) <= max_data_len
             self._write_points_chunk(n, 0, data)
@@ -651,19 +662,42 @@ class Client:
 
         self._write_points_end()
 
-    def select_points(self, database, measurement, series, schema, fields=None,
-                      t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+    def delete_points(self, database, measurement, series, t):
+        '''
+        Deletes all points up to and including t.
+        '''
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIQI' % (len(database),
+                                                    len(measurement),
+                                                    len(series)),
+                          CT_DELETE_POINTS,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_TIME_LAST, t,
+                          DT_END)
+        self._sendall(cmd)
+
+        dt = self._recv_u32()
+        if dt != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
+        sc = self._recv_i32()
+        if sc != 0:
+            raise StatusException(sc)
+
+    def select_points(self, database, measurement, series, schema, fields, t0,
+                      t1, N):
         return SelectOP(self, CT_SELECT_POINTS_LIMIT, database, measurement,
                         series, schema, fields, t0, t1, N)
 
     def select_last_points(self, database, measurement, series, schema,
-                           fields=None, t0=0, t1=0xFFFFFFFFFFFFFFFF,
-                           N=0xFFFFFFFFFFFFFFFF):
+                           fields, t0, t1, N):
         return SelectOP(self, CT_SELECT_POINTS_LAST, database, measurement,
                         series, schema, fields, t0, t1, N)
 
-    def count_points(self, database, measurement, series, t0=0,
-                     t1=0xFFFFFFFFFFFFFFFF):
+    def count_points(self, database, measurement, series, t0, t1):
         database = database.encode()
         measurement = measurement.encode()
         series = series.encode()
@@ -683,20 +717,25 @@ class Client:
         if dt == DT_STATUS_CODE:
             raise StatusException(self._recv_i32())
 
-        assert dt == DT_TIME_FIRST
+        if dt != DT_TIME_FIRST:
+            raise ProtocolException('Expected DT_TIME_FIRST')
         time_first = self._recv_u64()
 
         dt = self._recv_u32()
-        assert dt == DT_TIME_LAST
+        if dt != DT_TIME_LAST:
+            raise ProtocolException('Expected DT_TIME_LAST')
         time_last = self._recv_u64()
 
         dt = self._recv_u32()
-        assert dt == DT_NPOINTS
+        if dt != DT_NPOINTS:
+            raise ProtocolException('Expected DT_NPOINTS')
         npoints = self._recv_u64()
 
         dt = self._recv_u32()
-        assert dt == DT_STATUS_CODE
-        assert self._recv_i32() == 0
+        if dt != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
+        if self._recv_i32() != 0:
+            raise ProtocolException('Expected status 0')
 
         return CountResult(time_first, time_last, npoints)
 
@@ -704,3 +743,178 @@ class Client:
                    window_ns):
         return SumsOP(self, database, measurement, series, fields, t0, t1,
                       window_ns)
+
+
+class Client:
+    def __init__(self, host='127.0.0.1', port=4000, credentials=None):
+        self.host        = host
+        self.port        = port
+        self.credentials = credentials
+        self.conn        = None
+
+    def connect(self):
+        assert self.conn is None
+        self.conn = Connection(host=self.host, port=self.port,
+                               credentials=self.credentials)
+
+    def close(self):
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            finally:
+                self.conn = None
+
+    def create_database(self, database):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.create_database(database)
+        except ProtocolException:
+            self.close()
+            raise
+
+    def create_measurement(self, database, measurement, typed_fields):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.create_measurement(database, measurement,
+                                                typed_fields)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def list_databases(self):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.list_databases()
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def list_measurements(self, database):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.list_measurements(database)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def list_series(self, database, measurement):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.list_series(database, measurement)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def get_schema(self, database, measurement):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.get_schema(database, measurement)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def write_points(self, database, measurement, series, schema, points):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.write_points(database, measurement, series,
+                                          schema, points)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def delete_points(self, database, measurement, series, t):
+        '''
+        Deletes all points up to and including t.
+        '''
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.delete_points(database, measurement, series, t)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def select_points(self, database, measurement, series, schema, fields=None,
+                      t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.select_points(database, measurement, series,
+                                           schema, fields, t0, t1, N)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def select_last_points(self, database, measurement, series, schema,
+                           fields=None, t0=0, t1=0xFFFFFFFFFFFFFFFF,
+                           N=0xFFFFFFFFFFFFFFFF):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.select_last_points(database, measurement, series,
+                                                schema, fields, t0, t1, N)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def count_points(self, database, measurement, series, t0=0,
+                     t1=0xFFFFFFFFFFFFFFFF):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.count_points(database, measurement, series, t0, t1)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def sum_points(self, database, measurement, series, fields, t0, t1,
+                   window_ns):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.sum_points(database, measurement, series, fields,
+                                        t0, t1, window_ns)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
