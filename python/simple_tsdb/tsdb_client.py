@@ -237,7 +237,8 @@ class FieldData:
     def get_bitmap_bit(self, i):
         bitmap_i = (self.bitmap_offset + i) // 64
         shift    = (self.bitmap_offset + i) % 64
-        return self.bitmap[bitmap_i] & (1 << shift)
+        v        = int(self.bitmap[bitmap_i])
+        return v & (1 << shift)
 
 
 class RXChunk:
