@@ -913,9 +913,9 @@ auth_request_handler(std::unique_ptr<tcp::stream> s)
 }
 
 static void
-socket4_workloop()
+socket4_workloop(uint16_t port)
 {
-    tcp::ipv4::addr sa(4000,INADDR_LOOPBACK);
+    tcp::ipv4::addr sa(port,INADDR_LOOPBACK);
     tcp::ipv4::server_socket ss(sa);
     ss.listen(4);
     printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
@@ -934,10 +934,10 @@ socket4_workloop()
 }
 
 static void
-ssl_workloop(const char* cert_file, const char* key_file)
+ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 {
     tcp::ssl::context sslctx(cert_file,key_file);
-    tcp::ipv4::addr sa(4000,INADDR_ANY);
+    tcp::ipv4::addr sa(port,INADDR_ANY);
     tcp::ipv4::server_socket ss(sa);
     ss.listen(4);
     printf("SSL listening on %s.\n",ss.bind_addr.to_string().c_str());
@@ -965,6 +965,8 @@ usage(const char* err)
            "  [--root root_dir]\n"
            "    root_dir  - path to root directory of database\n"
            "                (defaults to current working directory\n"
+           "  [--port port]\n"
+           "    port      - TCP listening port number (defaults to 4000)\n"
            );
     if (err)
         printf("\n%s\n",err);
@@ -976,6 +978,7 @@ main(int argc, const char* argv[])
     const char* root_path = ".";
     const char* cert_file = NULL;
     const char* key_file = NULL;
+    uint16_t port = 4000;
 
     for (size_t i=1; i<argc;)
     {
@@ -1007,6 +1010,24 @@ main(int argc, const char* argv[])
             usage(NULL);
             return 0;
         }
+        else if (!strcmp(arg,"--port"))
+        {
+            if (!rem)
+            {
+                usage("Expected --port port");
+                return -1;
+            }
+            char* endptr;
+            port = strtoul(argv[i + 1],&endptr,10);
+            if (*endptr)
+            {
+                std::string err("Not a number: ");
+                err += argv[i + 1];
+                usage(err.c_str());
+                return -1;
+            }
+            i += 2;
+        }
         else
         {
             std::string err("Unrecognized argument: ");
@@ -1026,7 +1047,7 @@ main(int argc, const char* argv[])
     printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
 
     if (cert_file && key_file)
-        ssl_workloop(cert_file,key_file);
+        ssl_workloop(cert_file,key_file,port);
     else
-        socket4_workloop();
+        socket4_workloop(port);
 }
