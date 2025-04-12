@@ -955,14 +955,66 @@ ssl_workloop(const char* cert_file, const char* key_file)
     }
 }
 
+static void
+usage(const char* err)
+{
+    printf("Usage: tsdbserver [options]\n"
+           "  [--ssl-files cert_file key_file]\n"
+           "    cert_file - path to certificate file\n"
+           "    key_file  - path to key file\n"
+           "  [--root root_dir]\n"
+           "    root_dir  - path to root directory of database\n"
+           "                (defaults to current working directory\n"
+           );
+    if (err)
+        printf("\n%s\n",err);
+}
+
 int
 main(int argc, const char* argv[])
 {
-    const char* root_path;
-    if (argc == 2 || argc == 4)
-        root_path = argv[1];
-    else
-        root_path = ".";
+    const char* root_path = ".";
+    const char* cert_file = NULL;
+    const char* key_file = NULL;
+
+    for (size_t i=1; i<argc;)
+    {
+        auto* arg  = argv[i];
+        size_t rem = argc - i - 1;
+        if (!strcmp(arg,"--ssl-files"))
+        {
+            if (rem < 2)
+            {
+                usage("Expected --ssl-files cert_file key_file");
+                return -1;
+            }
+            cert_file = argv[i + 1];
+            key_file  = argv[i + 2];
+            i += 3;
+        }
+        else if (!strcmp(arg,"--root"))
+        {
+            if (!rem)
+            {
+                usage("Expected --root root_dir");
+                return -1;
+            }
+            root_path = argv[i + 1];
+            i += 2;
+        }
+        else if (!strcmp(arg,"--help"))
+        {
+            usage(NULL);
+            return 0;
+        }
+        else
+        {
+            std::string err("Unrecognized argument: ");
+            err += arg;
+            usage(err.c_str());
+            return -1;
+        }
+    }
 
     printf("%s\n",GIT_VERSION);
 
@@ -973,20 +1025,8 @@ main(int argc, const char* argv[])
     printf("      WAL size: %zu points\n",root->config.wal_max_entries);
     printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
 
-    if (argc == 1 || argc == 2)
-        socket4_workloop();
-    else if (argc == 3)
-        ssl_workloop(argv[1],argv[2]);
-    else if (argc == 4)
-        ssl_workloop(argv[2],argv[3]);
+    if (cert_file && key_file)
+        ssl_workloop(cert_file,key_file);
     else
-    {
-        printf("Usage: tsdbserver [cert_file key_file] [root_path]\n"
-               "   cert_file - path to certificate file\n"
-               "   key_file  - path to key file\n"
-               "   root_path - path to root directory of database\n"
-               "               (current working directory used if root_path\n"
-               "               not present)\n");
-        return -1;
-    }
+        socket4_workloop();
 }
