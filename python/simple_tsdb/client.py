@@ -163,6 +163,10 @@ class Schema:
                 return f.field_type
         raise KeyError
 
+    def typed_fields_str(self):
+        return ','.join(['%s/%s' % (f.name, f.field_type.name)
+                         for f in self.fields])
+
     def pack_points(self, points, index, n):
         timestamps = [points[i]['time_ns'] for i in range(index, index + n)]
         timestamps = np.array(timestamps, dtype=np.uint64)
