@@ -806,12 +806,12 @@ parse_and_exec(connection& conn, const command_syntax& cs)
     }
     catch (const tsdb::exception& e)
     {
-        printf("TSDB exception: %s\n",e.what());
+        printf("TSDB exception: [%d] %s\n",e.sc,e.what());
         status[1] = e.sc;
     }
     
-    printf("Sending status...\n");
-    conn.s.send_all(&status,sizeof(status));
+    printf("Sending status %d...\n",(int32_t)status[1]);
+    conn.s.send_all(status,sizeof(status));
 }
 
 static void
