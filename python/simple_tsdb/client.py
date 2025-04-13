@@ -71,10 +71,8 @@ class StatusCode:
 
 class StatusException(Exception):
     def __init__(self, status_code):
+        super().__init__(self, 'Status exception %d' % status_code)
         self.status_code = status_code
-
-    def __repr__(self):
-        return 'StatusException(%d)' % self.status_code
 
 
 class ConnectionClosedException(Exception):
