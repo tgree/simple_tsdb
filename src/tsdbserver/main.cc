@@ -484,8 +484,8 @@ handle_delete_points(connection& conn,
 }
 
 static void
-_handle_select_points(connection& conn, tsdb::select_op& op, tsdb::wal_query& wq,
-    size_t N)
+_handle_select_points(connection& conn, tsdb::select_op& op,
+    tsdb::wal_query& wq, size_t N)
 {
     while (op.npoints)
     {
