@@ -282,6 +282,8 @@ handle_create_measurement(connection& conn,
 
     std::vector<tsdb::schema_entry> fields;
     auto field_specifiers = str::split(typed_fields,",");
+    size_t index = 0;
+    size_t offset = 0;
     for (const auto& fs : field_specifiers)
     {
         auto field_specifier = str::split(fs,"/");
@@ -292,6 +294,9 @@ handle_create_measurement(connection& conn,
         }
 
         tsdb::schema_entry se{};
+        se.version = SCHEMA_VERSION;
+        se.index = index;
+        se.offset = offset;
         strcpy(se.name,field_specifier[0].c_str());
         if (field_specifier[1] == "bool")
             se.type = tsdb::FT_BOOL;
@@ -311,6 +316,9 @@ handle_create_measurement(connection& conn,
             throw futil::errno_exception(EINVAL);
 
         fields.push_back(se);
+
+        ++index;
+        offset += tsdb::ftinfos[se.type].nbytes;
     }
 
     printf("CREATE MEASUREMENT %s\n",path.c_str());
