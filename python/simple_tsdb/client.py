@@ -71,10 +71,8 @@ class StatusCode:
 
 class StatusException(Exception):
     def __init__(self, status_code):
+        super().__init__(self, 'Status exception %d' % status_code)
         self.status_code = status_code
-
-    def __repr__(self):
-        return 'StatusException(%d)' % self.status_code
 
 
 class ConnectionClosedException(Exception):
@@ -164,6 +162,10 @@ class Schema:
             if f.name == name:
                 return f.field_type
         raise KeyError
+
+    def typed_fields_str(self):
+        return ','.join(['%s/%s' % (f.name, f.field_type.name)
+                         for f in self.fields])
 
     def pack_points(self, points, index, n):
         timestamps = [points[i]['time_ns'] for i in range(index, index + n)]
