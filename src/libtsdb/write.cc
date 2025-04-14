@@ -298,6 +298,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
 
                     // TODO: If destination file was larger than the chunk size,
                     // delete it and just keep the uncompressed version around.
+                    // TODO: Make whatever file is left behind read-only.
                 }
             }
 
