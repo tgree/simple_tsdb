@@ -301,6 +301,25 @@ handle_update_schema()
     }
 }
 
+static void
+handle_update_wal()
+{
+    for (const auto& db_name : root->list_databases())
+    {
+        tsdb::database db(*root,db_name);
+        for (const auto& m_name : db.list_measurements())
+        {
+            tsdb::measurement m(db,m_name);
+            for (const auto& s_name : m.list_series())
+            {
+                futil::directory series_dir(m.dir,s_name);
+                futil::file wal_fd(series_dir,"wal",O_CREAT | O_RDWR,0660);
+                wal_fd.fsync();
+            }
+        }
+    }
+}
+
 struct command_handler
 {
     const std::string keyword;
@@ -323,6 +342,7 @@ static const command_handler command_handlers[] =
     {"MEAN",{XLATE(handle_mean)}},
     {"DELETE",{XLATE(handle_delete)}},
     {"UPDATE SCHEMA",{XLATE(handle_update_schema)}},
+    {"UPDATE WAL",{XLATE(handle_update_wal)}},
 };
 
 static void
