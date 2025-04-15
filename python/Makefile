@@ -6,7 +6,7 @@ MODULES := \
 	setup.cfg \
 	setup.py \
 	simple_tsdb/*.py
-PYTHON := python3.11
+PYTHON := python3
 
 FLAKE_MODULES := simple_tsdb
 LINT_MODULES  := simple_tsdb
