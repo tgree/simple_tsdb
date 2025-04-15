@@ -130,10 +130,10 @@ namespace str
 
         va_list ap;
         va_start(ap,fmt);
-        vasprintf(&buf,fmt,ap);
+        int rv = vasprintf(&buf,fmt,ap);
         va_end(ap);
 
-        if (!buf)
+        if (rv == -1)
             return "";
 
         std::string s(buf);
