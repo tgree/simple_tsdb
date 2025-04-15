@@ -988,10 +988,10 @@ main(int argc, const char* argv[])
     const char* key_file = NULL;
     uint16_t port = 4000;
 
-    for (size_t i=1; i<argc;)
+    for (size_t i=1; i<(size_t)argc;)
     {
         auto* arg  = argv[i];
-        size_t rem = argc - i - 1;
+        size_t rem = (size_t)argc - i - 1;
         if (!strcmp(arg,"--ssl-files"))
         {
             if (rem < 2)
