@@ -175,15 +175,16 @@ tsdb::select_op_first::select_op_first(const series_read_lock& read_lock,
         select_op(read_lock,field_names,_t0,_t1,limit)
 {
     // Log what we are going to do.
-    printf("SELECT [ ");
+    const auto& root = read_lock.m.db.root;
+    root.debugf("SELECT [ ");
     for (const auto& f : fields)
     {
         const auto* ftinfo = &ftinfos[f->type];
-        printf("%s/%s ",f->name,ftinfo->name);
+        root.debugf("%s/%s ",f->name,ftinfo->name);
     }
-    printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
-           " LIMIT %" PRIu64 "\n",
-           series_id.c_str(),t0,t1,limit);
+    root.debugf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+                " LIMIT %" PRIu64 "\n",
+                series_id.c_str(),t0,t1,limit);
 
     // Find the target slot.  std::upper_bound returns the first slot greater
     // than the requested value, meaning that t0 must appear in the slot
@@ -232,15 +233,16 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         select_op(read_lock,field_names,_t0,_t1,limit)
 {
     // Log what we are going to do.
-    printf("SELECT [ ");
+    const auto& root = read_lock.m.db.root;
+    root.debugf("SELECT [ ");
     for (const auto& f : fields)
     {
         const auto* ftinfo = &ftinfos[f->type];
-        printf("%s/%s ",f->name,ftinfo->name);
+        root.debugf("%s/%s ",f->name,ftinfo->name);
     }
-    printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
-           " LAST %" PRIu64 "\n",
-           series_id.c_str(),t0,t1,limit);
+    root.debugf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+                " LAST %" PRIu64 "\n",
+                series_id.c_str(),t0,t1,limit);
 
     // Find the location of both t0 and t1.
     auto* t0_index_slot = std::upper_bound(index_begin,index_end,t0);
@@ -326,15 +328,15 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         rem_limit = avail_points;
 
     // Log what we are going to do.
-    printf("=> SELECT [ ");
+    root.debugf("=> SELECT [ ");
     for (const auto& f : fields)
     {
         const auto* ftinfo = &ftinfos[f->type];
-        printf("%s/%s ",f->name,ftinfo->name);
+        root.debugf("%s/%s ",f->name,ftinfo->name);
     }
-    printf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
-           " LIMIT %" PRIu64 "\n",
-           series_id.c_str(),t0,t1,rem_limit);
+    root.debugf("] FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+                " LIMIT %" PRIu64 "\n",
+                series_id.c_str(),t0,t1,rem_limit);
 
     // Map the timestamp data.
     index_slot = t0_index_slot;
