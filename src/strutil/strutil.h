@@ -9,6 +9,8 @@
 #include <vector>
 #include <ctype.h>
 #include <stdarg.h>
+#include <stdint.h>
+#include <stdexcept>
 
 namespace str
 {
