@@ -14,6 +14,12 @@ TARGETS := \
 # Build options.
 OPT_LEVEL := -O2
 
+# Where to install binaries.
+INSTALL_DIR := /usr/local/bin
+INSTALL_BINS := \
+	tsdbcli2 \
+	tsdbserver
+
 # Standard directories.
 SRC_DIR     := src
 BIN_DIR     := bin
@@ -115,6 +121,11 @@ all: $(TARGETS:%=$(BIN_DIR)/%) test
 clean:
 	@rm -rf $(CLEAN_DIRS)
 	@find . -name "*.pyc" | xargs rm 2>/dev/null || true
+
+# Rule to build everything and install binaries.
+.PHONY: install
+install: all
+	sudo cp $(INSTALL_BINS:%=$(BIN_DIR)/%) $(INSTALL_DIR)/
 
 # Rule to build an object file from a %.cc file.
 # We can't use $^ for the list of source files because that will also pull in
