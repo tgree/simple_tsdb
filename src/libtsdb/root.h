@@ -42,6 +42,9 @@ namespace tsdb
         futil::directory    tmp_dir;
         futil::directory    databases_dir;
 
+        // Whether or not to enable debug printfs.
+        bool                debug_enabled;
+
         // Configuration.
         configuration       config;
 
@@ -59,11 +62,14 @@ namespace tsdb
         // Returns a list of all databases.
         std::vector<std::string> list_databases();
 
+        // Prints a debug message.
+        int debugf(const char* fmt, ...) const __PRINTF__(2,3);
+
         // Root at the specified path.
-        root(const futil::path& root_path);
+        root(const futil::path& root_path, bool debug_enabled);
 
         // Root in the current working directory.
-        root();
+        root(bool debug_enabled);
     };
 
     // Creates a new ROOT root in the specified directory.

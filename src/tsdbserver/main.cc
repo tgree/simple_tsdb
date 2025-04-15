@@ -251,7 +251,7 @@ handle_create_database(connection& conn,
 {
     // TODO: Use string_view.
     std::string database(tokens[0].data,tokens[0].len);
-    printf("CREATE DATABASE %s\n",database.c_str());
+    root->debugf("CREATE DATABASE %s\n",database.c_str());
     root->create_database(database.c_str());
 }
 
@@ -260,7 +260,7 @@ handle_list_databases(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     auto dbs = root->list_databases();
-    printf("LIST DATABASES\n");
+    root->debugf("LIST DATABASES\n");
     for (const auto& d_name : dbs)
     {
         uint32_t dt  = DT_DATABASE;
@@ -321,7 +321,7 @@ handle_create_measurement(connection& conn,
         offset += tsdb::ftinfos[se.type].nbytes;
     }
 
-    printf("CREATE MEASUREMENT %s\n",path.c_str());
+    root->debugf("CREATE MEASUREMENT %s\n",path.c_str());
     tsdb::database db(*root,database);
     tsdb::create_measurement(db,measurement,fields);
 }
@@ -334,7 +334,7 @@ handle_get_schema(connection& conn,
     std::string measurement(tokens[1].data,tokens[1].len);
     futil::path measurement_path(database,measurement);
 
-    printf("GET SCHEMA FOR %s\n",measurement_path.c_str());
+    root->debugf("GET SCHEMA FOR %s\n",measurement_path.c_str());
     tsdb::database db(*root,tokens[0].to_string());
     tsdb::measurement m(db,tokens[1].to_string());
     for (const auto& f : m.fields)
@@ -352,7 +352,7 @@ handle_list_measurements(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
     std::string db_name(tokens[0].data,tokens[0].len);
-    printf("LIST MEASUREMENTS FROM %s\n",db_name.c_str());
+    root->debugf("LIST MEASUREMENTS FROM %s\n",db_name.c_str());
     auto db = tsdb::database(*root,db_name);
     auto ms = db.list_measurements();
     for (const auto& m_name : ms)
@@ -371,7 +371,7 @@ handle_list_series(connection& conn,
 {
     std::string db_name(tokens[0].data,tokens[0].len);
     std::string m_name(tokens[1].data,tokens[1].len);
-    printf("LIST SERIES FROM %s/%s\n",db_name.c_str(),m_name.c_str());
+    root->debugf("LIST SERIES FROM %s/%s\n",db_name.c_str(),m_name.c_str());
     auto db = tsdb::database(*root,db_name);
     auto m = tsdb::measurement(db,m_name);
     auto ss = m.list_series();
@@ -396,7 +396,7 @@ handle_count_points(connection& conn,
     uint64_t t1 = tokens[4].u64;
 
     futil::path path(database,measurement,series);
-    printf("COUNT FROM %s\n",path.c_str());
+    root->debugf("COUNT FROM %s\n",path.c_str());
 
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
@@ -425,7 +425,7 @@ handle_write_points(connection& conn,
     std::string series(tokens[2].data,tokens[2].len);
     futil::path path(database,measurement,series);
 
-    printf("WRITE TO %s\n",path.c_str());
+    root->debugf("WRITE TO %s\n",path.c_str());
     tsdb::database db(*root,tokens[0].to_string());
     tsdb::measurement m(db,tokens[1].to_string());
 
@@ -447,7 +447,7 @@ handle_write_points(connection& conn,
         uint32_t dt = conn.s.pop<uint32_t>();
         if (dt == DT_END)
         {
-            printf("WRITE END\n");
+            root->debugf("WRITE END\n");
             return;
         }
         if (dt != DT_CHUNK)
@@ -457,11 +457,11 @@ handle_write_points(connection& conn,
         if (ch.data_len > 10*1024*1024)
             throw futil::errno_exception(ENOMEM);
 
-        printf("RECV %u BYTES\n",ch.data_len);
+        root->debugf("RECV %u BYTES\n",ch.data_len);
         auto_buf data(ch.data_len);
         conn.s.recv_all(data,ch.data_len);
 
-        printf("WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
+        root->debugf("WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
         tsdb::write_wal(write_lock,ch.npoints,ch.bitmap_offset,ch.data_len,
                         data);
     }
@@ -477,7 +477,8 @@ handle_delete_points(connection& conn,
     futil::path path(database,measurement,series);
     uint64_t t = tokens[3].u64;
 
-    printf("DELETE FROM %s WHERE time_ns <= %" PRIu64 "\n",path.c_str(),t);
+    root->debugf("DELETE FROM %s WHERE time_ns <= %" PRIu64 "\n",path.c_str(),
+                 t);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::delete_points(m,series,t);
@@ -603,9 +604,9 @@ handle_select_points_limit(connection& conn,
     uint64_t t1 = tokens[5].u64;
     uint64_t N = tokens[6].u64;
 
-    printf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
-           " LIMIT %" PRIu64 "\n",
-           field_list.c_str(),path.c_str(),t0,t1,N);
+    root->debugf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+                 " LIMIT %" PRIu64 "\n",
+                 field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
@@ -627,9 +628,9 @@ handle_select_points_last(connection& conn,
     uint64_t t1 = tokens[5].u64;
     uint64_t N = tokens[6].u64;
 
-    printf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
-           " LAST %" PRIu64 "\n",
-           field_list.c_str(),path.c_str(),t0,t1,N);
+    root->debugf("SELECT %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+                 " LAST %" PRIu64 "\n",
+                 field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
@@ -657,9 +658,9 @@ handle_sum_points(connection& conn,
     uint64_t t1 = tokens[5].u64;
     uint64_t window_ns = tokens[6].u64;
 
-    printf("SUM %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
-           " WINDOW_NS %" PRIu64 "\n",
-           field_list.c_str(),path.c_str(),t0,t1,window_ns);
+    root->debugf("SUM %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+                 " WINDOW_NS %" PRIu64 "\n",
+                 field_list.c_str(),path.c_str(),t0,t1,window_ns);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
     tsdb::series_read_lock read_lock(m,series);
@@ -732,7 +733,7 @@ static void
 parse_cmd(tcp::stream& s, const command_syntax& cs,
     std::vector<parsed_data_token>& tokens)
 {
-    printf("Got command 0x%08X.\n",cs.cmd_token);
+    root->debugf("Got command 0x%08X.\n",cs.cmd_token);
 
     for (auto dt : cs.data_tokens)
     {
@@ -742,7 +743,7 @@ parse_cmd(tcp::stream& s, const command_syntax& cs,
             printf("Expected 0x%08X got 0x%08X\n",dt,v);
             throw futil::errno_exception(EINVAL);
         }
-        printf("Got token 0x%08X.\n",dt);
+        root->debugf("Got token 0x%08X.\n",dt);
 
         parsed_data_token pdt;
         pdt.type = dt;
@@ -810,7 +811,7 @@ parse_and_exec(connection& conn, const command_syntax& cs)
         status[1] = e.sc;
     }
     
-    printf("Sending status %d...\n",(int32_t)status[1]);
+    root->debugf("Sending status %d...\n",(int32_t)status[1]);
     conn.s.send_all(status,sizeof(status));
 }
 
@@ -975,6 +976,8 @@ usage(const char* err)
            "                (defaults to current working directory\n"
            "  [--port port]\n"
            "    port      - TCP listening port number (defaults to 4000)\n"
+           "  [--no-debug]\n"
+           "              - disable debug output\n"
            );
     if (err)
         printf("\n%s\n",err);
@@ -987,6 +990,8 @@ main(int argc, const char* argv[])
     const char* cert_file = NULL;
     const char* key_file = NULL;
     uint16_t port = 4000;
+    bool no_debug = false;
+    bool unbuffered = false;
 
     for (size_t i=1; i<(size_t)argc;)
     {
@@ -1036,6 +1041,16 @@ main(int argc, const char* argv[])
             }
             i += 2;
         }
+        else if (!strcmp(arg,"--no-debug"))
+        {
+            no_debug = true;
+            ++i;
+        }
+        else if (!strcmp(arg,"--unbuffered"))
+        {
+            unbuffered = true;
+            ++i;
+        }
         else
         {
             std::string err("Unrecognized argument: ");
@@ -1045,11 +1060,15 @@ main(int argc, const char* argv[])
         }
     }
 
+    if (unbuffered)
+        setlinebuf(stdout);
+
+
     printf("%s\n",GIT_VERSION);
 
     signal(SIGPIPE,SIG_IGN);
 
-    root = new tsdb::root(root_path);
+    root = new tsdb::root(root_path,!no_debug);
     printf("    Chunk size: %zu bytes\n",root->config.chunk_size);
     printf("      WAL size: %zu points\n",root->config.wal_max_entries);
     printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
