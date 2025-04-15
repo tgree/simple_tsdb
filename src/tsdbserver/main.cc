@@ -991,6 +991,7 @@ main(int argc, const char* argv[])
     const char* key_file = NULL;
     uint16_t port = 4000;
     bool no_debug = false;
+    bool unbuffered = false;
 
     for (size_t i=1; i<(size_t)argc;)
     {
@@ -1045,6 +1046,11 @@ main(int argc, const char* argv[])
             no_debug = true;
             ++i;
         }
+        else if (!strcmp(arg,"--unbuffered"))
+        {
+            unbuffered = true;
+            ++i;
+        }
         else
         {
             std::string err("Unrecognized argument: ");
@@ -1053,6 +1059,10 @@ main(int argc, const char* argv[])
             return -1;
         }
     }
+
+    if (unbuffered)
+        setlinebuf(stdout);
+
 
     printf("%s\n",GIT_VERSION);
 
