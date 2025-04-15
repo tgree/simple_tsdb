@@ -24,7 +24,7 @@ namespace tsdb
         uint64_t*                       timestamps;
         field_vector<write_field_info>  fields;
 
-        constexpr uint64_t get_bitmap_bit(size_t field_index, size_t i) const
+        uint64_t get_bitmap_bit(size_t field_index, size_t i) const
         {
             kassert(field_index < fields.size());
             kassert(i < npoints);
