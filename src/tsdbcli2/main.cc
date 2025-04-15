@@ -381,9 +381,9 @@ main(int argc, const char* argv[])
     size_t chunk_size = 0;
 
     std::vector<const char*> unused_args;
-    for (size_t i=1; i<argc; ++i)
+    for (size_t i=1; i<(size_t)argc; ++i)
     {
-        size_t rem = argc - i - 1;
+        size_t rem = (size_t)argc - i - 1;
         if (!strcmp(argv[i],"--init-root"))
         {
             if (!rem)
