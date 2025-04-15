@@ -5,6 +5,7 @@
 
 #include "series.h"
 #include <hdr/kmath.h>
+#include <algorithm>
 
 namespace tsdb
 {
@@ -96,6 +97,11 @@ namespace tsdb
             auto tmp(*this);
             ++(*this);
             return tmp;
+        }
+
+        wal_entry_iterator operator--()
+        {
+            return (*this -= 1);
         }
 
         friend wal_entry_iterator operator+(const wal_entry_iterator& a,

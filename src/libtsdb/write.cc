@@ -118,7 +118,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
 
         // Validate the file size.
         pos = tail_fd.lseek(0,SEEK_END);
-        if (pos > chunk_size)
+        if ((size_t)pos > chunk_size)
             throw tsdb::tail_file_too_big_exception(pos);
         if (pos % sizeof(uint64_t))
             throw tsdb::tail_file_invalid_size_exception(pos);
@@ -435,7 +435,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
         {
             write_lock.time_last_fd.fsync();
             kassert(avail_points == 0);
-            kassert(pos == chunk_npoints*sizeof(uint64_t));
+            kassert((size_t)pos == chunk_npoints*sizeof(uint64_t));
         }
     }
 

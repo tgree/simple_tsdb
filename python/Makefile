@@ -6,7 +6,7 @@ MODULES := \
 	setup.cfg \
 	setup.py \
 	simple_tsdb/*.py
-PYTHON := python3.11
+PYTHON := python3
 
 FLAKE_MODULES := simple_tsdb
 LINT_MODULES  := simple_tsdb
@@ -35,11 +35,11 @@ lint:
 
 .PHONY: install
 install: $(WHEEL_PATH) | uninstall
-	sudo $(PYTHON) -m pip install $(WHEEL_PATH)
+	sudo $(PYTHON) -m pip install $(WHEEL_PATH) --break-system-packages
 
 .PHONY: uninstall
 uninstall:
-	sudo $(PYTHON) -m pip uninstall -y $(MODULE)
+	sudo $(PYTHON) -m pip uninstall -y $(MODULE) --break-system-packages
 
 .PHONY: packages
 packages: $(WHEEL_PATH)
