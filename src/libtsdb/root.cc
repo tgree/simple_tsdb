@@ -52,10 +52,11 @@ catch (const std::invalid_argument&)
     throw tsdb::invalid_config_file_exception();
 }
 
-tsdb::root::root(const futil::path& root_path) try :
+tsdb::root::root(const futil::path& root_path, bool debug_enabled) try :
     root_dir(root_path),
     tmp_dir(root_dir,"tmp"),
     databases_dir(root_dir,"databases"),
+    debug_enabled(debug_enabled),
     config(load_configuration(this))
 {
 }
@@ -66,10 +67,11 @@ catch (const futil::errno_exception& e)
     throw;
 }
 
-tsdb::root::root() try :
+tsdb::root::root(bool debug_enabled) try :
     root_dir(AT_FDCWD,"."),
     tmp_dir(root_dir,"tmp"),
     databases_dir(root_dir,"databases"),
+    debug_enabled(debug_enabled),
     config(load_configuration(this))
 {
 }
@@ -143,6 +145,20 @@ std::vector<std::string>
 tsdb::root::list_databases()
 {
     return databases_dir.listdirs();
+}
+
+int
+tsdb::root::debugf(const char* fmt, ...) const
+{
+    if (!debug_enabled)
+        return 0;
+
+    va_list ap;
+    va_start(ap,fmt);
+    int rv = vprintf(fmt,ap);
+    va_end(ap);
+
+    return rv;
 }
 
 void

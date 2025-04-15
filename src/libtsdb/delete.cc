@@ -138,6 +138,6 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     futil::rename(m.db.root.tmp_dir,tmp_index_fd.name,series_dir,"index");
     tmp_index_fd.commit();
     series_dir.fsync_and_flush();
-    printf("Deleted %zu slots from the start of the index file.\n",
-           index_slot - index_begin);
+    m.db.root.debugf("Deleted %zu slots from the start of the index file.\n",
+                     index_slot - index_begin);
 }
