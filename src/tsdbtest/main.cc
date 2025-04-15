@@ -477,7 +477,7 @@ rotate_test()
     // Write the rotated points, along with some overwrite.
     auto iter = ss.points.end() - npoints;
     size_t avail_over = iter - ss.points.begin();
-    size_t nover = MIN(avail_over,100);
+    size_t nover = MIN(avail_over,(size_t)100);
     iter -= nover;
     printf("WRITE %s T %" PRIu64 " NPOINTS %zu\n",
            ss.dms_path.c_str(),iter->time_ns,npoints + nover);
