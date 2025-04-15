@@ -408,7 +408,7 @@ main(int argc, const char* argv[])
     std::string root_path(unused_args.empty() ? "." : unused_args[0]);
     try
     {
-        root = new tsdb::root(root_path);
+        root = new tsdb::root(root_path,true);
         if (init_root)
         {
             printf("TSDB root already exists but --init-root supplied.\n");
@@ -444,7 +444,7 @@ main(int argc, const char* argv[])
 
         try
         {
-            root = new tsdb::root(root_path);
+            root = new tsdb::root(root_path,true);
         }
         catch (const std::exception& e)
         {
