@@ -72,14 +72,9 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     kassert(wci.timestamps[0] > write_lock.time_last);
 
     // ************ Index search and crash recovery truncation  **************
-    // Open the index file, taking a shared lock on it to prevent any other
-    // client from deleting from the file.
-    // TODO: We hold a write lock.  Is this really necessary?
+    // Open the index file and the most recent timestamp file if it exists, and
+    // perform validation checking on it if found.
     futil::file index_fd(write_lock.series_dir,"index",O_RDWR);
-    index_fd.flock(LOCK_SH);
-
-    // Open the most recent timestamp file if it exists, and perform validation
-    // checking on it if found.
     futil::directory time_ns_dir(write_lock.series_dir,"time_ns");
     futil::directory fields_dir(write_lock.series_dir,"fields");
     futil::directory bitmaps_dir(write_lock.series_dir,"bitmaps");
@@ -246,9 +241,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
         bitmaps_dir.fsync_and_barrier();
         tail_fd.close();
         futil::unlink(time_ns_dir,ie.timestamp_file);
-        index_fd.flock(LOCK_EX);
         index_fd.truncate(index*sizeof(index_entry));
-        index_fd.flock(LOCK_SH);
     }
 
     // ************************** Write Points *******************************
