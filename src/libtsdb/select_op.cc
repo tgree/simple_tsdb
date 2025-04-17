@@ -151,6 +151,7 @@ tsdb::select_op::map_data()
         int field_fd = futil::openat(fields_dir,futil::path(f->name,gz_name),
                                      O_RDONLY);
         gzFile gzf = zng_gzdopen(field_fd,"rb");
+        zng_gzbuffer(gzf,128*1024);
         int32_t zlen = zng_gzread(gzf,field_mappings[i].addr,len);
         kassert((size_t)zlen == len);
         zng_gzclose_r(gzf);
