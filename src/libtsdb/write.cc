@@ -282,7 +282,8 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                                     src_name));
 
                     // Create the destination file and write it out.
-                    printf("Compressing %s...\n",unlink_field_paths[i].c_str());
+                    write_lock.m.db.root.debugf("Compressing %s...\n",
+                                                unlink_field_paths[i].c_str());
                     int gz_fd = futil::openat(
                         fields_dir,
                         futil::path(write_lock.m.fields[i].name,
@@ -294,7 +295,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                     zng_gzflush(gz_file,Z_FINISH);
                     futil::fsync(gz_fd);
                     zng_gzclose(gz_file);
-                    printf("Done.\n");
+                    write_lock.m.db.root.debugf("Done.\n");
 
                     // TODO: If destination file was larger than the chunk size,
                     // delete it and just keep the uncompressed version around.
