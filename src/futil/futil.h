@@ -302,7 +302,7 @@ namespace futil
             }
         }
 
-        int fcntl(int cmd)
+        int fcntl(int cmd) const
         {
             for (;;)
             {
@@ -315,7 +315,7 @@ namespace futil
         }
 
         template<typename T>
-        int fcntl(int cmd, T arg)
+        int fcntl(int cmd, T arg) const
         {
             for (;;)
             {
@@ -327,7 +327,7 @@ namespace futil
             }
         }
 
-        void fsync()
+        void fsync() const
         {
             // Pushes dirty data out to the disk controller.  On macOS, this
             // doesn't flush to the disk itself; the dirty data could sit in
@@ -335,7 +335,7 @@ namespace futil
             futil::fsync(fd);
         }
 
-        void fsync_and_barrier()
+        void fsync_and_barrier() const
         {
 #if IS_MACOS
             // Performs an fsync() and then inserts an IO barrier, preventing
@@ -364,7 +364,7 @@ namespace futil
 #endif
         }
 
-        void fsync_and_flush()
+        void fsync_and_flush() const
         {
 #if IS_MACOS
             // Performs an fasync() and then flushes the disk controller's
