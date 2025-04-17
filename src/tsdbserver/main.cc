@@ -507,7 +507,7 @@ _handle_select_points(connection& conn, tsdb::select_op& op,
         for (size_t i=0; i<op.fields.size(); ++i)
         {
             // First we send the bitmap.
-            auto* bitmap = (const uint64_t*)op.bitmap_mappings[i].addr;
+            auto* bitmap = (const uint64_t*)op.bitmap_bufs[i].data;
             conn.s.send_all(&bitmap[bitmap_index],bitmap_n*8);
 
             // Next we send the field data.
