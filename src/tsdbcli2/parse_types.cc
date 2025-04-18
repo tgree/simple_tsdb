@@ -256,6 +256,41 @@ parse_type<select_time_range>(
     return select_time_range{0,(uint64_t)-1};
 }
 
+template<> active_time_range
+parse_type<active_time_range>(
+    std::vector<std::string>::iterator& begin,
+    std::vector<std::string>::iterator end)
+{
+    size_t avail_args = end - begin;
+    if (avail_args && !strcasecmp(begin[0].c_str(),"where"))
+    {
+        if (avail_args >= 6)
+        {
+            try
+            {
+                auto ar = parse_time_range_6_arg(begin,end);
+                return active_time_range{ar.t0,ar.t1};
+            }
+            catch (const parse_exception&)
+            {
+            }
+        }
+        if (avail_args >= 4)
+        {
+            try
+            {
+                auto ar = parse_time_range_4_arg(begin,end);
+                return active_time_range{ar.t0,ar.t1};
+            }
+            catch (const parse_exception&)
+            {
+            }
+        }
+    }
+
+    throw parse_exception("Expected 'WHERE ...time_ns...'.");
+}
+
 template<> delete_time_range
 parse_type<delete_time_range>(
     std::vector<std::string>::iterator& begin,
