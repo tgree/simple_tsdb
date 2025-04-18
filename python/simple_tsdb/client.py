@@ -19,6 +19,7 @@ CT_GET_SCHEMA           = 0x87E5A959
 CT_LIST_DATABASES       = 0x29200D6D
 CT_LIST_MEASUREMENTS    = 0x0FEB1399
 CT_LIST_SERIES          = 0x7B8238D6
+CT_ACTIVE_SERIES        = 0xF3B5093D
 CT_COUNT_POINTS         = 0x0E329B19
 CT_SUM_POINTS           = 0x90305A39
 CT_NOP                  = 0x22CF1296
@@ -572,6 +573,33 @@ class Connection:
             name = self._recvall(size)
             series.append(name.decode())
 
+    def list_active_series(self, database, measurement, t0, t1):
+        database = database.encode()
+        measurement = measurement.encode()
+        cmd = struct.pack('<IIH%usIH%usIQIQI' % (len(database),
+                                                 len(measurement)),
+                          CT_ACTIVE_SERIES,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          DT_END)
+        self._sendall(cmd)
+        series = []
+        while True:
+            dt = self._recv_u32()
+            if dt == DT_STATUS_CODE:
+                sc = self._recv_i32()
+                if sc != 0:
+                    raise StatusException(sc)
+                return series
+
+            if dt != DT_SERIES:
+                raise ProtocolException('Expected DT_SERIES')
+            size = self._recv_u16()
+            name = self._recvall(size)
+            series.append(name.decode())
+
     def get_schema(self, database, measurement):
         database = database.encode()
         measurement = measurement.encode()
@@ -819,6 +847,18 @@ class Client:
 
         try:
             return self.conn.list_series(database, measurement)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def list_active_series(self, database, measurement, t0, t1):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.list_active_series(database, measurement, t0, t1)
         except StatusException:
             raise
         except:  # noqa: E722
