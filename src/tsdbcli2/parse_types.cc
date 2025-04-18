@@ -225,6 +225,9 @@ parse_type<select_time_range>(
     std::vector<std::string>::iterator& begin,
     std::vector<std::string>::iterator end)
 {
+    // WHERE T0 LT_LE_OP time_ns LT_LE_OP T1
+    // WHERE time_ns OP T
+    // []
     size_t avail_args = end - begin;
     if (!avail_args || strcasecmp(begin[0].c_str(),"where"))
         return select_time_range{0,(uint64_t)-1};
