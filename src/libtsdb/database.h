@@ -16,7 +16,9 @@ namespace tsdb
         // Lists all the measurements in the database.
         std::vector<std::string> list_measurements() const
         {
-            return dir.listdirs();
+            auto v = dir.listdirs();
+            std::sort(v.begin(),v.end());
+            return v;
         }
 
         database(const struct root& root, const futil::path& path) try :
