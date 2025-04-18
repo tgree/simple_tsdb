@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "measurement.h"
 #include "database.h"
+#include "count.h"
 #include "exception.h"
 #include <futil/xact.h>
 #include <hdr/types.h>
@@ -34,6 +35,22 @@ catch (const futil::errno_exception& e)
     if (e.errnov == ENOENT)
         throw tsdb::no_such_measurement_exception();
     throw;
+}
+
+std::vector<std::string>
+tsdb::measurement::list_active_series(uint64_t t0, uint64_t t1) const
+{
+    std::vector<std::string> active_series;
+
+    for (auto& series_name : list_series())
+    {
+        series_read_lock srl(*this,series_name);
+        auto cr = tsdb::count_points(srl,t0,t1);
+        if (cr.npoints)
+            active_series.emplace_back(std::move(series_name));
+    }
+
+    return active_series;
 }
 
 void
