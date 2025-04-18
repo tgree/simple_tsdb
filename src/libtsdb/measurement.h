@@ -70,7 +70,9 @@ namespace tsdb
 
         std::vector<std::string> list_series() const
         {
-            return dir.listdirs();
+            auto v = dir.listdirs();
+            std::sort(v.begin(),v.end());
+            return v;
         }
 
         size_t compute_write_chunk_len(size_t npoints,
