@@ -2,6 +2,7 @@ import React, { ReactElement } from 'react';
 import { useAsync } from 'react-use';
 import { InlineField, Select } from '@grafana/ui';
 import type { SelectableValue } from '@grafana/data';
+import { getTemplateSrv } from '@grafana/runtime';
 import type { EditorProps } from './types';
 import type { BasicDataSource } from '../../datasource';
 import type { BasicQuery } from '../../types';
@@ -52,12 +53,19 @@ function useSeries(datasource: BasicDataSource, query: BasicQuery): AsyncSeriesS
       return [];
     }
 
+    const variables = getTemplateSrv().getVariables();
     const { series } = await datasource.getSeriesList(datasource.database, query.measurement!);
 
-    return series.map((s) => ({
-      label: s,
-      value: s,
-    }));
+    return [
+        ...variables.map((v) => ({
+          label: '$' + v.name,
+          value: '$' + v.name,
+        })),
+        ...series.map((s) => ({
+          label: s,
+          value: s,
+        })),
+    ];
   }, [datasource, query]);
 
   return {
