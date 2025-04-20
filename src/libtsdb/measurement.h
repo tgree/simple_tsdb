@@ -70,8 +70,15 @@ namespace tsdb
 
         std::vector<std::string> list_series() const
         {
-            return dir.listdirs();
+            auto v = dir.listdirs();
+            std::sort(v.begin(),v.end());
+            return v;
         }
+
+        // Returns a list of all series that have at least one data point in
+        // the range [t0, t1].
+        std::vector<std::string> list_active_series(uint64_t t0,
+                                                    uint64_t t1) const;
 
         size_t compute_write_chunk_len(size_t npoints,
                                        size_t bitmap_offset = 0) const

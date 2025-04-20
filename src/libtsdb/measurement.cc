@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "measurement.h"
 #include "database.h"
+#include "count.h"
 #include "exception.h"
 #include <futil/xact.h>
 #include <hdr/types.h>
@@ -34,6 +35,22 @@ catch (const futil::errno_exception& e)
     if (e.errnov == ENOENT)
         throw tsdb::no_such_measurement_exception();
     throw;
+}
+
+std::vector<std::string>
+tsdb::measurement::list_active_series(uint64_t t0, uint64_t t1) const
+{
+    std::vector<std::string> active_series;
+
+    for (auto& series_name : list_series())
+    {
+        series_read_lock srl(*this,series_name);
+        auto cr = tsdb::count_points(srl,t0,t1);
+        if (cr.npoints)
+            active_series.emplace_back(std::move(series_name));
+    }
+
+    return active_series;
 }
 
 void
@@ -90,15 +107,12 @@ tsdb::create_measurement(const database& db, const futil::path& name,
 
         // The measurement doesn't exist.  Create it in the tmp directory first.
         futil::xact_mkdtemp m_dir(db.root.tmp_dir,0770);
-        futil::xact_creat csl_fd(m_dir,"create_series_lock",
-                                 O_WRONLY | O_CREAT | O_EXCL,0660);
         futil::xact_creat schema_fd(m_dir,"schema",O_WRONLY | O_CREAT | O_EXCL,
                                     0440);
 
         // Write the schema and fsync().
         schema_fd.write_all(&fields[0],fields.size()*sizeof(schema_entry));
         m_dir.fsync();
-        csl_fd.fsync();
         schema_fd.fsync_and_barrier();
 
         // Try to move the newly-created measurement into place.
@@ -107,7 +121,6 @@ tsdb::create_measurement(const database& db, const futil::path& name,
         {
             m_dir.fsync_and_flush();
             schema_fd.commit();
-            csl_fd.commit();
             m_dir.commit();
             return;
         }

@@ -44,9 +44,9 @@ namespace tsdb
         const field_vector<const schema_entry*> fields;
 
         // Query mapping results.
-        field_vector<futil::mapping>            field_mappings;
-        field_vector<futil::mapping>            bitmap_mappings;
-        field_vector<const void*>               field_data;
+        field_vector<auto_buf>      field_bufs;
+        field_vector<auto_buf>      bitmap_bufs;
+        field_vector<const void*>   field_data;
 
         void next();
 
@@ -75,7 +75,7 @@ namespace tsdb
         constexpr bool get_bitmap_bit(size_t field_index, size_t i) const
         {
             return tsdb::get_bitmap_bit(
-                (const uint64_t*)bitmap_mappings[field_index].addr,
+                (const uint64_t*)bitmap_bufs[field_index].data,
                 bitmap_offset + i);
         }
 

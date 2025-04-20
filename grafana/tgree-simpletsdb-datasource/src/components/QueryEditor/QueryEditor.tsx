@@ -1,7 +1,8 @@
 import React, { ReactElement } from 'react';
 import { useAsync } from 'react-use';
-import { InlineField, Select } from '@grafana/ui';
+import { InlineField, Select, AutoSizeInput, Stack, InlineLabel } from '@grafana/ui';
 import type { SelectableValue } from '@grafana/data';
+import { getTemplateSrv } from '@grafana/runtime';
 import type { EditorProps } from './types';
 import type { BasicDataSource } from '../../datasource';
 import type { BasicQuery } from '../../types';
@@ -52,12 +53,19 @@ function useSeries(datasource: BasicDataSource, query: BasicQuery): AsyncSeriesS
       return [];
     }
 
+    const variables = getTemplateSrv().getVariables();
     const { series } = await datasource.getSeriesList(datasource.database, query.measurement!);
 
-    return series.map((s) => ({
-      label: s,
-      value: s,
-    }));
+    return [
+        ...variables.map((v) => ({
+          label: '$' + v.name,
+          value: '$' + v.name,
+        })),
+        ...series.map((s) => ({
+          label: s,
+          value: s,
+        })),
+    ];
   }, [datasource, query]);
 
   return {
@@ -116,6 +124,13 @@ function OnChangeField(selectable: SelectableValue<string>, props: EditorProps) 
   });
 }
 
+function OnChangeAlias(alias: string, props: EditorProps) {
+  props.onChange({
+    ...props.query,
+    alias: alias,
+  });
+}
+
 export function QueryEditor(props: EditorProps): ReactElement {
   /*
    * In case it isn't obvious, because it really wasn't obvious to me.  Every time the query
@@ -128,31 +143,40 @@ export function QueryEditor(props: EditorProps): ReactElement {
 
   return (
     <>
-      <InlineField label="Measurement" labelWidth={16}>
-        <Select
-          inputId="editor-measurements"
-          options={asyncMeasurementsState.measurements}
-          onChange={(selectable) => OnChangeMeasurement(selectable, props)}
-          isLoading={asyncMeasurementsState.loading}
-          disabled={!!asyncMeasurementsState.error}
-          value={props.query.measurement}
-        />
-      </InlineField>
-      <InlineField label="Series" labelWidth={16}>
-        <Select
-          inputId="editor-series"
-          options={asyncSeriesState.series}
-          onChange={(selectable) => OnChangeSeries(selectable, props)}
-          value={props.query.series}
-        />
-      </InlineField>
-      <InlineField label="Field" labelWidth={16}>
-        <Select
-          inputId="editor-fields"
-          options={asyncFieldsState.fields}
-          onChange={(selectable) => OnChangeField(selectable, props)}
-          value={props.query.field}
-        />
+      <InlineField label="SELECT" labelWidth={8} transparent>
+        <Stack>
+          <Select
+            inputId="editor-measurements"
+            options={asyncMeasurementsState.measurements}
+            onChange={(selectable) => OnChangeMeasurement(selectable, props)}
+            isLoading={asyncMeasurementsState.loading}
+            disabled={!!asyncMeasurementsState.error}
+            value={props.query.measurement}
+            width="auto"
+          />
+          {/* <InlineLabel width="auto" transparent>/</InlineLabel> */}
+          <Select
+            inputId="editor-series"
+            options={asyncSeriesState.series}
+            onChange={(selectable) => OnChangeSeries(selectable, props)}
+            value={props.query.series}
+            width="auto"
+          />
+          {/* <InlineLabel width="auto" transparent>/</InlineLabel> */}
+          <Select
+            inputId="editor-fields"
+            options={asyncFieldsState.fields}
+            onChange={(selectable) => OnChangeField(selectable, props)}
+            value={props.query.field}
+            width="auto"
+          />
+          <InlineField label="ALIAS" transparent>
+            <AutoSizeInput
+              onChange={(event) => OnChangeAlias(event.currentTarget.value, props)}
+              value={props.query.alias}
+            />
+          </InlineField>
+        </Stack>
       </InlineField>
     </>
   );

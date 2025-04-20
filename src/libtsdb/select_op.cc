@@ -29,10 +29,13 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
         timestamps_end(NULL),
         fields(read_lock.m.gen_entries(field_names))
 {
+    const auto& root = read_lock.m.db.root;
+    const size_t chunk_entries = root.config.chunk_size/8;
     for (size_t i=0; i<fields.size(); ++i)
     {
-        field_mappings.emplace_back();
-        bitmap_mappings.emplace_back();
+        auto& fti = ftinfos[fields[i]->type];
+        field_bufs.emplace_back(chunk_entries*fti.nbytes);
+        bitmap_bufs.emplace_back(chunk_entries/8);
         field_data.emplace_back((void*)NULL);
     }
 
@@ -117,9 +120,8 @@ tsdb::select_op::map_data()
             futil::file field_fd(
                 fields_dir,futil::path(f->name,index_slot->timestamp_file),
                 O_RDONLY);
-
-            field_mappings[i].map(NULL,len,PROT_READ,MAP_SHARED,field_fd.fd,0);
-            field_data[i] = (const char*)field_mappings[i].addr +
+            field_fd.read_all(field_bufs[i].data,len);
+            field_data[i] = (const char*)field_bufs[i].data +
                             start_index*fti->nbytes;
             continue;
         }
@@ -139,9 +141,7 @@ tsdb::select_op::map_data()
         //       (avoiding making new mappings all the time) and just ungzip
         //       from that memory buffer which should be faster than
         //       zng_gzread() file IO.
-        field_mappings[i].map(NULL,len,PROT_READ | PROT_WRITE,
-                              MAP_ANONYMOUS | MAP_PRIVATE,-1,0);
-        field_data[i] = (const char*)field_mappings[i].addr +
+        field_data[i] = (const char*)field_bufs[i].data +
                         start_index*fti->nbytes;
 
         // Now, try and open the file and unzip it into the backing region.
@@ -151,7 +151,8 @@ tsdb::select_op::map_data()
         int field_fd = futil::openat(fields_dir,futil::path(f->name,gz_name),
                                      O_RDONLY);
         gzFile gzf = zng_gzdopen(field_fd,"rb");
-        int32_t zlen = zng_gzread(gzf,field_mappings[i].addr,len);
+        zng_gzbuffer(gzf,128*1024);
+        int32_t zlen = zng_gzread(gzf,field_bufs[i].data,len);
         kassert((size_t)zlen == len);
         zng_gzclose_r(gzf);
     }
@@ -164,8 +165,8 @@ tsdb::select_op::map_data()
         const auto& f = fields[i];
         futil::path bitmap_path(f->name,index_slot->timestamp_file);
         futil::file bitmap_fd(bitmaps_dir,bitmap_path,O_RDONLY);
-        bitmap_mappings[i].map(NULL,read_lock.m.db.root.config.chunk_size/64,
-                               PROT_READ,MAP_SHARED,bitmap_fd.fd,0);
+        bitmap_fd.read_all(bitmap_bufs[i].data,
+                           read_lock.m.db.root.config.chunk_size/64);
     }
 }
 

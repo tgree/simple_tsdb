@@ -47,6 +47,14 @@ struct select_time_range
     uint64_t    t1;
 };
 
+struct active_time_range
+{
+    // time_ns {<, <=, ==, >=, >} T
+    // T0 {<, <=} time_ns {<, <=} T1
+    uint64_t    t0;
+    uint64_t    t1;
+};
+
 struct delete_time_range
 {
     // time_ns {<, <=} T
