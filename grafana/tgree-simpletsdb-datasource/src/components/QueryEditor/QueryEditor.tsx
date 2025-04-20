@@ -1,6 +1,6 @@
 import React, { ReactElement } from 'react';
 import { useAsync } from 'react-use';
-import { InlineField, Select, AutoSizeInput, Stack, InlineLabel } from '@grafana/ui';
+import { InlineField, Select, AutoSizeInput, Stack } from '@grafana/ui';
 import type { SelectableValue } from '@grafana/data';
 import { getTemplateSrv } from '@grafana/runtime';
 import type { EditorProps } from './types';
@@ -154,7 +154,6 @@ export function QueryEditor(props: EditorProps): ReactElement {
             value={props.query.measurement}
             width="auto"
           />
-          {/* <InlineLabel width="auto" transparent>/</InlineLabel> */}
           <Select
             inputId="editor-series"
             options={asyncSeriesState.series}
@@ -162,7 +161,6 @@ export function QueryEditor(props: EditorProps): ReactElement {
             value={props.query.series}
             width="auto"
           />
-          {/* <InlineLabel width="auto" transparent>/</InlineLabel> */}
           <Select
             inputId="editor-fields"
             options={asyncFieldsState.fields}
