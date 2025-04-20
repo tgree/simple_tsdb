@@ -152,6 +152,7 @@ type queryModel struct {
 	Measurement	string
 	Series		string
 	Field		string
+	Alias           string
 	IntervalMs      uint64
 }
 
@@ -168,6 +169,10 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	response := backend.DataResponse{Frames: []*data.Frame{}}
 
 	for _, series := range seriesList {
+		alias := series + "." + qm.Field
+		if qm.Alias != "" {
+			alias = strings.Replace(qm.Alias, "$series", series, 1)
+		}
 		// Retrieve the point count for this measurement.
 		t0 := uint64(query.TimeRange.From.UnixNano())
 		t1 := uint64(query.TimeRange.To.UnixNano())
@@ -181,15 +186,15 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			response.Frames = append(response.Frames, data.NewFrame(
 						"response",
 						data.NewField("time", nil, []time.Time{}),
-						data.NewField(series + "." + qm.Field, nil, []float64{})))
+						data.NewField(alias, nil, []float64{})))
 		} else if count_result.npoints < 200000 {
-			frame, err := d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, t0, t1)
+			frame, err := d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
 			if err != nil {
 				return backend.ErrDataResponse(backend.StatusBadRequest, "error from SELECT")
 			}
 			response.Frames = append(response.Frames, frame)
 		} else {
-			frame, err := d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, t0, t1, qm.IntervalMs * 1000000)
+			frame, err := d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1, qm.IntervalMs * 1000000)
 			if err != nil {
 				return backend.ErrDataResponse(backend.StatusBadRequest, "error from MEAN")
 			}
@@ -200,7 +205,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	return response
 }
 
-func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement string, series string, field string, t0 uint64, t1 uint64) (*data.Frame, error) {
+func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement string, series string, field string, alias string, t0 uint64, t1 uint64) (*data.Frame, error) {
 	// Retrieve the schema for this measurement.
 	schema, err := tc.GetSchema(database, measurement)
 	if err != nil {
@@ -236,11 +241,11 @@ func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement st
 	return data.NewFrame(
 		"response",
 		data.NewField("time", nil, timestamps),
-		data.NewField(series + "." + field, nil, ptrs),
+		data.NewField(alias, nil, ptrs),
 	), nil
 }
 
-func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement string, series string, field string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
+func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement string, series string, field string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
 	// Generate the SUMS operation.
 	op, err := tc.NewSumsOp(database, measurement, series, field, t0, t1, window_ns)
 	if err != nil {
@@ -287,7 +292,7 @@ func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement stri
 	return data.NewFrame(
 		"response",
 		data.NewField("time", nil, timestamps),
-		data.NewField(series + "." + field, nil, ptrs),
+		data.NewField(alias, nil, ptrs),
 	), nil
 }
 

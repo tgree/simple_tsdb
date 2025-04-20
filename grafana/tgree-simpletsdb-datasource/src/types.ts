@@ -5,6 +5,7 @@ export interface BasicQuery extends DataQuery {
   measurement?: string;
   series?: string;
   field?: string;
+  alias?: string;
 }
 
 /**
