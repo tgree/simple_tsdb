@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"io"
 	"unsafe"
+	"strings"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -151,6 +152,7 @@ type queryModel struct {
 	Measurement	string
 	Series		string
 	Field		string
+	Alias           string
 	IntervalMs      uint64
 }
 
@@ -163,40 +165,57 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	}
 	backend.Logger.Debug("Query", "query", query)
 
-	// Retrieve the point count for this measurement.
-	t0 := uint64(query.TimeRange.From.UnixNano())
-	t1 := uint64(query.TimeRange.To.UnixNano())
-	count_result, err := tc.CountPoints(dm.Database, qm.Measurement, qm.Series, t0, t1)
-	backend.Logger.Debug("Count Result", "count_result", count_result.String())
+	seriesList := strings.Split(qm.Series, " + ")
+	response := backend.DataResponse{Frames: []*data.Frame{}}
 
-	if count_result.npoints == 0 {
-		return backend.DataResponse{
-			Frames: []*data.Frame{
-				data.NewFrame(
-					"response",
-					data.NewField("time", nil, []time.Time{}),
-					data.NewField(qm.Series + "." + qm.Field, nil, []float64{}),
-				),
-			},
+	for _, series := range seriesList {
+		alias := series + "." + qm.Field
+		if qm.Alias != "" {
+			alias = strings.Replace(qm.Alias, "$series", series, 1)
 		}
-	} else if count_result.npoints < 200000 {
-		return d.querySelect(tc, dm.Database, qm.Measurement, qm.Series, qm.Field, t0, t1)
-	} else {
-		return d.queryMean(tc, dm.Database, qm.Measurement, qm.Series, qm.Field, t0, t1, qm.IntervalMs * 1000000)
+		// Retrieve the point count for this measurement.
+		t0 := uint64(query.TimeRange.From.UnixNano())
+		t1 := uint64(query.TimeRange.To.UnixNano())
+		count_result, err := tc.CountPoints(dm.Database, qm.Measurement, series, t0, t1)
+		if err != nil {
+			return backend.ErrDataResponse(backend.StatusBadRequest, "error from COUNT")
+		}
+		backend.Logger.Debug("Count Result", "count_result", count_result.String())
+
+		if count_result.npoints == 0 {
+			response.Frames = append(response.Frames, data.NewFrame(
+						"response",
+						data.NewField("time", nil, []time.Time{}),
+						data.NewField(alias, nil, []float64{})))
+		} else if count_result.npoints < 200000 {
+			frame, err := d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
+			if err != nil {
+				return backend.ErrDataResponse(backend.StatusBadRequest, "error from SELECT")
+			}
+			response.Frames = append(response.Frames, frame)
+		} else {
+			frame, err := d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1, qm.IntervalMs * 1000000)
+			if err != nil {
+				return backend.ErrDataResponse(backend.StatusBadRequest, "error from MEAN")
+			}
+			response.Frames = append(response.Frames, frame)
+		}
 	}
+
+	return response
 }
 
-func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement string, series string, field string, t0 uint64, t1 uint64) backend.DataResponse {
+func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement string, series string, field string, alias string, t0 uint64, t1 uint64) (*data.Frame, error) {
 	// Retrieve the schema for this measurement.
 	schema, err := tc.GetSchema(database, measurement)
 	if err != nil {
-		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("get schema error: %v", err.Error()))
+		return nil, err
 	}
 
 	// Generate the SELECT operation.
 	op, err := tc.NewSelectOp(schema, series, field, t0, t1, 0xFFFFFFFFFFFFFFFF)
 	if err != nil {
-		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("error creating select op: %v", err.Error()))
+		return nil, err
 	}
 
 	// Pull chunks of data from the server and append them to our running data.
@@ -205,7 +224,7 @@ func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement st
 	for {
 		rxc, err := op.ReadChunk()
 		if err != nil {
-			return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("error reading chunk: %v", err.Error()))
+			return nil, err
 		}
 		if rxc == nil {
 			break
@@ -219,22 +238,18 @@ func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement st
 	}
 
 	// Return the response.
-	return backend.DataResponse{
-		Frames: []*data.Frame{
-			data.NewFrame(
-				"response",
-				data.NewField("time", nil, timestamps),
-				data.NewField(series + "." + field, nil, ptrs),
-			),
-		},
-	}
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
 }
 
-func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement string, series string, field string, t0 uint64, t1 uint64, window_ns uint64) backend.DataResponse {
+func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement string, series string, field string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
 	// Generate the SUMS operation.
 	op, err := tc.NewSumsOp(database, measurement, series, field, t0, t1, window_ns)
 	if err != nil {
-		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("error creating sums op: %v", err.Error()))
+		return nil, err
 	}
 
 	// Pull chunks of data from the server and append them to our running data.
@@ -246,7 +261,7 @@ func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement stri
 	for {
 		rxc, err := op.ReadChunk()
 		if err != nil {
-			return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("error reading chunk: %v", err.Error()))
+			return nil, err
 		}
 		if rxc == nil {
 			break
@@ -274,15 +289,11 @@ func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement stri
 	}
 
 	// Return the response.
-	return backend.DataResponse{
-		Frames: []*data.Frame{
-			data.NewFrame(
-				"response",
-				data.NewField("time", nil, timestamps),
-				data.NewField(series + "." + field, nil, ptrs),
-			),
-		},
-	}
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
 }
 
 // CheckHealth handles health checks sent from Grafana to the plugin.

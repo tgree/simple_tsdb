@@ -15,10 +15,16 @@ export class BasicDataSource extends DataSourceWithBackend<BasicQuery, BasicData
   applyTemplateVariables(query: BasicQuery, scopedVars: ScopedVars) {
     return {
       ...query,
-      measurement: getTemplateSrv().replace(query.measurement, scopedVars),
-      series: getTemplateSrv().replace(query.series, scopedVars),
-      field: getTemplateSrv().replace(query.field, scopedVars),
+      measurement: getTemplateSrv().replace(query.measurement, scopedVars, 'text'),
+      series: getTemplateSrv().replace(query.series, scopedVars, 'text'),
+      field: getTemplateSrv().replace(query.field, scopedVars, 'text'),
     };
+  }
+
+  async metricFindQuery(query: string, options?: any) {
+      const sl = await this.getSeriesList(this.database, query);
+      const values = sl.series.map(s => ({text: s}));
+      return values
   }
 
   filterQuery(query: BasicQuery): boolean {

@@ -29,6 +29,7 @@ enum command_token : uint32_t
     CT_LIST_DATABASES       = 0x29200D6D,
     CT_LIST_MEASUREMENTS    = 0x0FEB1399,
     CT_LIST_SERIES          = 0x7B8238D6,
+    CT_ACTIVE_SERIES        = 0xF3B5093D,
     CT_COUNT_POINTS         = 0x0E329B19,
     CT_SUM_POINTS           = 0x90305A39,
     CT_NOP                  = 0x22CF1296,
@@ -125,6 +126,8 @@ static void handle_list_measurements(
     connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_list_series(
     connection& conn, const std::vector<parsed_data_token>& tokens);
+static void handle_active_series(
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_get_schema(
     connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_count_points(
@@ -173,6 +176,11 @@ static const command_syntax commands[] =
         handle_list_series,
         CT_LIST_SERIES,
         {DT_DATABASE, DT_MEASUREMENT, DT_END},
+    },
+    {
+        handle_active_series,
+        CT_ACTIVE_SERIES,
+        {DT_DATABASE, DT_MEASUREMENT, DT_TIME_FIRST, DT_TIME_LAST, DT_END},
     },
     {
         handle_count_points,
@@ -386,6 +394,28 @@ handle_list_series(connection& conn,
 }
 
 static void
+handle_active_series(connection& conn,
+    const std::vector<parsed_data_token>& tokens)
+{
+    std::string db_name(tokens[0].data,tokens[0].len);
+    std::string m_name(tokens[1].data,tokens[1].len);
+    root->debugf("ACTIVE SERIES FROM %s/%s\n",db_name.c_str(),m_name.c_str());
+    auto db = tsdb::database(*root,db_name);
+    auto m = tsdb::measurement(db,m_name);
+    uint64_t t0 = tokens[2].u64;
+    uint64_t t1 = tokens[3].u64;
+    auto as = m.list_active_series(t0,t1);
+    for (const auto& s_name : as)
+    {
+        uint32_t dt  = DT_SERIES;
+        uint16_t len = s_name.size();
+        conn.s.send_all(&dt,sizeof(dt));
+        conn.s.send_all(&len,sizeof(len));
+        conn.s.send_all(s_name.c_str(),len);
+    }
+}
+
+static void
 handle_count_points(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
@@ -507,7 +537,7 @@ _handle_select_points(connection& conn, tsdb::select_op& op,
         for (size_t i=0; i<op.fields.size(); ++i)
         {
             // First we send the bitmap.
-            auto* bitmap = (const uint64_t*)op.bitmap_mappings[i].addr;
+            auto* bitmap = (const uint64_t*)op.bitmap_bufs[i].data;
             conn.s.send_all(&bitmap[bitmap_index],bitmap_n*8);
 
             // Next we send the field data.

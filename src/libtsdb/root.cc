@@ -144,7 +144,9 @@ catch (const futil::errno_exception& e)
 std::vector<std::string>
 tsdb::root::list_databases()
 {
-    return databases_dir.listdirs();
+    auto v = databases_dir.listdirs();
+    std::sort(v.begin(),v.end());
+    return v;
 }
 
 int

@@ -113,6 +113,19 @@ handle_list_schema(const FROM_keyword, const measurement_specifier& ms)
 }
 
 static void
+handle_list_active_series(const FROM_keyword, const measurement_specifier& ms,
+    const active_time_range& tr)
+{
+    // Handles:
+    // LIST ACTIVE SERIES FROM <database/measurement> WHERE ...time_ns...
+    tsdb::database db(*root,ms.database);
+    tsdb::measurement m(db,ms.measurement);
+    auto as = m.list_active_series(tr.t0,tr.t1);
+    for (const auto& s : as)
+        printf("%s\n",s.c_str());
+}
+
+static void
 handle_count(
     const FROM_keyword fk,
     const series_specifier& ss,
@@ -336,6 +349,7 @@ static const command_handler command_handlers[] =
     {"LIST MEASUREMENTS",{XLATE(handle_list_measurements)}},
     {"LIST SERIES",{XLATE(handle_list_series)}},
     {"LIST SCHEMA",{XLATE(handle_list_schema)}},
+    {"LIST ACTIVE SERIES",{XLATE(handle_list_active_series)}},
     {"COUNT",{XLATE(handle_count)}},
     {"SELECT",{XLATE(handle_select_1),XLATE(handle_select_2),
                XLATE(handle_select_3)}},
