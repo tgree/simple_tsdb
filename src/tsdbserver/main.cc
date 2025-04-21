@@ -852,7 +852,17 @@ process_stream(connection& conn)
     {
         for (;;)
         {
-            uint32_t ct = conn.s.pop<uint32_t>();
+            uint32_t ct;
+            try
+            {
+                ct = conn.s.pop<uint32_t>();
+            }
+            catch (const futil::errno_exception& e)
+            {
+                if (e.errnov == ECONNRESET)
+                    return;
+                throw;
+            }
 
             bool found = false;
             for (auto& cmd : commands)
