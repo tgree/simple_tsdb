@@ -143,8 +143,8 @@ export function QueryEditor(props: EditorProps): ReactElement {
 
   return (
     <>
-      <InlineField label="SELECT" labelWidth={8} transparent>
-        <Stack>
+      <InlineField label="SELECT">
+        <Stack height={4}>
           <Select
             inputId="editor-measurements"
             options={asyncMeasurementsState.measurements}
@@ -168,7 +168,7 @@ export function QueryEditor(props: EditorProps): ReactElement {
             value={props.query.field}
             width="auto"
           />
-          <InlineField label="ALIAS" transparent>
+          <InlineField label="ALIAS">
             <AutoSizeInput
               onChange={(event) => OnChangeAlias(event.currentTarget.value, props)}
               value={props.query.alias}
