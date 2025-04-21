@@ -153,6 +153,7 @@ type queryModel struct {
 	Series		string
 	Field		string
 	Alias           string
+	Transform       string
 	IntervalMs      uint64
 }
 
@@ -198,6 +199,19 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			if err != nil {
 				return backend.ErrDataResponse(backend.StatusBadRequest, "error from MEAN")
 			}
+		}
+
+		switch qm.Transform {
+		case "Tare":
+			TransformTare(frame)
+		case "Difference":
+			TransformDifference(frame)
+		case "Derivative (sec)":
+			TransformDerivative(frame, 1)
+		case "Derivative (min)":
+			TransformDerivative(frame, 60)
+		case "Derivative (hour)":
+			TransformDerivative(frame, 3600)
 		}
 
 		response.Frames = append(response.Frames, frame)
@@ -1505,4 +1519,159 @@ func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, 
 		sums:		sums,
 		npoints:	npoints,
 	}, nil
+}
+
+func TransformTare(frame *data.Frame) {
+	nrows := frame.Rows()
+	if nrows == 0 {
+		return
+	}
+
+	for _, field := range frame.Fields {
+		if field.Name == "time" {
+			continue
+		}
+
+		t0 := any(nil)
+		i := 0
+		for ; i<nrows; i++ {
+			if !field.NilAt(i) {
+				var ok bool
+				t0, ok = field.ConcreteAt(i)
+				if ok {
+					break;
+				}
+			}
+		}
+		for ; i<nrows; i++ {
+			f, ok := field.ConcreteAt(i)
+			if !ok {
+				continue
+			}
+
+			switch v := t0.(type) {
+			case float64:
+				field.SetConcrete(i, f.(float64) - v)
+			case float32:
+				field.SetConcrete(i, f.(float32) - v)
+			case uint64:
+				field.SetConcrete(i, f.(uint64) - v)
+			case uint32:
+				field.SetConcrete(i, f.(uint32) - v)
+			case int64:
+				field.SetConcrete(i, f.(int64) - v)
+			case int32:
+				field.SetConcrete(i, f.(int32) - v)
+			case int8:
+				field.SetConcrete(i, f.(int8) - v)
+			default:
+				panic("Bad type!")
+			}
+		}
+	}
+}
+
+func TransformDifference(frame *data.Frame) {
+	nrows := frame.Rows()
+	if nrows == 0 {
+		return
+	}
+
+	for _, field := range frame.Fields {
+		if field.Name == "time" {
+			continue
+		}
+
+		for i := nrows - 1; i > 0; i-- {
+			f1, ok := field.ConcreteAt(i)
+			if !ok {
+				continue
+			}
+			f0, ok := field.ConcreteAt(i - 1)
+			if !ok {
+				field.Set(i, nil)
+				continue
+			}
+
+			switch v := f1.(type) {
+			case float64:
+				field.SetConcrete(i, v - f0.(float64))
+			case float32:
+				field.SetConcrete(i, v - f0.(float32))
+			case uint64:
+				field.SetConcrete(i, v - f0.(uint64))
+			case uint32:
+				field.SetConcrete(i, v - f0.(uint32))
+			case int64:
+				field.SetConcrete(i, v - f0.(int64))
+			case int32:
+				field.SetConcrete(i, v - f0.(int32))
+			case int8:
+				field.SetConcrete(i, v - f0.(int8))
+			default:
+				panic("Bad type!")
+			}
+		}
+		field.Set(0, nil)
+	}
+}
+
+func TransformDerivative(frame *data.Frame, periodSecs float64) {
+	nrows := frame.Rows()
+	if nrows == 0 {
+		return
+	}
+
+	timeField, _ := frame.FieldByName("time")
+	if timeField == nil {
+		return
+	}
+
+	for j, field := range frame.Fields {
+		if field.Name == "time" {
+			continue
+		}
+
+		newField := data.NewFieldFromFieldType(data.FieldTypeNullableFloat64, nrows)
+		newField.Name = field.Name
+
+		for i := nrows - 1; i > 0; i-- {
+			newField.Set(i, nil)
+
+			f1, ok := field.ConcreteAt(i)
+			if !ok {
+				continue
+			}
+			f0, ok := field.ConcreteAt(i - 1)
+			if !ok {
+				continue
+			}
+			
+			t1 := timeField.At(i).(time.Time)
+			t0 := timeField.At(i-1).(time.Time)
+			dt := float64(t1.UnixNano() - t0.UnixNano()) / float64(1000000000.)
+
+			switch v := f1.(type) {
+			case float64:
+				newField.SetConcrete(i, periodSecs * (v - f0.(float64)) / dt)
+			case float32:
+				newField.SetConcrete(i, periodSecs * float64(v - f0.(float32)) / dt)
+			case uint64:
+				newField.SetConcrete(i, periodSecs * float64(v - f0.(uint64)) / dt)
+			case uint32:
+				newField.SetConcrete(i, periodSecs * float64(v - f0.(uint32)) / dt)
+			case int64:
+				newField.SetConcrete(i, periodSecs * float64(v - f0.(int64)) / dt)
+			case int32:
+				newField.SetConcrete(i, periodSecs * float64(v - f0.(int32)) / dt)
+			case int8:
+				newField.SetConcrete(i, periodSecs * float64(v - f0.(int8)) / dt)
+			default:
+				panic("Bad type!")
+			}
+		}
+		newField.Set(0, nil)
+
+		frame.Fields[j] = newField
+	}
 }
