@@ -182,14 +182,12 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			return backend.ErrDataResponse(backend.StatusBadRequest, "error from COUNT")
 		}
 		backend.Logger.Debug("Count Result", "count_result", count_result.String())
+		if count_result.npoints == 0 {
+			continue
+		}
 
 		var frame *data.Frame;
-		if count_result.npoints == 0 {
-			frame = data.NewFrame(
-				"response",
-				data.NewField("time", nil, []time.Time{}),
-				data.NewField(alias, nil, []float64{}))
-		} else if count_result.npoints < 200000 {
+		if count_result.npoints < 200000 {
 			frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
 			if err != nil {
 				return backend.ErrDataResponse(backend.StatusBadRequest, "error from SELECT")
