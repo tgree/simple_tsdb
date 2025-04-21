@@ -351,8 +351,11 @@ func (d *Datasource) queryMinMax(tc *TSDBClient, database string, measurement st
 			if rxc.npoints[i] == 0 {
 				ptrs = rxc.AppendNil(ptrs)
 				ptrs = rxc.AppendNil(ptrs)
-			} else {
+			} else if !have_non_nil {
+				ptrs = rxc.AppendMean(ptrs, i)
+				ptrs = rxc.AppendMin(ptrs, i)
 				have_non_nil = true
+			} else {
 				ptrs = rxc.AppendMax(ptrs, i)
 				ptrs = rxc.AppendMin(ptrs, i)
 			}
@@ -1579,6 +1582,67 @@ func (self *RXSumsChunk) AppendNil(dst any) any {
 		return append(d, nil)
 
 	case []*int64:
+		return append(d, nil)
+
+	default:
+		panic("Unhandled type!")
+	}
+}
+
+func (self *RXSumsChunk) AppendMean(dst any, bucket uint16) any {
+	npoints := self.npoints[bucket]
+	var mean float64
+	if npoints != 0 {
+		mean = self.sums[bucket] / float64(self.npoints[bucket])
+	}
+
+	switch d := dst.(type) {
+	case []*uint8:
+		if npoints != 0 {
+			v := uint8(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*uint32:
+		if npoints != 0 {
+			v := uint32(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*uint64:
+		if npoints != 0 {
+			v := uint64(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*float32:
+		if npoints != 0 {
+			v := float32(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*float64:
+		if npoints != 0 {
+			return append(d, &mean)
+		}
+		return append(d, nil)
+
+	case []*int32:
+		if npoints != 0 {
+			v := int32(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*int64:
+		if npoints != 0 {
+			v := int64(mean)
+			return append(d, &v)
+		}
 		return append(d, nil)
 
 	default:
