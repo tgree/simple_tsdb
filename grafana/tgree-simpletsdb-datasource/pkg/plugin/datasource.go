@@ -1441,6 +1441,8 @@ type RXSumsChunk struct {
 	data		[]byte
 	timestamps	[]uint64
 	sums		[]float64
+	mins		unsafe.Pointer
+	maxs		unsafe.Pointer
 	npoints		[]uint64
 }
 
@@ -1475,7 +1477,7 @@ func (self *SumsOp) ReadChunk() (*RXSumsChunk, error) {
 		return nil, err
 	}
 
-	data_len := chunk_npoints * (8 + 1 * 16)	// 1 since only 1 field
+	data_len := chunk_npoints * (8 + 1 * 32)	// 1 since only 1 field
 	data := make([]byte, data_len)
 	n, err := io.ReadFull(self.client.conn, data)
 	if err != nil {
@@ -1507,6 +1509,14 @@ func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, 
 	pos += dpos
 
 	p = unsafe.Pointer(&data[pos])
+	mins := p
+	pos += dpos
+
+	p = unsafe.Pointer(&data[pos])
+	maxs := p
+	pos += dpos
+
+	p = unsafe.Pointer(&data[pos])
 	npoints := unsafe.Slice((*uint64)(p), chunk_npoints)
 
 	return &RXSumsChunk{
@@ -1515,6 +1525,8 @@ func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, 
 		data:		data,
 		timestamps:	timestamps,
 		sums:		sums,
+		mins:           mins,
+		maxs:           maxs,
 		npoints:	npoints,
 	}, nil
 }

@@ -383,7 +383,7 @@ class SumsOP:
         if self.last_token != DT_SUMS_CHUNK:
             raise ProtocolException('Expected DT_SUMS_CHUNK')
         chunk_npoints = self.client._recv_u16()
-        data_len      = chunk_npoints * (8 + len(self.fields) * 16)
+        data_len      = chunk_npoints * (8 + len(self.fields) * 32)
         data          = self.client._recvall(data_len)
         data_view     = memoryview(data)
         pos           = 0
@@ -396,6 +396,8 @@ class SumsOP:
             sums.append(np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
                                       dtype=np.float64))
             pos += 8 * chunk_npoints
+        pos += 8 * chunk_npoints * len(self.fields)     # mins
+        pos += 8 * chunk_npoints * len(self.fields)     # maxs
         for _ in range(len(self.fields)):
             npoints.append(np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
                                          dtype=np.uint64))
