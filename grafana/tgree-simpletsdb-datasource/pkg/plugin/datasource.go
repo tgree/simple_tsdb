@@ -182,24 +182,25 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 		}
 		backend.Logger.Debug("Count Result", "count_result", count_result.String())
 
+		var frame *data.Frame;
 		if count_result.npoints == 0 {
-			response.Frames = append(response.Frames, data.NewFrame(
-						"response",
-						data.NewField("time", nil, []time.Time{}),
-						data.NewField(alias, nil, []float64{})))
+			frame = data.NewFrame(
+				"response",
+				data.NewField("time", nil, []time.Time{}),
+				data.NewField(alias, nil, []float64{}))
 		} else if count_result.npoints < 200000 {
-			frame, err := d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
+			frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
 			if err != nil {
 				return backend.ErrDataResponse(backend.StatusBadRequest, "error from SELECT")
 			}
-			response.Frames = append(response.Frames, frame)
 		} else {
-			frame, err := d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1, qm.IntervalMs * 1000000)
+			frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1, qm.IntervalMs * 1000000)
 			if err != nil {
 				return backend.ErrDataResponse(backend.StatusBadRequest, "error from MEAN")
 			}
-			response.Frames = append(response.Frames, frame)
 		}
+
+		response.Frames = append(response.Frames, frame)
 	}
 
 	return response
