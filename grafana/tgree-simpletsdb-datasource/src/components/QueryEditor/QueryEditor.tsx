@@ -131,6 +131,17 @@ function OnChangeAlias(alias: string, props: EditorProps) {
   });
 }
 
+function OnChangeZoom(selectable: SelectableValue<string>, props: EditorProps) {
+  if (!selectable?.value) {
+    return;
+  }
+
+  props.onChange({
+    ...props.query,
+    zoom: selectable.value,
+  });
+}
+
 function OnChangeTransform(selectable: SelectableValue<string>, props: EditorProps) {
   if (!selectable?.value) {
     return;
@@ -187,22 +198,34 @@ export function QueryEditor(props: EditorProps): ReactElement {
           </InlineField>
         </Stack>
       </InlineField>
-      <InlineField label="TRANSFORM">
-        <Select
-          inputId="editor-transform"
-          options={[{label: "None", value: "None"},
-                    {label: "Tare", value: "Tare"},
-                    {label: "Difference", value: "Difference"},
-                    {label: "Derivative (sec)", value: "Derivative (sec)"},
-                    {label: "Derivative (min)", value: "Derivative (min)"},
-                    {label: "Derivative (hour)", value: "Derivative (hour)"},
-                    {label: "Min/Max", value: "Min/Max"},
-                    ]}
-          onChange={(selectable) => OnChangeTransform(selectable, props)}
-          value={props.query.transform}
-          width="auto"
-        />
-      </InlineField>
+      <Stack height={4}>
+        <InlineField label="ZOOM">
+          <Select
+            inputId="editor-zoom"
+            options={[{label: "Mean", value: "Mean"},
+                      {label: "Min/Max", value: "Min/Max"},
+                      ]}
+            onChange={(selectable) => OnChangeZoom(selectable, props)}
+            value={props.query.zoom}
+            width="auto"
+          />
+        </InlineField>
+        <InlineField label="TRANSFORM">
+          <Select
+            inputId="editor-transform"
+            options={[{label: "None", value: "None"},
+                      {label: "Tare", value: "Tare"},
+                      {label: "Difference", value: "Difference"},
+                      {label: "Derivative (sec)", value: "Derivative (sec)"},
+                      {label: "Derivative (min)", value: "Derivative (min)"},
+                      {label: "Derivative (hour)", value: "Derivative (hour)"},
+                      ]}
+            onChange={(selectable) => OnChangeTransform(selectable, props)}
+            value={props.query.transform}
+            width="auto"
+          />
+        </InlineField>
+      </Stack>
     </>
   );
 }
