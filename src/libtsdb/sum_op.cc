@@ -20,6 +20,8 @@ tsdb::sum_op::sum_op(const series_read_lock& read_lock,
     {
         sums.push_back(0);
         npoints.push_back(0);
+        mins.push_back({0});
+        maxs.push_back({0});
     }
 }
 
@@ -30,6 +32,44 @@ tsdb::sum_op::zero()
     {
         sums[i] = 0;
         npoints[i] = 0;
+        
+        switch (op.fields[i]->type)
+        {
+            case tsdb::FT_BOOL:
+                mins[i].u8 = 1;
+                maxs[i].u8 = 0;
+            break;
+
+            case tsdb::FT_U32:
+                mins[i].u32 = std::numeric_limits<uint32_t>::max();
+                maxs[i].u32 = std::numeric_limits<uint32_t>::min();
+            break;
+
+            case tsdb::FT_U64:
+                mins[i].u64 = std::numeric_limits<uint64_t>::max();
+                maxs[i].u64 = std::numeric_limits<uint64_t>::min();
+            break;
+
+            case tsdb::FT_F32:
+                mins[i].f32 = std::numeric_limits<float>::infinity();
+                maxs[i].f32 = -std::numeric_limits<float>::infinity();
+            break;
+
+            case tsdb::FT_F64:
+                mins[i].f64 = std::numeric_limits<double>::infinity();
+                maxs[i].f64 = -std::numeric_limits<double>::infinity();
+            break;
+
+            case tsdb::FT_I32:
+                mins[i].i32 = std::numeric_limits<int32_t>::max();
+                maxs[i].i32 = std::numeric_limits<int32_t>::min();
+            break;
+
+            case tsdb::FT_I64:
+                mins[i].i64 = std::numeric_limits<int64_t>::max();
+                maxs[i].i64 = std::numeric_limits<int64_t>::min();
+            break;
+        }
     }
 }
 
@@ -78,31 +118,66 @@ tsdb::sum_op::next()
             switch (op.fields[j]->type)
             {
                 case tsdb::FT_BOOL:
-                    sums[j] += ((uint8_t*)op.field_data[j])[op_index];
+                {
+                    auto v     = ((uint8_t*)op.field_data[j])[op_index];
+                    sums[j]   += v;
+                    mins[j].u8 = MIN(mins[j].u8,v);
+                    maxs[j].u8 = MAX(maxs[j].u8,v);
+                }
                 break;
 
                 case tsdb::FT_U32:
-                    sums[j] += ((uint32_t*)op.field_data[j])[op_index];
+                {
+                    auto v      = ((uint32_t*)op.field_data[j])[op_index];
+                    sums[j]    += v;
+                    mins[j].u32 = MIN(mins[j].u32,v);
+                    maxs[j].u32 = MAX(maxs[j].u32,v);
+                }
                 break;
 
                 case tsdb::FT_U64:
-                    sums[j] += ((uint64_t*)op.field_data[j])[op_index];
+                {
+                    auto v      = ((uint64_t*)op.field_data[j])[op_index];
+                    sums[j]    += v;
+                    mins[j].u64 = MIN(mins[j].u64,v);
+                    maxs[j].u64 = MAX(maxs[j].u64,v);
+                }
                 break;
 
                 case tsdb::FT_F32:
-                    sums[j] += ((float*)op.field_data[j])[op_index];
+                {
+                    auto v      = ((float*)op.field_data[j])[op_index];
+                    sums[j]    += v;
+                    mins[j].f32 = MIN(mins[j].f32,v);
+                    maxs[j].f32 = MAX(maxs[j].f32,v);
+                }
                 break;
 
                 case tsdb::FT_F64:
-                    sums[j] += ((double*)op.field_data[j])[op_index];
+                {
+                    auto v      = ((double*)op.field_data[j])[op_index];
+                    sums[j]    += v;
+                    mins[j].f64 = MIN(mins[j].f64,v);
+                    maxs[j].f64 = MAX(maxs[j].f64,v);
+                }
                 break;
 
                 case tsdb::FT_I32:
-                    sums[j] += ((int32_t*)op.field_data[j])[op_index];
+                {
+                    auto v      = ((int32_t*)op.field_data[j])[op_index];
+                    sums[j]    += v;
+                    mins[j].i32 = MIN(mins[j].i32,v);
+                    maxs[j].i32 = MAX(maxs[j].i32,v);
+                }
                 break;
 
                 case tsdb::FT_I64:
-                    sums[j] += ((int64_t*)op.field_data[j])[op_index];
+                {
+                    auto v      = ((int64_t*)op.field_data[j])[op_index];
+                    sums[j]    += v;
+                    mins[j].i64 = MIN(mins[j].i64,v);
+                    maxs[j].i64 = MAX(maxs[j].i64,v);
+                }
                 break;
             }
             ++npoints[j];
@@ -132,31 +207,66 @@ tsdb::sum_op::next()
             switch (wq.read_lock.m.fields[field_index].type)
             {
                 case tsdb::FT_BOOL:
-                    sums[j] += wqiter->get_field<uint8_t>(field_index);
+                {
+                    auto v     = wqiter->get_field<uint8_t>(field_index);
+                    sums[j]   += v;
+                    mins[j].u8 = MIN(mins[j].u8,v);
+                    maxs[j].u8 = MAX(maxs[j].u8,v);
+                }
                 break;
 
                 case tsdb::FT_U32:
-                    sums[j] += wqiter->get_field<uint32_t>(field_index);
+                {
+                    auto v      = wqiter->get_field<uint32_t>(field_index);
+                    sums[j]    += v;
+                    mins[j].u32 = MIN(mins[j].u32,v);
+                    maxs[j].u32 = MAX(maxs[j].u32,v);
+                }
                 break;
 
                 case tsdb::FT_U64:
-                    sums[j] += wqiter->get_field<uint64_t>(field_index);
+                {
+                    auto v      = wqiter->get_field<uint64_t>(field_index);
+                    sums[j]    += v;
+                    mins[j].u64 = MIN(mins[j].u64,v);
+                    maxs[j].u64 = MAX(maxs[j].u64,v);
+                }
                 break;
 
                 case tsdb::FT_F32:
-                    sums[j] += wqiter->get_field<float>(field_index);
+                {
+                    auto v      = wqiter->get_field<float>(field_index);
+                    sums[j]    += v;
+                    mins[j].f32 = MIN(mins[j].f32,v);
+                    maxs[j].f32 = MAX(maxs[j].f32,v);
+                }
                 break;
 
                 case tsdb::FT_F64:
-                    sums[j] += wqiter->get_field<double>(field_index);
+                {
+                    auto v      = wqiter->get_field<double>(field_index);
+                    sums[j]    += v;
+                    mins[j].f64 = MIN(mins[j].f64,v);
+                    maxs[j].f64 = MAX(maxs[j].f64,v);
+                }
                 break;
 
                 case tsdb::FT_I32:
-                    sums[j] += wqiter->get_field<int32_t>(field_index);
+                {
+                    auto v      = wqiter->get_field<int32_t>(field_index);
+                    sums[j]    += v;
+                    mins[j].i32 = MIN(mins[j].i32,v);
+                    maxs[j].i32 = MAX(maxs[j].i32,v);
+                }
                 break;
 
                 case tsdb::FT_I64:
-                    sums[j] += wqiter->get_field<int64_t>(field_index);
+                {
+                    auto v      = wqiter->get_field<int64_t>(field_index);
+                    sums[j]    += v;
+                    mins[j].i64 = MIN(mins[j].i64,v);
+                    maxs[j].i64 = MAX(maxs[j].i64,v);
+                }
                 break;
             }
             ++npoints[j];
