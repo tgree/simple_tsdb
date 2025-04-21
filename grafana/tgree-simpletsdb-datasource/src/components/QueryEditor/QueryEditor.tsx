@@ -1,6 +1,6 @@
 import React, { ReactElement } from 'react';
 import { useAsync } from 'react-use';
-import { InlineField, Select, AutoSizeInput, Stack, InlineLabel } from '@grafana/ui';
+import { InlineField, Select, AutoSizeInput, Stack } from '@grafana/ui';
 import type { SelectableValue } from '@grafana/data';
 import { getTemplateSrv } from '@grafana/runtime';
 import type { EditorProps } from './types';
@@ -131,6 +131,17 @@ function OnChangeAlias(alias: string, props: EditorProps) {
   });
 }
 
+function OnChangeTransform(selectable: SelectableValue<string>, props: EditorProps) {
+  if (!selectable?.value) {
+    return;
+  }
+
+  props.onChange({
+    ...props.query,
+    transform: selectable.value,
+  });
+}
+
 export function QueryEditor(props: EditorProps): ReactElement {
   /*
    * In case it isn't obvious, because it really wasn't obvious to me.  Every time the query
@@ -143,8 +154,8 @@ export function QueryEditor(props: EditorProps): ReactElement {
 
   return (
     <>
-      <InlineField label="SELECT" labelWidth={8} transparent>
-        <Stack>
+      <InlineField label="SELECT">
+        <Stack height={4}>
           <Select
             inputId="editor-measurements"
             options={asyncMeasurementsState.measurements}
@@ -154,7 +165,6 @@ export function QueryEditor(props: EditorProps): ReactElement {
             value={props.query.measurement}
             width="auto"
           />
-          {/* <InlineLabel width="auto" transparent>/</InlineLabel> */}
           <Select
             inputId="editor-series"
             options={asyncSeriesState.series}
@@ -162,7 +172,6 @@ export function QueryEditor(props: EditorProps): ReactElement {
             value={props.query.series}
             width="auto"
           />
-          {/* <InlineLabel width="auto" transparent>/</InlineLabel> */}
           <Select
             inputId="editor-fields"
             options={asyncFieldsState.fields}
@@ -170,13 +179,28 @@ export function QueryEditor(props: EditorProps): ReactElement {
             value={props.query.field}
             width="auto"
           />
-          <InlineField label="ALIAS" transparent>
+          <InlineField label="ALIAS">
             <AutoSizeInput
               onChange={(event) => OnChangeAlias(event.currentTarget.value, props)}
               value={props.query.alias}
             />
           </InlineField>
         </Stack>
+      </InlineField>
+      <InlineField label="TRANSFORM">
+        <Select
+          inputId="editor-transform"
+          options={[{label: "None", value: "None"},
+                    {label: "Tare", value: "Tare"},
+                    {label: "Difference", value: "Difference"},
+                    {label: "Derivative (sec)", value: "Derivative (sec)"},
+                    {label: "Derivative (min)", value: "Derivative (min)"},
+                    {label: "Derivative (hour)", value: "Derivative (hour)"},
+                    ]}
+          onChange={(selectable) => OnChangeTransform(selectable, props)}
+          value={props.query.transform}
+          width="auto"
+        />
       </InlineField>
     </>
   );

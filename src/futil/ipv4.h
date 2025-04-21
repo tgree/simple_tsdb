@@ -110,9 +110,6 @@ namespace tcp::ipv4
             if (fd == -1)
                 return;
 
-            printf("TCP shutdown fd %d local %s remote %s.\n",
-                   fd,local_addr.to_string().c_str(),
-                   remote_addr.to_string().c_str());
             ::shutdown(fd,SHUT_RDWR);
         }
     };
