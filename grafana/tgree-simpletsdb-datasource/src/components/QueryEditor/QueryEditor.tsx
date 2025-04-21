@@ -131,6 +131,17 @@ function OnChangeAlias(alias: string, props: EditorProps) {
   });
 }
 
+function OnChangeTransform(selectable: SelectableValue<string>, props: EditorProps) {
+  if (!selectable?.value) {
+    return;
+  }
+
+  props.onChange({
+    ...props.query,
+    transform: selectable.value,
+  });
+}
+
 export function QueryEditor(props: EditorProps): ReactElement {
   /*
    * In case it isn't obvious, because it really wasn't obvious to me.  Every time the query
@@ -175,6 +186,21 @@ export function QueryEditor(props: EditorProps): ReactElement {
             />
           </InlineField>
         </Stack>
+      </InlineField>
+      <InlineField label="TRANSFORM">
+        <Select
+          inputId="editor-transform"
+          options={[{label: "None", value: "None"},
+                    {label: "Tare", value: "Tare"},
+                    {label: "Difference", value: "Difference"},
+                    {label: "Derivative (sec)", value: "Derivative (sec)"},
+                    {label: "Derivative (min)", value: "Derivative (min)"},
+                    {label: "Derivative (hour)", value: "Derivative (hour)"},
+                    ]}
+          onChange={(selectable) => OnChangeTransform(selectable, props)}
+          value={props.query.transform}
+          width="auto"
+        />
       </InlineField>
     </>
   );
