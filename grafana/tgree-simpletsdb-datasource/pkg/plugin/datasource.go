@@ -192,7 +192,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			switch qm.Zoom {
 			case "Min/Max":
 				frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
-				                           t0, t1, qm.IntervalMs * 1000000)
+				                           t0, t1, qm.IntervalMs * 1000000 / 10)
 
 			case "Mean":
 				frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
