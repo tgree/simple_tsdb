@@ -153,6 +153,7 @@ type queryModel struct {
 	Series		string
 	Field		string
 	Alias           string
+	Zoom            string
 	Transform       string
 	IntervalMs      uint64
 }
@@ -187,21 +188,21 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 		}
 
 		var frame *data.Frame;
-		if (qm.Transform == "Min/Max" && count_result.npoints > 10000) {
-			frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1, qm.IntervalMs * 1000000)
-			if err != nil {
-				return backend.ErrDataResponse(backend.StatusBadRequest, "error from MEAN")
-			}
-		} else if (qm.Transform == "Min/Max" || count_result.npoints < 200000) {
-			frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
-			if err != nil {
-				return backend.ErrDataResponse(backend.StatusBadRequest, "error from SELECT")
+		if (count_result.npoints >= 10000) {
+			switch qm.Zoom {
+			case "Min/Max":
+				frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
+				                           t0, t1, qm.IntervalMs * 1000000)
+
+			case "Mean":
+				frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
+				                         t0, t1, qm.IntervalMs * 1000000)
 			}
 		} else {
-			frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1, qm.IntervalMs * 1000000)
-			if err != nil {
-				return backend.ErrDataResponse(backend.StatusBadRequest, "error from MEAN")
-			}
+			frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
+		}
+		if err != nil {
+			return backend.ErrDataResponse(backend.StatusBadRequest, "error from DB query")
 		}
 		if frame == nil {
 			continue
