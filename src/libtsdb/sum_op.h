@@ -29,6 +29,8 @@ namespace tsdb
         // Latest result.
         uint64_t                range_t0;
         field_vector<double>    sums;
+        field_vector<wal_field> mins;
+        field_vector<wal_field> maxs;
         field_vector<uint64_t>  npoints;
 
         void zero();
