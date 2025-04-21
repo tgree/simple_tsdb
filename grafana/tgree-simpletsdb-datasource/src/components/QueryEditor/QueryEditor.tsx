@@ -196,6 +196,7 @@ export function QueryEditor(props: EditorProps): ReactElement {
                     {label: "Derivative (sec)", value: "Derivative (sec)"},
                     {label: "Derivative (min)", value: "Derivative (min)"},
                     {label: "Derivative (hour)", value: "Derivative (hour)"},
+                    {label: "Min/Max", value: "Min/Max"},
                     ]}
           onChange={(selectable) => OnChangeTransform(selectable, props)}
           value={props.query.transform}
