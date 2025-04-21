@@ -11,13 +11,13 @@ namespace tsdb
 {
     union wal_field
     {
-        uint8_t     u8;
-        uint32_t    u32;
         uint64_t    u64;
-        float       f32;
+        uint32_t    u32;
+        uint8_t     u8;
         double      f64;
-        int32_t     i32;
+        float       f32;
         int64_t     i64;
+        int32_t     i32;
     };
 
     struct wal_entry
