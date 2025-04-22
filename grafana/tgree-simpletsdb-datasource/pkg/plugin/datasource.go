@@ -153,6 +153,7 @@ type queryModel struct {
 	Series		string
 	Field		string
 	Alias           string
+	Zoom            string
 	Transform       string
 	IntervalMs      uint64
 }
@@ -187,16 +188,24 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 		}
 
 		var frame *data.Frame;
-		if count_result.npoints < 200000 {
-			frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
-			if err != nil {
-				return backend.ErrDataResponse(backend.StatusBadRequest, "error from SELECT")
+		if (count_result.npoints >= 10000) {
+			switch qm.Zoom {
+			case "Min/Max":
+				frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
+				                           t0, t1, qm.IntervalMs * 1000000 / 10)
+
+			case "Mean":
+				frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
+				                         t0, t1, qm.IntervalMs * 1000000)
 			}
 		} else {
-			frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1, qm.IntervalMs * 1000000)
-			if err != nil {
-				return backend.ErrDataResponse(backend.StatusBadRequest, "error from MEAN")
-			}
+			frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
+		}
+		if err != nil {
+			return backend.ErrDataResponse(backend.StatusBadRequest, "error from DB query")
+		}
+		if frame == nil {
+			continue
 		}
 
 		switch qm.Transform {
@@ -299,6 +308,63 @@ func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement stri
 		}
 
 		chunk_base += uint64(rxc.nbuckets)
+	}
+
+	// Return the response.
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
+}
+
+func (d *Datasource) queryMinMax(tc *TSDBClient, database string, measurement string, series string, field string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
+	// Retrieve the schema for this measurement.
+	schema, err := tc.GetSchema(database, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate the SUMS operation.
+	op, err := tc.NewSumsOp(database, measurement, series, field, t0, t1, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pull chunks of data from the server and append them to our running data.
+	// TODO: The number of buckets is known a priori...
+	timestamps := []time.Time{}
+	ptrs := schema.MakePtrArray(field)
+	have_non_nil := false
+	for {
+		rxc, err := op.ReadChunk()
+		if err != nil {
+			return nil, err
+		}
+		if rxc == nil {
+			break
+		}
+
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			// Grafana only has millisecond resolution!  Harsh.
+			timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i])))
+			timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i]) + 1000000))
+			if rxc.npoints[i] == 0 {
+				ptrs = rxc.AppendNil(ptrs)
+				ptrs = rxc.AppendNil(ptrs)
+			} else if !have_non_nil {
+				ptrs = rxc.AppendMean(ptrs, i)
+				ptrs = rxc.AppendMin(ptrs, i)
+				have_non_nil = true
+			} else {
+				ptrs = rxc.AppendMax(ptrs, i)
+				ptrs = rxc.AppendMin(ptrs, i)
+			}
+		}
+	}
+
+	if !have_non_nil {
+		return nil, nil
 	}
 
 	// Return the response.
@@ -1441,6 +1507,8 @@ type RXSumsChunk struct {
 	data		[]byte
 	timestamps	[]uint64
 	sums		[]float64
+	mins		unsafe.Pointer
+	maxs		unsafe.Pointer
 	npoints		[]uint64
 }
 
@@ -1475,7 +1543,7 @@ func (self *SumsOp) ReadChunk() (*RXSumsChunk, error) {
 		return nil, err
 	}
 
-	data_len := chunk_npoints * (8 + 1 * 16)	// 1 since only 1 field
+	data_len := chunk_npoints * (8 + 1 * 32)	// 1 since only 1 field
 	data := make([]byte, data_len)
 	n, err := io.ReadFull(self.client.conn, data)
 	if err != nil {
@@ -1494,6 +1562,165 @@ func (self *SumsOp) ReadChunk() (*RXSumsChunk, error) {
 	return NewSumsChunk(self, chunk_npoints, data)
 }
 
+func (self *RXSumsChunk) AppendNil(dst any) any {
+	switch d := dst.(type) {
+	case []*uint8:
+		return append(d, nil)
+
+	case []*uint32:
+		return append(d, nil)
+
+	case []*uint64:
+		return append(d, nil)
+
+	case []*float32:
+		return append(d, nil)
+
+	case []*float64:
+		return append(d, nil)
+
+	case []*int32:
+		return append(d, nil)
+
+	case []*int64:
+		return append(d, nil)
+
+	default:
+		panic("Unhandled type!")
+	}
+}
+
+func (self *RXSumsChunk) AppendMean(dst any, bucket uint16) any {
+	npoints := self.npoints[bucket]
+	var mean float64
+	if npoints != 0 {
+		mean = self.sums[bucket] / float64(self.npoints[bucket])
+	}
+
+	switch d := dst.(type) {
+	case []*uint8:
+		if npoints != 0 {
+			v := uint8(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*uint32:
+		if npoints != 0 {
+			v := uint32(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*uint64:
+		if npoints != 0 {
+			v := uint64(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*float32:
+		if npoints != 0 {
+			v := float32(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*float64:
+		if npoints != 0 {
+			return append(d, &mean)
+		}
+		return append(d, nil)
+
+	case []*int32:
+		if npoints != 0 {
+			v := int32(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	case []*int64:
+		if npoints != 0 {
+			v := int64(mean)
+			return append(d, &v)
+		}
+		return append(d, nil)
+
+	default:
+		panic("Unhandled type!")
+	}
+}
+
+func (self *RXSumsChunk) AppendMax(dst any, bucket uint16) any {
+	switch d := dst.(type) {
+	case []*uint8:
+		v := unsafe.Slice((*uint8)(self.maxs), self.nbuckets * 8)
+		return append(d, &v[bucket * 8])
+
+	case []*uint32:
+		v := unsafe.Slice((*uint32)(self.maxs), self.nbuckets * 2)
+		return append(d, &v[bucket * 2])
+
+	case []*uint64:
+		v := unsafe.Slice((*uint64)(self.maxs), self.nbuckets)
+		return append(d, &v[bucket])
+
+	case []*float32:
+		v := unsafe.Slice((*float32)(self.maxs), self.nbuckets * 2)
+		return append(d, &v[bucket * 2])
+
+	case []*float64:
+		v := unsafe.Slice((*float64)(self.maxs), self.nbuckets)
+		return append(d, &v[bucket])
+
+	case []*int32:
+		v := unsafe.Slice((*int32)(self.maxs), self.nbuckets * 2)
+		return append(d, &v[bucket * 2])
+
+	case []*int64:
+		v := unsafe.Slice((*int64)(self.maxs), self.nbuckets)
+		return append(d, &v[bucket])
+
+	default:
+		panic("Unhandled type!")
+	}
+}
+
+func (self *RXSumsChunk) AppendMin(dst any, bucket uint16) any {
+	switch d := dst.(type) {
+	case []*uint8:
+		v := unsafe.Slice((*uint8)(self.mins), self.nbuckets * 8)
+		return append(d, &v[bucket * 8])
+
+	case []*uint32:
+		v := unsafe.Slice((*uint32)(self.mins), self.nbuckets * 2)
+		return append(d, &v[bucket * 2])
+
+	case []*uint64:
+		v := unsafe.Slice((*uint64)(self.mins), self.nbuckets)
+		return append(d, &v[bucket])
+
+	case []*float32:
+		v := unsafe.Slice((*float32)(self.mins), self.nbuckets * 2)
+		return append(d, &v[bucket * 2])
+
+	case []*float64:
+		v := unsafe.Slice((*float64)(self.mins), self.nbuckets)
+		return append(d, &v[bucket])
+
+	case []*int32:
+		v := unsafe.Slice((*int32)(self.mins), self.nbuckets * 2)
+		return append(d, &v[bucket * 2])
+
+	case []*int64:
+		v := unsafe.Slice((*int64)(self.mins), self.nbuckets)
+		return append(d, &v[bucket])
+
+	default:
+		panic("Unhandled type!")
+	}
+}
+
 func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, error) {
 	pos := uint32(0)
 	dpos := 8 * uint32(chunk_npoints)
@@ -1507,6 +1734,14 @@ func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, 
 	pos += dpos
 
 	p = unsafe.Pointer(&data[pos])
+	mins := p
+	pos += dpos
+
+	p = unsafe.Pointer(&data[pos])
+	maxs := p
+	pos += dpos
+
+	p = unsafe.Pointer(&data[pos])
 	npoints := unsafe.Slice((*uint64)(p), chunk_npoints)
 
 	return &RXSumsChunk{
@@ -1515,6 +1750,8 @@ func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, 
 		data:		data,
 		timestamps:	timestamps,
 		sums:		sums,
+		mins:           mins,
+		maxs:           maxs,
 		npoints:	npoints,
 	}, nil
 }
@@ -1560,8 +1797,8 @@ func TransformTare(frame *data.Frame) {
 				field.SetConcrete(i, f.(int64) - v)
 			case int32:
 				field.SetConcrete(i, f.(int32) - v)
-			case int8:
-				field.SetConcrete(i, f.(int8) - v)
+			case uint8:
+				field.SetConcrete(i, f.(uint8) - v)
 			default:
 				panic("Bad type!")
 			}
@@ -1604,8 +1841,8 @@ func TransformDifference(frame *data.Frame) {
 				field.SetConcrete(i, v - f0.(int64))
 			case int32:
 				field.SetConcrete(i, v - f0.(int32))
-			case int8:
-				field.SetConcrete(i, v - f0.(int8))
+			case uint8:
+				field.SetConcrete(i, v - f0.(uint8))
 			default:
 				panic("Bad type!")
 			}
@@ -1662,8 +1899,8 @@ func TransformDerivative(frame *data.Frame, periodSecs float64) {
 				newField.SetConcrete(i, periodSecs * float64(v - f0.(int64)) / dt)
 			case int32:
 				newField.SetConcrete(i, periodSecs * float64(v - f0.(int32)) / dt)
-			case int8:
-				newField.SetConcrete(i, periodSecs * float64(v - f0.(int8)) / dt)
+			case uint8:
+				newField.SetConcrete(i, periodSecs * float64(v - f0.(uint8)) / dt)
 			default:
 				panic("Bad type!")
 			}
