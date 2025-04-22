@@ -1797,8 +1797,8 @@ func TransformTare(frame *data.Frame) {
 				field.SetConcrete(i, f.(int64) - v)
 			case int32:
 				field.SetConcrete(i, f.(int32) - v)
-			case int8:
-				field.SetConcrete(i, f.(int8) - v)
+			case uint8:
+				field.SetConcrete(i, f.(uint8) - v)
 			default:
 				panic("Bad type!")
 			}
@@ -1841,8 +1841,8 @@ func TransformDifference(frame *data.Frame) {
 				field.SetConcrete(i, v - f0.(int64))
 			case int32:
 				field.SetConcrete(i, v - f0.(int32))
-			case int8:
-				field.SetConcrete(i, v - f0.(int8))
+			case uint8:
+				field.SetConcrete(i, v - f0.(uint8))
 			default:
 				panic("Bad type!")
 			}
@@ -1899,8 +1899,8 @@ func TransformDerivative(frame *data.Frame, periodSecs float64) {
 				newField.SetConcrete(i, periodSecs * float64(v - f0.(int64)) / dt)
 			case int32:
 				newField.SetConcrete(i, periodSecs * float64(v - f0.(int32)) / dt)
-			case int8:
-				newField.SetConcrete(i, periodSecs * float64(v - f0.(int8)) / dt)
+			case uint8:
+				newField.SetConcrete(i, periodSecs * float64(v - f0.(uint8)) / dt)
 			default:
 				panic("Bad type!")
 			}
