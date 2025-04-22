@@ -6,6 +6,7 @@ export interface BasicQuery extends DataQuery {
   series?: string;
   field?: string;
   transform?: string;
+  zoom?: string;
   alias?: string;
 }
 

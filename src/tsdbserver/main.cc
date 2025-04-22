@@ -699,11 +699,17 @@ handle_sum_points(connection& conn,
     const size_t nfields = op.op.fields.size();
     fixed_vector<uint64_t> timestamps(1024);
     tsdb::field_vector<std::vector<double>> field_sums;
+    tsdb::field_vector<std::vector<tsdb::wal_field>> field_mins;
+    tsdb::field_vector<std::vector<tsdb::wal_field>> field_maxs;
     tsdb::field_vector<std::vector<uint64_t>> field_npoints;
     for (size_t i=0; i<nfields; ++i)
     {
         field_sums.emplace_back(std::vector<double>());
         field_sums[i].reserve(1024);
+        field_mins.emplace_back(std::vector<tsdb::wal_field>());
+        field_mins[i].reserve(1024);
+        field_maxs.emplace_back(std::vector<tsdb::wal_field>());
+        field_maxs[i].reserve(1024);
         field_npoints.emplace_back(std::vector<uint64_t>());
         field_npoints[i].reserve(1024);
     }
@@ -723,6 +729,8 @@ handle_sum_points(connection& conn,
             for (size_t j=0; j<nfields; ++j)
             {
                 field_sums[j].push_back(op.sums[j]);
+                field_mins[j].push_back(op.mins[j]);
+                field_maxs[j].push_back(op.maxs[j]);
                 field_npoints[j].push_back(op.npoints[j]);
             }
         }
@@ -739,6 +747,18 @@ handle_sum_points(connection& conn,
             {
                 conn.s.send_all(&field_sums[j][0],chunk_npoints*sizeof(double));
                 field_sums[j].clear();
+            }
+            for (size_t j=0; j<nfields; ++j)
+            {
+                conn.s.send_all(&field_mins[j][0],
+                                chunk_npoints*sizeof(tsdb::wal_field));
+                field_mins[j].clear();
+            }
+            for (size_t j=0; j<nfields; ++j)
+            {
+                conn.s.send_all(&field_maxs[j][0],
+                                chunk_npoints*sizeof(tsdb::wal_field));
+                field_maxs[j].clear();
             }
             for (size_t j=0; j<nfields; ++j)
             {
