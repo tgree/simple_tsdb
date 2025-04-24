@@ -1,6 +1,7 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
 #include "sum_op.h"
+#include <limits>
 
 tsdb::sum_op::sum_op(const series_read_lock& read_lock,
     const futil::path& series_id, const std::vector<std::string>& field_names,
