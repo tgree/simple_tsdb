@@ -7,6 +7,7 @@
 #include <futil/xact.h>
 #include <futil/ssl.h>
 #include <strutil/strutil.h>
+#include <algorithm>
 
 const tsdb::configuration tsdb::default_configuration =
 {

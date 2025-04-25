@@ -5,6 +5,7 @@
 
 #include "exception.h"
 #include "root.h"
+#include <algorithm>
 
 namespace tsdb
 {
