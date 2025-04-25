@@ -7,6 +7,7 @@
 #include "constants.h"
 #include <futil/futil.h>
 #include <span>
+#include <algorithm>
 #include <hdr/kassert.h>
 #include <hdr/kmath.h>
 #include <hdr/static_vector.h>
