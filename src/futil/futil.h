@@ -580,7 +580,15 @@ namespace futil
             return v;
         }
 
-        std::string read_line(char terminator = '\n')
+        struct line
+        {
+            std::string text;
+            bool eof;
+
+            operator bool() const {return !eof;}
+        };
+
+        line read_line(char terminator = '\n')
         {
             // Reads lines, separated by the specified terminator string.
             // Strips the terminator string from the return value.
@@ -590,7 +598,7 @@ namespace futil
                 char c;
                 ssize_t v = ::read(fd,&c,1);
                 if (v == 0)
-                    return line;
+                    return {line,true};
                 if (v == -1)
                 {
                     if (errno == EINTR)
@@ -599,7 +607,7 @@ namespace futil
                 }
 
                 if (c == terminator)
-                    return line;
+                    return {line,false};
 
                 line += c;
             }
