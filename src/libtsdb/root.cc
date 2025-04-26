@@ -21,15 +21,17 @@ load_configuration(const tsdb::root* r) try
 {
     futil::file config_fd(r->root_dir,"config.txt",O_RDONLY);
     tsdb::configuration config = tsdb::default_configuration;
-    for (;;)
+    
+    futil::file::line line;
+    do
     {
-        auto line = config_fd.read_line();
-        if (line.empty())
-            break;
-        if (line[0] == '#')
+        line = config_fd.read_line();
+        if (line.text.empty())
+            continue;
+        if (line.text[0] == '#')
             continue;
 
-        std::vector<std::string> parts = str::split(line);
+        std::vector<std::string> parts = str::split(line.text);
         if (parts.size() != 2)
             throw tsdb::invalid_config_file_exception();
         if (parts[0] == "chunk_size")
@@ -44,7 +46,7 @@ load_configuration(const tsdb::root* r) try
             config.write_throttle_ns = str::decode_number_units_pow2(parts[1]);
         else
             throw tsdb::invalid_config_file_exception();
-    }
+    } while (line);
 
     return config;
 }
@@ -92,16 +94,17 @@ tsdb::root::add_user(const std::string& username, const std::string& password)
     lock_fd.flock(LOCK_EX);
 
     futil::file passwd_fd(root_dir,"passwd",O_RDWR);
-    for (;;)
+    futil::file::line line;
+    do
     {
-        auto line = passwd_fd.read_line();
-        if (line.empty())
-            break;
+        line = passwd_fd.read_line();
+        if (line.text.empty())
+            continue;
 
-        std::vector<std::string> parts = str::split(line);
+        std::vector<std::string> parts = str::split(line.text);
         if (parts[0] == username)
             throw user_exists_exception();
-    }
+    } while (line);
 
     std::string user(username + " " + sr.to_string() + "\n");
     passwd_fd.write_all(user.c_str(),user.size());
@@ -116,20 +119,23 @@ tsdb::root::verify_user(const std::string& username,
     lock_fd.flock(LOCK_SH);
 
     futil::file passwd_fd(root_dir,"passwd",O_RDONLY);
-    for (;;)
+    futil::file::line line;
+    do
     {
-        auto line = passwd_fd.read_line();
-        if (line.empty())
-            throw no_such_user_exception();
+        line = passwd_fd.read_line();
+        if (line.text.empty())
+            continue;
         
-        std::vector<std::string> parts = str::split(line);
+        std::vector<std::string> parts = str::split(line.text);
         if (parts[0] != username)
             continue;
 
         auto sr = tcp::ssl::pbkdf2_sha512(password,username + "tsdb75D8",
                                           10000);
         return sr.to_string() == parts[1];
-    }
+    } while (line);
+
+    throw no_such_user_exception();
 }
 
 void
