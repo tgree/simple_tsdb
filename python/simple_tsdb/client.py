@@ -85,23 +85,24 @@ class ProtocolException(Exception):
 
 
 class FieldType:
-    def __init__(self, name, identifier, size, struct_key, np_type):
+    def __init__(self, name, identifier, size, struct_key, np_type, idb_type):
         self.name       = name
         self.identifier = identifier
         self.size       = size
         self.struct_key = struct_key
         self.np_type    = np_type
+        self.idb_type   = idb_type
 
 
 # Field types
 FIELD_TYPES = {
-    1 : FieldType('bool', 1, 1, 'B', np.ubyte),
-    2 : FieldType('u32',  2, 4, 'I', np.uint32),
-    3 : FieldType('u64',  3, 8, 'Q', np.uint64),
-    4 : FieldType('f32',  4, 4, 'f', np.float32),
-    5 : FieldType('f64',  5, 8, 'd', np.float64),
-    6 : FieldType('i32',  6, 4, 'i', np.int32),
-    7 : FieldType('i64',  7, 8, 'q', np.int64),
+    1 : FieldType('bool', 1, 1, 'B', np.ubyte,   bool),
+    2 : FieldType('u32',  2, 4, 'I', np.uint32,  int),
+    3 : FieldType('u64',  3, 8, 'Q', np.uint64,  int),
+    4 : FieldType('f32',  4, 4, 'f', np.float32, float),
+    5 : FieldType('f64',  5, 8, 'd', np.float64, float),
+    6 : FieldType('i32',  6, 4, 'i', np.int32,   int),
+    7 : FieldType('i64',  7, 8, 'q', np.int64,   int),
 }
 
 
@@ -221,10 +222,11 @@ class Schema:
 
 
 class FieldData:
-    def __init__(self, bitmap_offset, bitmap_data, field_data, np_type):
+    def __init__(self, bitmap_offset, bitmap_data, field_data, field_type):
         self.bitmap_offset = bitmap_offset
+        self.field_type = field_type
         self.bitmap = np.frombuffer(bitmap_data, dtype=np.uint64)
-        self.values = np.frombuffer(field_data, dtype=np_type)
+        self.values = np.frombuffer(field_data, dtype=field_type.np_type)
 
     def __len__(self):
         return len(self.values)
@@ -242,6 +244,12 @@ class FieldData:
         shift    = (self.bitmap_offset + i) % 64
         v        = int(self.bitmap[bitmap_i])
         return v & (1 << shift)
+
+    def to_idb_type(self, i):
+        v = self[i]
+        if v is None:
+            return None
+        return self.field_type.idb_type(v)
 
 
 class RXChunk:
@@ -270,7 +278,7 @@ class RXChunk:
                 offset += (8 - (data_len % 8))
 
             self.fields[name] = FieldData(bitmap_offset, bitmap_data,
-                                          field_data, ft.np_type)
+                                          field_data, ft)
 
     def __repr__(self):
         return 'RXChunk(%u points)' % self.npoints
