@@ -1037,6 +1037,37 @@ ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 }
 
 static void
+reflect_handler(std::unique_ptr<tcp::stream> s)
+{
+    printf("Reflecting %s to %s:%u.\n",
+           s->remote_addr_string().c_str(),
+           reflector_cfg.remote_host.c_str(),
+           reflector_cfg.remote_port);
+    printf("Reflection not handled yet.\n");
+}
+
+static void
+reflector_workloop()
+{
+    tcp::ipv4::addr sa(reflector_cfg.local_port,INADDR_LOOPBACK);
+    tcp::ipv4::server_socket ss(sa);
+    ss.listen(4);
+    printf("TCP reflector listening on %s.\n",ss.bind_addr.to_string().c_str());
+    for (;;)
+    {
+        try
+        {
+            std::thread t(reflect_handler,ss.accept());
+            t.detach();
+        }
+        catch (const std::exception& e)
+        {
+            printf("Exception accepting TCP connection: %s\n",e.what());
+        }
+    }
+}
+
+static void
 parse_reflector_config(const char* path)
 {
     futil::file reflector_fd(path,O_RDONLY);
@@ -1269,6 +1300,9 @@ main(int argc, const char* argv[])
             printf("Failed to parse --reflector-cfg file: %s\n",e.what());
             return -1;
         }
+
+        std::thread t(reflector_workloop);
+        t.detach();
     }
 
     if (cert_file && key_file)
