@@ -1121,7 +1121,6 @@ main(int argc, const char* argv[])
     if (unbuffered)
         setlinebuf(stdout);
 
-
     printf("%s\n",GIT_VERSION);
 
     signal(SIGPIPE,SIG_IGN);
