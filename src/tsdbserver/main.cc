@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <thread>
+#include <map>
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -100,6 +101,18 @@ struct chunk_header
     uint32_t    bitmap_offset;
     uint32_t    data_len;
     uint8_t     data[];
+};
+
+struct reflector_config
+{
+    std::string                         remote_host;
+    uint16_t                            remote_port;
+    std::string                         remote_user;
+    std::string                         remote_password;
+    uint16_t                            local_port;
+    std::map<std::string,std::string>   db_map;
+
+    reflector_config():remote_port(0),local_port(0) {}
 };
 
 struct connection
@@ -233,6 +246,7 @@ static const command_syntax auth_command =
 static const uint8_t pad_bytes[8] = {};
 
 static tsdb::root* root;
+static reflector_config reflector_cfg;
 
 static uint64_t
 time_ns()
@@ -1023,6 +1037,107 @@ ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 }
 
 static void
+parse_reflector_config(const char* path)
+{
+    futil::file reflector_fd(path,O_RDONLY);
+    futil::file::line line;
+    size_t line_num = 0;
+    do
+    {
+        ++line_num;
+
+        line = reflector_fd.read_line();
+        if (line.text.empty())
+            continue;
+        if (line.text[0] == '#')
+            continue;
+
+        std::vector<std::string> parts = str::split(line.text);
+        if (parts[0] == "remote_host")
+        {
+            if (parts.size() != 2)
+            {
+                throw std::invalid_argument(str::printf(
+                    "Line %zu: expected 'remote_host <host_or_ip>'",line_num));
+            }
+            reflector_cfg.remote_host = parts[1];
+        }
+        else if (parts[0] == "remote_port")
+        {
+            if (parts.size() != 2)
+            {
+                throw std::invalid_argument(str::printf(
+                    "Line %zu: expected 'remote_port <port_number>'",line_num));
+            }
+            reflector_cfg.remote_port = std::stoul(parts[1]);
+        }
+        else if (parts[0] == "remote_user")
+        {
+            if (parts.size() != 2)
+            {
+                throw std::invalid_argument(str::printf(
+                    "Line %zu: expected 'remote_user <username>'",line_num));
+            }
+            reflector_cfg.remote_user = parts[1];
+        }
+        else if (parts[0] == "remote_password")
+        {
+            if (parts.size() != 2)
+            {
+                throw std::invalid_argument(str::printf(
+                    "Line %zu: expected 'remote_password <password>'",
+                    line_num));
+            }
+            reflector_cfg.remote_password = parts[1];
+        }
+        else if (parts[0] == "map")
+        {
+            if (parts.size() != 3)
+            {
+                throw std::invalid_argument(str::printf(
+                    "Line %zu: expected 'map <local_db> <remote_db>'",
+                    line_num));
+            }
+            auto [iter, ok] =
+                reflector_cfg.db_map.try_emplace(parts[1],parts[2]);
+            if (!ok)
+            {
+                throw std::invalid_argument(str::printf(
+                    "Line %zu: local database '%s' already mapped'",
+                    line_num,parts[1].c_str()));
+            }
+        }
+        else if (parts[0] == "local_port")
+        {
+            if (parts.size() != 2)
+            {
+                throw std::invalid_argument(str::printf(
+                    "Line %zu: expected 'local_port <port_number>'",line_num));
+            }
+            reflector_cfg.local_port = std::stoul(parts[1]);
+        }
+        else
+        {
+            throw std::invalid_argument(str::printf(
+                "Line %zu: unrecognized key '%s'",line_num,parts[0].c_str()));
+        }
+    } while (line);
+
+    if (reflector_cfg.remote_host.empty())
+        throw std::invalid_argument("Missing 'remote_host'");
+    if (reflector_cfg.remote_port == 0)
+        throw std::invalid_argument("Missing 'remote_port'");
+    if (reflector_cfg.remote_user.empty())
+        throw std::invalid_argument("Missing 'remote_user'");
+    if (reflector_cfg.remote_password.empty())
+        throw std::invalid_argument("Missing 'remote_password'");
+    if (reflector_cfg.local_port == 0)
+        throw std::invalid_argument("Missing 'local_port'");
+    if (reflector_cfg.db_map.empty())
+        throw std::invalid_argument("No databases mapped");
+}
+
+static void
 usage(const char* err)
 {
     printf("Usage: tsdbserver [options]\n"
@@ -1036,6 +1151,8 @@ usage(const char* err)
            "    port      - TCP listening port number (defaults to 4000)\n"
            "  [--no-debug]\n"
            "              - disable debug output\n"
+           "  [--reflector-cfg]\n"
+           "              - path to reflector configuration file\n"
            );
     if (err)
         printf("\n%s\n",err);
@@ -1047,6 +1164,7 @@ main(int argc, const char* argv[])
     const char* root_path = ".";
     const char* cert_file = NULL;
     const char* key_file = NULL;
+    const char* reflector_cfg_path = NULL;
     uint16_t port = 4000;
     bool no_debug = false;
     bool unbuffered = false;
@@ -1109,6 +1227,16 @@ main(int argc, const char* argv[])
             unbuffered = true;
             ++i;
         }
+        else if (!strcmp(arg,"--reflector-cfg"))
+        {
+            if (!rem)
+            {
+                usage("Expected --reflector-cfg reflector.cfg");
+                return -1;
+            }
+            reflector_cfg_path = argv[i + 1];
+            i += 2;
+        }
         else
         {
             std::string err("Unrecognized argument: ");
@@ -1129,6 +1257,19 @@ main(int argc, const char* argv[])
     printf("    Chunk size: %zu bytes\n",root->config.chunk_size);
     printf("      WAL size: %zu points\n",root->config.wal_max_entries);
     printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
+
+    if (reflector_cfg_path)
+    {
+        try
+        {
+            parse_reflector_config(reflector_cfg_path);
+        }
+        catch (const std::exception& e)
+        {
+            printf("Failed to parse --reflector-cfg file: %s\n",e.what());
+            return -1;
+        }
+    }
 
     if (cert_file && key_file)
         ssl_workloop(cert_file,key_file,port);
