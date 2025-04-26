@@ -236,6 +236,20 @@ static const command_syntax commands[] =
     },
 };
 
+static const command_syntax reflector_commands[] =
+{
+    {
+        handle_get_schema,
+        CT_GET_SCHEMA,
+        {DT_DATABASE, DT_MEASUREMENT, DT_END},
+    },
+    {
+        handle_write_points_reflector,
+        CT_WRITE_POINTS,
+        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES},
+    },
+};
+
 static const command_syntax auth_command =
 {
     NULL,
@@ -1037,12 +1051,93 @@ ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 }
 
 static void
+handle_write_points_reflector(connection& conn,
+    const std::vector<parsed_data_token>& tokens)
+{
+}
+
+static void
+parse_and_exec_reflector(connection& conn, const command_syntax& cs)
+{
+    std::vector<parsed_data_token> tokens;
+    parse_cmd(conn.s,cs,tokens);
+
+    uint32_t status[2] = {DT_STATUS_CODE, 0};
+    try
+    {
+        cs.handler(conn,tokens);
+    }
+    catch (const tsdb::exception& e)
+    {
+        printf("TSDB exception: [%d] %s\n",e.sc,e.what());
+        status[1] = e.sc;
+    }
+    
+    root->debugf("Sending status %d...\n",(int32_t)status[1]);
+    conn.s.send_all(status,sizeof(status));
+}
+
+static void
+process_stream_reflector(connection& conn)
+{
+    try
+    {
+        for (;;)
+        {
+            uint32_t ct;
+            try
+            {
+                ct = conn.s.pop<uint32_t>();
+            }
+            catch (const futil::errno_exception& e)
+            {
+                if (e.errnov == ECONNRESET)
+                    return;
+                throw;
+            }
+
+            bool found = false;
+            for (auto& cmd : reflector_commands)
+            {
+                if (cmd.cmd_token == ct)
+                {
+                    parse_and_exec_reflector(conn,cmd);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                printf("No such command 0x%08X.\n",ct);
+                return;
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        printf("Error: %s\n",e.what());
+    }
+    catch (...)
+    {
+        printf("Random exception!\n");
+    }
+}
+
+static void
 reflect_handler(std::unique_ptr<tcp::stream> s)
 {
     printf("Reflecting %s to %s:%u.\n",
            s->remote_addr_string().c_str(),
            reflector_cfg.remote_host.c_str(),
            reflector_cfg.remote_port);
+
+    // TODO:
+    // tcp::ipv4::addr remote_addr(reflector_cfg.remote_port);
+    // tcp::ipv4::client_socket cs(
+    connection conn{*s,0};
+    process_stream_reflector(conn);
+
     printf("Reflection not handled yet.\n");
 }
 
