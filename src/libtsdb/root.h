@@ -64,6 +64,7 @@ namespace tsdb
 
         // Prints a debug message.
         int debugf(const char* fmt, ...) const __PRINTF__(2,3);
+        int vdebugf(const char* fmt, va_list ap) const;
 
         // Root at the specified path.
         root(const futil::path& root_path, bool debug_enabled);

@@ -170,6 +170,12 @@ tsdb::root::debugf(const char* fmt, ...) const
     return rv;
 }
 
+int
+tsdb::root::vdebugf(const char* fmt, va_list ap) const
+{
+    return vprintf(fmt,ap);
+}
+
 void
 tsdb::create_root(const futil::path& path, const configuration& config) try
 {
