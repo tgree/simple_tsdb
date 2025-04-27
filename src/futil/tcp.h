@@ -123,6 +123,13 @@ namespace tcp
         {
         }
 
+        socket(int fd, const net::addr& remote_addr):
+            futil::file_descriptor(fd),
+            local_addr(net::getsockname(fd)),
+            remote_addr(remote_addr)
+        {
+        }
+
         socket(socket&& other):
             futil::file_descriptor(std::move(other)),
             local_addr(other.local_addr),
@@ -136,6 +143,22 @@ namespace tcp
                 return;
 
             ::shutdown(fd,SHUT_RDWR);
+        }
+    };
+
+    struct client_socket : public socket
+    {
+        static int _connect(const net::addr& remote_addr)
+        {
+            int fd = _socket(remote_addr.sa.sa_family);
+            if (::connect(fd,&remote_addr.sa,sizeof(remote_addr.sa)) == -1)
+                throw futil::errno_exception(errno);
+            return fd;
+        }
+
+        client_socket(const net::addr& remote_addr):
+            socket(_connect(remote_addr),remote_addr)
+        {
         }
     };
 
