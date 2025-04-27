@@ -697,60 +697,13 @@ handle_nop(connection& conn, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-process_stream(connection& conn)
-{
-    try
-    {
-        for (;;)
-        {
-            uint32_t ct;
-            try
-            {
-                ct = conn.s.pop<uint32_t>();
-            }
-            catch (const futil::errno_exception& e)
-            {
-                if (e.errnov == ECONNRESET)
-                    return;
-                throw;
-            }
-
-            bool found = false;
-            for (auto& cmd : commands)
-            {
-                if (cmd.cmd_token == ct)
-                {
-                    parse_and_exec(conn.s,cmd,conn);
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-            {
-                printf("No such command 0x%08X.\n",ct);
-                return;
-            }
-        }
-    }
-    catch (const std::exception& e)
-    {
-        printf("Error: %s\n",e.what());
-    }
-    catch (...)
-    {
-        printf("Random exception!\n");
-    }
-}
-
-static void
 request_handler(std::unique_ptr<tcp::stream> s)
 {
     printf("Handling local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
     connection conn{*s,0};
-    process_stream(conn);
+    process_stream(conn.s,commands,conn);
 
     printf("Teardown local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());

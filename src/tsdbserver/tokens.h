@@ -195,4 +195,53 @@ parse_and_exec(tcp::stream& s, const command_syntax<Args...>& cs,
     s.send_all(status,sizeof(status));
 }
 
+template<typename ...Args, size_t N>
+static void
+process_stream(tcp::stream& s, const command_syntax<Args...> (&commands)[N],
+    Args&&... args)
+{
+    try
+    {
+        for (;;)
+        {
+            uint32_t ct;
+            try
+            {
+                ct = s.pop<uint32_t>();
+            }
+            catch (const futil::errno_exception& e)
+            {
+                if (e.errnov == ECONNRESET)
+                    return;
+                throw;
+            }
+
+            bool found = false;
+            for (auto& cmd : commands)
+            {
+                if (cmd.cmd_token == ct)
+                {
+                    parse_and_exec(s,cmd,args...);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                printf("No such command 0x%08X.\n",ct);
+                return;
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        printf("Error: %s\n",e.what());
+    }
+    catch (...)
+    {
+        printf("Random exception!\n");
+    }
+}
+
 #endif /* __TSDBSERVER_TOKENS_H */
