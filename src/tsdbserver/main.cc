@@ -697,27 +697,6 @@ handle_nop(connection& conn, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-parse_and_exec(connection& conn, const command_syntax<connection&>& cs)
-{
-    std::vector<parsed_data_token> tokens;
-    parse_cmd(conn.s,cs,tokens);
-
-    uint32_t status[2] = {DT_STATUS_CODE, 0};
-    try
-    {
-        cs.handler(conn,tokens);
-    }
-    catch (const tsdb::exception& e)
-    {
-        printf("TSDB exception: [%d] %s\n",e.sc,e.what());
-        status[1] = e.sc;
-    }
-    
-    root->debugf("Sending status %d...\n",(int32_t)status[1]);
-    conn.s.send_all(status,sizeof(status));
-}
-
-static void
 process_stream(connection& conn)
 {
     try
@@ -741,7 +720,7 @@ process_stream(connection& conn)
             {
                 if (cmd.cmd_token == ct)
                 {
-                    parse_and_exec(conn,cmd);
+                    parse_and_exec(conn.s,cmd,conn);
                     found = true;
                     break;
                 }
