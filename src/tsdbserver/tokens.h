@@ -3,6 +3,7 @@
 #ifndef __TSDBSERVER_TOKENS_H
 #define __TSDBSERVER_TOKENS_H
 
+#include <futil/tcp.h>
 #include <hdr/delegate.h>
 #include <stdint.h>
 #include <vector>
@@ -99,5 +100,74 @@ struct command_syntax
     const command_token cmd_token;
     const std::vector<data_token> data_tokens;
 };
+
+extern void
+debugf(const char* fmt, ...) __PRINTF__(1,2);
+
+template<typename ...Args>
+static void
+parse_cmd(tcp::stream& s, const command_syntax<Args...>& cs,
+    std::vector<parsed_data_token>& tokens)
+{
+    debugf("Got command 0x%08X.\n",cs.cmd_token);
+
+    for (auto dt : cs.data_tokens)
+    {
+        uint32_t v = s.pop<uint32_t>();
+        if (v != dt)
+        {
+            printf("Expected 0x%08X got 0x%08X\n",dt,v);
+            throw futil::errno_exception(EINVAL);
+        }
+        debugf("Got token 0x%08X.\n",dt);
+
+        parsed_data_token pdt;
+        pdt.type = dt;
+        pdt.data = NULL;
+        pdt.u64 = 0;
+        switch (dt)
+        {
+            case DT_DATABASE:
+            case DT_MEASUREMENT:
+            case DT_SERIES:
+            case DT_TYPED_FIELDS:
+            case DT_FIELD_LIST:
+            case DT_USERNAME:
+            case DT_PASSWORD:
+                pdt.len = s.pop<uint16_t>();
+                if (pdt.len >= 1024)
+                {
+                    printf("String length %zu too long.\n",pdt.len);
+                    throw futil::errno_exception(EINVAL);
+                }
+                pdt.data = (char*)malloc(pdt.len);
+                s.recv_all((char*)pdt.data,pdt.len);
+                tokens.push_back(std::move(pdt));
+            break;
+
+            case DT_CHUNK:
+                throw futil::errno_exception(ENOTSUP);
+                tokens.push_back(std::move(pdt));
+            break;
+
+            case DT_TIME_FIRST:
+            case DT_TIME_LAST:
+            case DT_NLIMIT:
+            case DT_NLAST:
+            case DT_WINDOW_NS:
+                pdt.u64 = s.pop<uint64_t>();
+                tokens.push_back(std::move(pdt));
+            break;
+
+            case DT_END:
+                tokens.push_back(std::move(pdt));
+            break;
+
+            default:
+                throw futil::errno_exception(EINVAL);
+            break;
+        }
+    }
+}
 
 #endif /* __TSDBSERVER_TOKENS_H */
