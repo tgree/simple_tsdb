@@ -984,8 +984,7 @@ auth_request_handler(std::unique_ptr<tcp::stream> s)
 static void
 socket4_workloop(uint16_t port)
 {
-    tcp::ipv4::addr sa(port,INADDR_LOOPBACK);
-    tcp::ipv4::server_socket ss(sa);
+    tcp::ipv4::server_socket ss(net::ipv4::loopback_addr(port));
     ss.listen(4);
     printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
@@ -1006,8 +1005,7 @@ static void
 ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 {
     tcp::ssl::context sslctx(cert_file,key_file);
-    tcp::ipv4::addr sa(port,INADDR_ANY);
-    tcp::ipv4::server_socket ss(sa);
+    tcp::ipv4::server_socket ss(net::ipv4::any_addr(port));
     ss.listen(4);
     printf("SSL listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
