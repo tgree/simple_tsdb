@@ -4,6 +4,7 @@
 #define __SRC_FUTIL_IPV4_H
 
 #include "tcp.h"
+#include "sockaddr.h"
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
@@ -11,40 +12,9 @@
 
 namespace tcp::ipv4
 {
-    struct addr
+    inline int _socket(int af)
     {
-        struct sockaddr_in sa;
-
-        std::string to_string() const
-        {
-            uint32_t a = ntohl(sa.sin_addr.s_addr);
-            uint16_t p = ntohs(sa.sin_port);
-            return std::to_string((a >> 24) & 0xFF) + "." +
-                   std::to_string((a >> 16) & 0xFF) + "." +
-                   std::to_string((a >>  8) & 0xFF) + "." +
-                   std::to_string((a >>  0) & 0xFF) + ":" +
-                   std::to_string(p);
-        }
-
-        constexpr addr():sa{} {}
-
-        constexpr addr(uint16_t port, uint32_t addr):
-            sa{}
-        {
-            sa.sin_family = AF_INET;
-            sa.sin_port = htons(port);
-            sa.sin_addr.s_addr = htonl(addr);
-        }
-
-        constexpr addr(const struct sockaddr_in& sa):
-            sa(sa)
-        {
-        }
-    };
-
-    inline int _socket()
-    {
-        int fd = ::socket(AF_INET,SOCK_STREAM,0);
+        int fd = ::socket(af,SOCK_STREAM,0);
         if (fd == -1)
             throw futil::errno_exception(errno);
         return fd;
@@ -53,8 +23,8 @@ namespace tcp::ipv4
     struct socket : public futil::file_descriptor,
                     public stream
     {
-        const tcp::ipv4::addr local_addr;
-        const tcp::ipv4::addr remote_addr;
+        const net::addr local_addr;
+        const net::addr remote_addr;
 
         virtual std::string local_addr_string() override
         {
@@ -90,8 +60,8 @@ namespace tcp::ipv4
             }
         }
 
-        constexpr socket(int fd, const tcp::ipv4::addr& local_addr,
-                         const tcp::ipv4::addr& remote_addr):
+        constexpr socket(int fd, const net::addr& local_addr,
+                         const net::addr& remote_addr):
             futil::file_descriptor(fd),
             local_addr(local_addr),
             remote_addr(remote_addr)
@@ -116,9 +86,9 @@ namespace tcp::ipv4
 
     struct server_socket : public futil::file_descriptor
     {
-        const tcp::ipv4::addr bind_addr;
+        const net::addr bind_addr;
 
-        void bind(const tcp::ipv4::addr& a)
+        void bind(const net::addr& a)
         {
             if (::bind(fd,(struct sockaddr*)&a.sa,sizeof(a.sa)) == -1)
                 throw futil::errno_exception(errno);
@@ -132,7 +102,7 @@ namespace tcp::ipv4
 
         std::unique_ptr<tcp::ipv4::socket> accept()
         {
-            tcp::ipv4::addr remote_addr;
+            net::addr remote_addr;
             socklen_t sl = sizeof(remote_addr.sa);
             int afd = ::accept(fd,(struct sockaddr*)&remote_addr.sa,&sl);
             if (afd == -1)
@@ -141,8 +111,8 @@ namespace tcp::ipv4
             return std::make_unique<socket>(afd,bind_addr,remote_addr);
         }
 
-        server_socket(const tcp::ipv4::addr& bind_addr):
-            futil::file_descriptor(_socket()),
+        server_socket(const net::addr& bind_addr):
+            futil::file_descriptor(_socket(bind_addr.sa.sa_family)),
             bind_addr(bind_addr)
         {
             int reuse = 1;
