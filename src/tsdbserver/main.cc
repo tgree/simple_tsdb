@@ -1,5 +1,6 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
+#include "tokens.h"
 #include <version.h>
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
@@ -17,103 +18,10 @@
 #include <time.h>
 #include <inttypes.h>
 
-enum command_token : uint32_t
-{
-    CT_CREATE_DATABASE      = 0x60545A42,
-    CT_CREATE_MEASUREMENT   = 0xBB632CE1,
-    CT_WRITE_POINTS         = 0xEAF5E003,
-    CT_SELECT_POINTS_LIMIT  = 0x7446C560,
-    CT_SELECT_POINTS_LAST   = 0x76CF2220,
-    CT_DELETE_POINTS        = 0xD9082F2C,
-    CT_GET_SCHEMA           = 0x87E5A959,
-    CT_LIST_DATABASES       = 0x29200D6D,
-    CT_LIST_MEASUREMENTS    = 0x0FEB1399,
-    CT_LIST_SERIES          = 0x7B8238D6,
-    CT_ACTIVE_SERIES        = 0xF3B5093D,
-    CT_COUNT_POINTS         = 0x0E329B19,
-    CT_SUM_POINTS           = 0x90305A39,
-    CT_NOP                  = 0x22CF1296,
-    CT_AUTHENTICATE         = 0x0995EBDA,
-};
-
-enum data_token : uint32_t
-{
-    DT_DATABASE         = 0x39385A4F,   // <database>
-    DT_MEASUREMENT      = 0xDC1F48F3,   // <measurement>
-    DT_SERIES           = 0x4E873749,   // <series>
-    DT_TYPED_FIELDS     = 0x02AC7330,   // <f1>/<type1>,<f2>/<type2>,...
-    DT_FIELD_LIST       = 0xBB62ACC3,   // <f1>,<f2>,...
-    DT_CHUNK            = 0xE4E8518F,   // <chunk header>, then data
-    DT_TIME_FIRST       = 0x55BA37B4,   // <t0> (uint64_t)
-    DT_TIME_LAST        = 0xC4EE45BA,   // <t1> (uint64_t)
-    DT_NLIMIT           = 0xEEF2BB02,   // LIMIT <N> (uint64_t)
-    DT_NLAST            = 0xD74F10A3,   // LAST <N> (uint64_t)
-    DT_END              = 0x4E29ADCC,   // end of command
-    DT_STATUS_CODE      = 0x8C8C07D9,   // <errno> (uint32_t)
-    DT_FIELD_TYPE       = 0x7DB40C2A,   // <type> (uint32_t)
-    DT_FIELD_NAME       = 0x5C0D45C1,   // <name>
-    DT_READY_FOR_CHUNK  = 0x6000531C,   // <max_data_len> (uint32_t)
-    DT_NPOINTS          = 0x5F469D08,   // <npoints> (uint64_t)
-    DT_WINDOW_NS        = 0x76F0C374,   // <window_ns> (uint64_t)
-    DT_SUMS_CHUNK       = 0x53FC76FC,   // <chunk_npoints> (uint16_t)
-    DT_USERNAME         = 0x6E39D1DE,   // <username>
-    DT_PASSWORD         = 0x602E5B01,   // <password>
-};
-
-struct parsed_data_token
-{
-    data_token type;
-    const char* data;
-    union
-    {
-        size_t      len;
-        uint64_t    u64;
-    };
-
-    std::string to_string() const {return std::string(data,len);}
-
-    parsed_data_token():
-        data(NULL)
-    {
-    }
-
-    parsed_data_token(const parsed_data_token&) = delete;
-
-    parsed_data_token(parsed_data_token&& other):
-        type(other.type),
-        data(other.data),
-        u64(other.u64)
-    {
-        other.data = NULL;
-    }
-
-    ~parsed_data_token()
-    {
-        free((void*)data);
-        data = NULL;
-    }
-};
-
-struct chunk_header
-{
-    uint32_t    npoints;
-    uint32_t    bitmap_offset;
-    uint32_t    data_len;
-    uint8_t     data[];
-};
-
 struct connection
 {
     tcp::stream&    s;
     uint64_t        last_write_ns;
-};
-
-struct command_syntax
-{
-    void (* const handler)(connection& c,
-                           const std::vector<parsed_data_token>& tokens);
-    const command_token cmd_token;
-    const std::vector<data_token> data_tokens;
 };
 
 static void handle_create_database(
@@ -145,87 +53,87 @@ static void handle_sum_points(
 static void handle_nop(
     connection& conn, const std::vector<parsed_data_token>& tokens);
 
-static const command_syntax commands[] =
+static const command_syntax<connection&> commands[] =
 {
     {
-        handle_create_database,
+        func_delegate(handle_create_database),
         CT_CREATE_DATABASE,
         {DT_DATABASE, DT_END},
     },
     {
-        handle_list_databases,
+        func_delegate(handle_list_databases),
         CT_LIST_DATABASES,
         {DT_END},
     },
     {
-        handle_create_measurement,
+        func_delegate(handle_create_measurement),
         CT_CREATE_MEASUREMENT,
         {DT_DATABASE, DT_MEASUREMENT, DT_TYPED_FIELDS, DT_END},
     },
     {
-        handle_get_schema,
+        func_delegate(handle_get_schema),
         CT_GET_SCHEMA,
         {DT_DATABASE, DT_MEASUREMENT, DT_END},
     },
     {
-        handle_list_measurements,
+        func_delegate(handle_list_measurements),
         CT_LIST_MEASUREMENTS,
         {DT_DATABASE, DT_END},
     },
     {
-        handle_list_series,
+        func_delegate(handle_list_series),
         CT_LIST_SERIES,
         {DT_DATABASE, DT_MEASUREMENT, DT_END},
     },
     {
-        handle_active_series,
+        func_delegate(handle_active_series),
         CT_ACTIVE_SERIES,
         {DT_DATABASE, DT_MEASUREMENT, DT_TIME_FIRST, DT_TIME_LAST, DT_END},
     },
     {
-        handle_count_points,
+        func_delegate(handle_count_points),
         CT_COUNT_POINTS,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_TIME_FIRST, DT_TIME_LAST,
          DT_END},
     },
     {
-        handle_write_points,
+        func_delegate(handle_write_points),
         CT_WRITE_POINTS,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES},
     },
     {
-        handle_delete_points,
+        func_delegate(handle_delete_points),
         CT_DELETE_POINTS,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_TIME_LAST, DT_END},
     },
     {
-        handle_select_points_limit,
+        func_delegate(handle_select_points_limit),
         CT_SELECT_POINTS_LIMIT,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
          DT_TIME_LAST, DT_NLIMIT, DT_END},
     },
     {
-        handle_select_points_last,
+        func_delegate(handle_select_points_last),
         CT_SELECT_POINTS_LAST,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
          DT_TIME_LAST, DT_NLAST, DT_END},
     },
     {
-        handle_sum_points,
+        func_delegate(handle_sum_points),
         CT_SUM_POINTS,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
          DT_TIME_LAST, DT_WINDOW_NS, DT_END},
     },
     {
-        handle_nop,
+        func_delegate(handle_nop),
         CT_NOP,
         {DT_END},
     },
 };
 
-static const command_syntax auth_command =
+static const command_syntax<connection&> auth_command =
 {
-    NULL,
+    nop_delegate(),
     CT_AUTHENTICATE,
     {DT_USERNAME, DT_PASSWORD, DT_END},
 };
@@ -780,7 +688,7 @@ handle_nop(connection& conn, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-parse_cmd(tcp::stream& s, const command_syntax& cs,
+parse_cmd(tcp::stream& s, const command_syntax<connection&>& cs,
     std::vector<parsed_data_token>& tokens)
 {
     root->debugf("Got command 0x%08X.\n",cs.cmd_token);
@@ -845,7 +753,7 @@ parse_cmd(tcp::stream& s, const command_syntax& cs,
 }
 
 static void
-parse_and_exec(connection& conn, const command_syntax& cs)
+parse_and_exec(connection& conn, const command_syntax<connection&>& cs)
 {
     std::vector<parsed_data_token> tokens;
     parse_cmd(conn.s,cs,tokens);
