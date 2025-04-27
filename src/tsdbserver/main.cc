@@ -107,6 +107,7 @@ struct reflector_config
 {
     std::string                         remote_host;
     uint16_t                            remote_port;
+    net::addr                           remote_addr;
     std::string                         remote_user;
     std::string                         remote_password;
     uint16_t                            local_port;
@@ -119,6 +120,9 @@ struct connection
 {
     tcp::stream&    s;
     uint64_t        last_write_ns;
+
+    // Only populated in reflector calls.
+    std::unique_ptr<tcp::stream>    reflector_stream;
 };
 
 struct command_syntax
@@ -235,6 +239,9 @@ static const command_syntax commands[] =
         {DT_END},
     },
 };
+
+static void handle_write_points_reflector(
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 
 static const command_syntax reflector_commands[] =
 {
@@ -1051,9 +1058,121 @@ ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 }
 
 static void
+reflect_chunk_to_local_database(const chunk_header& ch, const auto_buf& data,
+    tsdb::series_write_lock& write_lock, const futil::path& path)
+{
+    root->debugf("LOCAL WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
+    tsdb::write_wal(write_lock,ch.npoints,ch.bitmap_offset,ch.data_len,data);
+}
+
+static void
+reflect_chunk_to_remote_database(const chunk_header& ch, const auto_buf& data,
+    tcp::stream* reflector_stream, const std::string& database,
+    const std::string& measurement, const std::string& series)
+{
+    const std::string* dest = &database;
+    auto iter = reflector_cfg.db_map.find(database);
+    if (iter != reflector_cfg.db_map.end())
+        dest = &iter->second;
+    futil::path path(*dest,measurement,series);
+
+    root->debugf("REMOTE WRITE %u POINTS TO %s\n",ch.npoints,path.c_str());
+    throw std::runtime_error("Remote reflect not implemented yet!");
+}
+
+static void
 handle_write_points_reflector(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
+    futil::path path(database,measurement,series);
+
+    root->debugf("REFLECT TO %s\n",path.c_str());
+    tsdb::database db(*root,tokens[0].to_string());
+    tsdb::measurement m(db,tokens[1].to_string());
+
+    uint64_t now = time_ns();
+    const size_t write_throttle_ns = db.root.config.write_throttle_ns;
+    if (now - conn.last_write_ns < write_throttle_ns)
+    {
+        sleep_for_ns(conn.last_write_ns + write_throttle_ns - now);
+        now = time_ns();
+    }
+    conn.last_write_ns = now;
+
+    // Check if there are any local points.
+    auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
+    auto cr = tsdb::count_points(write_lock,0,-1);
+
+    // If there are no local points, and we don't have a reflector connection,
+    // try to open one now.
+    if (!cr.npoints && !conn.reflector_stream)
+    {
+        try
+        {
+            root->debugf("Attempting to connect to remote database...\n");
+            tcp::ssl::client_context sslctx;
+            conn.reflector_stream = sslctx.wrap(
+                std::make_unique<tcp::client_socket>(reflector_cfg.remote_addr),
+                reflector_cfg.remote_host.c_str());
+        }
+        catch (const std::exception& e)
+        {
+            root->debugf("Connect failed: %s\n",e.what());
+        }
+    }
+
+    // Read chunks and reflect them to the right destination.
+    for (;;)
+    {
+        uint32_t tokens[2] = {DT_READY_FOR_CHUNK,10*1024*1024};
+        conn.s.send_all(tokens,sizeof(tokens));
+
+        uint32_t dt = conn.s.pop<uint32_t>();
+        if (dt == DT_END)
+        {
+            root->debugf("REFLECT END\n");
+            return;
+        }
+        if (dt != DT_CHUNK)
+            throw futil::errno_exception(EINVAL);
+
+        chunk_header ch = conn.s.pop<chunk_header>();
+        if (ch.data_len > 10*1024*1024)
+            throw futil::errno_exception(ENOMEM);
+
+        root->debugf("RECV %u BYTES\n",ch.data_len);
+        auto_buf data(ch.data_len);
+        conn.s.recv_all(data,ch.data_len);
+
+        // If we have a reflector stream, then there are no locally-stored
+        // points and we can write to the remote database.
+        if (conn.reflector_stream)
+        {
+            try
+            {
+                reflect_chunk_to_remote_database(ch,data,
+                                                 conn.reflector_stream.get(),
+                                                 database,measurement,series);
+                continue;
+            }
+            catch (const std::exception& e)
+            {
+                // Clear the reflector_stream since we have somehow lost the
+                // connection.
+                conn.reflector_stream.reset();
+                root->debugf("Remote write failed: %s\n",e.what());
+            }
+        }
+
+        // We don't (or no longer) have a reflector stream, so write to the
+        // local database.  The background thread will eventually come around
+        // and write these all to the remote database when it is able to talk
+        // to it again.
+        reflect_chunk_to_local_database(ch,data,write_lock,path);
+    }
 }
 
 static void
@@ -1132,9 +1251,8 @@ reflect_handler(std::unique_ptr<tcp::stream> s)
            reflector_cfg.remote_host.c_str(),
            reflector_cfg.remote_port);
 
-    // TODO:
-    // tcp::ipv4::addr remote_addr(reflector_cfg.remote_port);
-    // tcp::ipv4::client_socket cs(
+    // Open connection to reflector target.
+
     connection conn{*s,0};
     process_stream_reflector(conn);
 
@@ -1144,10 +1262,11 @@ reflect_handler(std::unique_ptr<tcp::stream> s)
 static void
 reflector_workloop()
 {
-    tcp::ipv4::addr sa(reflector_cfg.local_port,INADDR_LOOPBACK);
-    tcp::ipv4::server_socket ss(sa);
+    tcp::server_socket ss(net::ipv4::loopback_addr(reflector_cfg.local_port));
     ss.listen(4);
-    printf("TCP reflector listening on %s.\n",ss.bind_addr.to_string().c_str());
+    printf("TCP reflector listening on %s and reflecting to %s.\n",
+           ss.bind_addr.to_string().c_str(),
+           reflector_cfg.remote_addr.to_string().c_str());
     for (;;)
     {
         try
@@ -1261,6 +1380,14 @@ parse_reflector_config(const char* path)
         throw std::invalid_argument("Missing 'local_port'");
     if (reflector_cfg.db_map.empty())
         throw std::invalid_argument("No databases mapped");
+
+    auto addrs = net::get_addrs(reflector_cfg.remote_host.c_str(),
+                                reflector_cfg.remote_port);
+    if (addrs.empty())
+        throw std::invalid_argument("Cannot resolve remote host.");
+    for (const auto& addr : addrs)
+        printf("Found reflector target: %s\n",addr.to_string().c_str());
+    reflector_cfg.remote_addr = addrs[0];
 }
 
 static void
