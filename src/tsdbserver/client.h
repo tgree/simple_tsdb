@@ -8,18 +8,6 @@
 #include <libtsdb/exception.h>
 #include <libtsdb/measurement.h>
 
-struct status_exception : public std::exception
-{
-    tsdb::status_code   sc;
-
-    virtual const char* what() const noexcept
-    {
-        return "Status exception";
-    }
-
-    status_exception(tsdb::status_code sc):sc(sc) {}
-};
-
 struct protocol_exception : public std::exception
 {
     const char* msg;

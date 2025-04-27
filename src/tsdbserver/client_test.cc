@@ -85,6 +85,15 @@ parse_remote_cfg(const char* path)
     return cfg;
 }
 
+static void
+print_schema(client& c, const char* database, const char* measurement)
+{
+    printf("Schema for %s/%s:\n",database,measurement);
+    auto fields = c.get_schema(database,measurement);
+    for (const auto& f : fields)
+        printf("%4s %s\n",tsdb::ftinfos[f.type].name,f.name);
+}
+
 int
 main(int argc, const char* argv[])
 {
@@ -97,7 +106,8 @@ main(int argc, const char* argv[])
     auto cfg = parse_remote_cfg(argv[1]);
     auto c = client(cfg.remote_host,cfg.remote_port,cfg.remote_user,
                     cfg.remote_password);
-    auto fields = c.get_schema("xdh-n-1000017-data","xtalx_data");
-    for (const auto& f : fields)
-        printf("%4s %s\n",tsdb::ftinfos[f.type].name,f.name);
+    print_schema(c,"xdh-n-1000017-data","xtalx_data");
+    print_schema(c,"xdh-n-1000017-data","kaye_data");
+    print_schema(c,"xdh-n-1000017-data","moto_data");
+    print_schema(c,"xdh-n-1000017-data","motor_data");
 }
