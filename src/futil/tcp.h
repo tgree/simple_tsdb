@@ -4,7 +4,12 @@
 #define __SRC_FUTIL_TCP_H
 
 #include "futil.h"
+#include "sockaddr.h"
 #include <hdr/kassert.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <memory>
 
 namespace tcp
 {
@@ -60,6 +65,144 @@ namespace tcp
         }
 
         virtual ~stream() {}
+    };
+
+    inline int _socket(int af)
+    {
+        int fd = ::socket(af,SOCK_STREAM,0);
+        if (fd == -1)
+            throw futil::errno_exception(errno);
+        return fd;
+    }
+
+    struct socket : public futil::file_descriptor,
+                    public stream
+    {
+        const net::addr local_addr;
+        const net::addr remote_addr;
+
+        virtual std::string local_addr_string() override
+        {
+            return local_addr.to_string();
+        }
+
+        virtual std::string remote_addr_string() override
+        {
+            return remote_addr.to_string();
+        }
+
+        virtual size_t send(const void* buffer, size_t len) override
+        {
+            for (;;)
+            {
+                ssize_t slen = ::send(fd,buffer,len,0);
+                if (slen != -1)
+                    return slen;
+                if (errno != EINTR)
+                    throw futil::errno_exception(errno);
+            }
+        }
+
+        size_t recv(void* buffer, size_t len) override
+        {
+            for (;;)
+            {
+                ssize_t rlen = ::recv(fd,buffer,len,0);
+                if (rlen != -1)
+                    return rlen;
+                if (errno != EINTR)
+                    throw futil::errno_exception(errno);
+            }
+        }
+
+        constexpr socket(int fd, const net::addr& local_addr,
+                         const net::addr& remote_addr):
+            futil::file_descriptor(fd),
+            local_addr(local_addr),
+            remote_addr(remote_addr)
+        {
+        }
+
+        socket(int fd, const net::addr& remote_addr):
+            futil::file_descriptor(fd),
+            local_addr(net::getsockname(fd)),
+            remote_addr(remote_addr)
+        {
+        }
+
+        socket(socket&& other):
+            futil::file_descriptor(std::move(other)),
+            local_addr(other.local_addr),
+            remote_addr(other.remote_addr)
+        {
+        }
+
+        ~socket()
+        {
+            if (fd == -1)
+                return;
+
+            ::shutdown(fd,SHUT_RDWR);
+        }
+    };
+
+    struct client_socket : public socket
+    {
+        static int _connect(const net::addr& remote_addr)
+        {
+            int fd = _socket(remote_addr.sa.sa_family);
+            if (::connect(fd,&remote_addr.sa,sizeof(remote_addr.sa)) == -1)
+                throw futil::errno_exception(errno);
+            return fd;
+        }
+
+        client_socket(const net::addr& remote_addr):
+            socket(_connect(remote_addr),remote_addr)
+        {
+        }
+    };
+
+    struct server_socket : public futil::file_descriptor
+    {
+        const net::addr bind_addr;
+
+        void bind(const net::addr& a)
+        {
+            if (::bind(fd,(struct sockaddr*)&a.sa,sizeof(a.sa)) == -1)
+                throw futil::errno_exception(errno);
+        }
+
+        void listen(int backlog)
+        {
+            if (::listen(fd,backlog) == -1)
+                throw futil::errno_exception(errno);
+        }
+
+        std::unique_ptr<tcp::socket> accept()
+        {
+            net::addr remote_addr;
+            socklen_t sl = sizeof(remote_addr.sa);
+            int afd = ::accept(fd,(struct sockaddr*)&remote_addr.sa,&sl);
+            if (afd == -1)
+                throw futil::errno_exception(errno);
+
+            return std::make_unique<socket>(afd,bind_addr,remote_addr);
+        }
+
+        server_socket(const net::addr& bind_addr):
+            futil::file_descriptor(_socket(bind_addr.sa.sa_family)),
+            bind_addr(bind_addr)
+        {
+            int reuse = 1;
+            if (setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse)))
+                throw futil::errno_exception(errno);
+
+            reuse = 1;
+            if (setsockopt(fd,SOL_SOCKET,SO_REUSEPORT,&reuse,sizeof(reuse)))
+                throw futil::errno_exception(errno);
+
+            bind(bind_addr);
+        }
     };
 }
 
