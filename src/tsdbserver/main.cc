@@ -142,6 +142,15 @@ static const uint8_t pad_bytes[8] = {};
 
 static tsdb::root* root;
 
+void
+debugf(const char* fmt, ...)
+{
+    va_list ap;
+    va_start(ap,fmt);
+    root->vdebugf(fmt,ap);
+    va_end(ap);
+}
+
 static uint64_t
 time_ns()
 {
