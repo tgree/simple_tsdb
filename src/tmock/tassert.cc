@@ -122,8 +122,8 @@ tmock::assert_equiv(int32_t v, int32_t expected, const char* file,
         if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
         {
             printf("%s:%zu:\n",file,line);
-            printf(" Expected: %u\n",expected);
-            printf("      Got: %u\n",v);
+            printf(" Expected: %d\n",expected);
+            printf("      Got: %d\n",v);
         }
         exit(-1);
     }
@@ -138,8 +138,8 @@ tmock::assert_equiv(int64_t v, int64_t expected, const char* file,
         if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
         {
             printf("%s:%zu:\n",file,line);
-            printf(" Expected: %lu\n",expected);
-            printf("      Got: %lu\n",v);
+            printf(" Expected: %ld\n",expected);
+            printf("      Got: %ld\n",v);
         }
         exit(-1);
     }
