@@ -24,6 +24,38 @@ namespace tcp::ssl
         }
     };
 
+    struct set_fd_failed_exception : public exception
+    {
+        virtual const char* what() const noexcept override
+        {
+            return "SSL_set_fd failed";
+        }
+    };
+
+    struct set_host_name_failed_exception : public exception
+    {
+        virtual const char* what() const noexcept override
+        {
+            return "SSL_set_tlsext_host_name failed";
+        }
+    };
+
+    struct set1_host_failed_exception : public exception
+    {
+        virtual const char* what() const noexcept override
+        {
+            return "SSL_set1_host failed";
+        }
+    };
+
+    struct set_default_verify_paths_exception : public exception
+    {
+        virtual const char* what() const noexcept override
+        {
+            return "SSL_CTX_set_default_verify_paths";
+        }
+    };
+
     struct ssl_error_exception : public exception
     {
         int ssl_error;
@@ -154,7 +186,42 @@ namespace tcp::ssl
         }
     };
 
-    struct context
+    struct client_context
+    {
+        SSL_CTX* sslctx;
+
+        std::unique_ptr<stream> wrap(std::unique_ptr<tcp::socket> s,
+                                     const std::string& server_name)
+        {
+            SSL* cSSL = SSL_new(sslctx);
+            if (!cSSL)
+                throw null_ssl_exception();
+            if (!SSL_set_fd(cSSL,s->fd))
+                throw set_fd_failed_exception();
+            if (!SSL_set_tlsext_host_name(cSSL,server_name.c_str()))
+                throw set_host_name_failed_exception();
+            if (!SSL_set1_host(cSSL,server_name.c_str()))
+                throw set1_host_failed_exception();
+
+            int ret = SSL_connect(cSSL);
+            if (ret <= 0)
+            {
+                int err = SSL_get_error(cSSL,ret);
+                throw ssl_error_exception(err);
+            }
+            return std::make_unique<ssl::stream>(std::move(s),cSSL);
+        }
+
+        client_context():
+            sslctx(SSL_CTX_new(TLS_client_method()))
+        {
+            SSL_CTX_set_verify(sslctx,SSL_VERIFY_PEER,NULL);
+            if (!SSL_CTX_set_default_verify_paths(sslctx))
+                throw set_default_verify_paths_exception();
+        }
+    };
+
+    struct server_context
     {
         SSL_CTX* sslctx;
 
@@ -163,8 +230,9 @@ namespace tcp::ssl
             SSL* cSSL = SSL_new(sslctx);
             if (!cSSL)
                 throw null_ssl_exception();
+            if (!SSL_set_fd(cSSL,s->fd))
+                throw set_fd_failed_exception();
 
-            SSL_set_fd(cSSL,s->fd);
             int ret = SSL_accept(cSSL);
             if (ret <= 0)
             {
@@ -174,7 +242,8 @@ namespace tcp::ssl
             return std::make_unique<ssl::stream>(std::move(s),cSSL);
         }
 
-        context(const futil::path& cert_file, const futil::path& key_file):
+        server_context(const futil::path& cert_file,
+                       const futil::path& key_file):
             sslctx(SSL_CTX_new(TLS_server_method()))
         {
             kassert(cert_file.ends_with(".pem"));

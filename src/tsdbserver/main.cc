@@ -1004,7 +1004,7 @@ socket4_workloop(uint16_t port)
 static void
 ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 {
-    tcp::ssl::context sslctx(cert_file,key_file);
+    tcp::ssl::server_context sslctx(cert_file,key_file);
     tcp::server_socket ss(net::ipv4::any_addr(port));
     ss.listen(4);
     printf("SSL listening on %s.\n",ss.bind_addr.to_string().c_str());
