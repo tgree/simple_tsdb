@@ -81,6 +81,9 @@ namespace tmock
     void assert_equiv(uint64_t v, uint64_t expected,
                       const char* file = __builtin_FILE(),
                       size_t line = __builtin_LINE());
+    void assert_equiv(int16_t v, int16_t expected,
+                      const char* file = __builtin_FILE(),
+                      size_t line = __builtin_LINE());
     void assert_equiv(int32_t v, int32_t expected,
                       const char* file = __builtin_FILE(),
                       size_t line = __builtin_LINE());
