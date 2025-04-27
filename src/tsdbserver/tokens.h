@@ -4,8 +4,10 @@
 #define __TSDBSERVER_TOKENS_H
 
 #include <futil/tcp.h>
+#include <libtsdb/exception.h>
 #include <hdr/delegate.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <vector>
 
 enum command_token : uint32_t
@@ -168,6 +170,29 @@ parse_cmd(tcp::stream& s, const command_syntax<Args...>& cs,
             break;
         }
     }
+}
+
+template<typename ...Args>
+static void
+parse_and_exec(tcp::stream& s, const command_syntax<Args...>& cs,
+    Args&&... args)
+{
+    std::vector<parsed_data_token> tokens;
+    parse_cmd(s,cs,tokens);
+
+    uint32_t status[2] = {DT_STATUS_CODE, 0};
+    try
+    {
+        cs.handler(args...,tokens);
+    }
+    catch (const tsdb::exception& e)
+    {
+        printf("TSDB exception: [%d] %s\n",e.sc,e.what());
+        status[1] = e.sc;
+    }
+    
+    debugf("Sending status %d...\n",(int32_t)status[1]);
+    s.send_all(status,sizeof(status));
 }
 
 #endif /* __TSDBSERVER_TOKENS_H */
