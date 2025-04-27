@@ -3,7 +3,7 @@
 #ifndef __SRC_FUTIL_SSL_H
 #define __SRC_FUTIL_SSL_H
 
-#include "ipv4.h"
+#include "tcp.h"
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/evp.h>
@@ -83,9 +83,9 @@ namespace tcp::ssl
 
     struct stream : public tcp::stream
     {
-        std::unique_ptr<tcp::ipv4::socket>  s;
-        SSL*                                cSSL;
-        bool                                should_shutdown;
+        std::unique_ptr<tcp::socket>    s;
+        SSL*                            cSSL;
+        bool                            should_shutdown;
 
         virtual std::string local_addr_string() override
         {
@@ -132,7 +132,7 @@ namespace tcp::ssl
             throw ssl_error_exception(err);
         }
 
-        stream(std::unique_ptr<tcp::ipv4::socket> s, SSL* cSSL):
+        stream(std::unique_ptr<tcp::socket> s, SSL* cSSL):
             s(std::move(s)),
             cSSL(cSSL),
             should_shutdown(true)
@@ -158,7 +158,7 @@ namespace tcp::ssl
     {
         SSL_CTX* sslctx;
 
-        std::unique_ptr<stream> wrap(std::unique_ptr<tcp::ipv4::socket> s)
+        std::unique_ptr<stream> wrap(std::unique_ptr<tcp::socket> s)
         {
             SSL* cSSL = SSL_new(sslctx);
             if (!cSSL)
