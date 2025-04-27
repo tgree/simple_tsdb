@@ -8,6 +8,7 @@
 # 	T.LD       - linker file to use
 TARGETS := \
 	tsdbcli2 \
+	tsdbclienttest \
 	tsdbserver \
 	tsdbtest
 
