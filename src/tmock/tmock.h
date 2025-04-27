@@ -69,6 +69,9 @@ namespace tmock
     {
         assert_equiv(s.c_str(),(const char*)expected,file,line);
     }
+    void assert_equiv(const char* s, char* expected,
+                      const char* file = __builtin_FILE(),
+                      size_t line = __builtin_LINE()) = delete;
     void assert_equiv(uint16_t v, uint16_t expected,
                       const char* file = __builtin_FILE(),
                       size_t line = __builtin_LINE());
