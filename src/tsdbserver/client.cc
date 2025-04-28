@@ -79,30 +79,30 @@ client::client(const std::string& remote_hostname, uint16_t remote_port,
 {
 }
 
+void
+client::push_string(data_token dt, const std::string& st)
+{
+    s->push(dt);
+    s->push<uint16_t>(st.size());
+    s->push(st);
+}
+
 std::vector<tsdb::schema_entry>
 client::get_schema(const std::string& database,
     const std::string& measurement) try
 {
     connect();
     s->push(CT_GET_SCHEMA);
-    s->push(DT_DATABASE);
-    s->push<uint16_t>(database.size());
-    s->push(database);
-    s->push(DT_MEASUREMENT);
-    s->push<uint16_t>(measurement.size());
-    s->push(measurement);
+    push_string(DT_DATABASE,database);
+    push_string(DT_MEASUREMENT,measurement);
     s->push(DT_END);
 
     std::vector<tsdb::schema_entry> schema;
     size_t index = 0;
     size_t offset = 0;
-    data_token dt;
-    for (;;)
+    data_token dt = s->pop<data_token>();
+    while (dt == DT_FIELD_TYPE)
     {
-        dt = s->pop<data_token>();
-        if (dt != DT_FIELD_TYPE)
-            break;
-
         tsdb::schema_entry se{};
         se.version = 1;
         se.index   = index;
@@ -124,6 +124,8 @@ client::get_schema(const std::string& database,
 
         ++index;
         offset += tsdb::ftinfos[se.type].nbytes;
+
+        dt = s->pop<data_token>();
     }
 
     if (dt != DT_STATUS_CODE)
@@ -131,6 +133,62 @@ client::get_schema(const std::string& database,
     check_status((tsdb::status_code)s->pop<int32_t>());
 
     return schema;
+}
+catch (const tsdb::exception&)
+{
+    throw;
+}
+catch (...)
+{
+    s.reset();
+    throw;
+}
+
+void
+client::write_points(const std::string& database,
+    const std::string& measurement, const std::string& series, uint32_t npoints,
+    uint32_t bitmap_offset, uint32_t data_len, const void* data) try
+{
+    // We only allow writing a single chunk for now.
+    kassert(data_len <= 10*1024*1024);
+
+    connect();
+
+    s->push(CT_WRITE_POINTS);
+    push_string(DT_DATABASE,database);
+    push_string(DT_MEASUREMENT,measurement);
+    push_string(DT_SERIES,series);
+
+    data_token dt;
+    for (;;)
+    {
+        dt = s->pop<data_token>();
+        if (dt == DT_STATUS_CODE)
+        {
+            check_status((tsdb::status_code)s->pop<int32_t>());
+            throw protocol_exception("Unexpected DT_STATUS_CODE 0");
+        }
+        if (dt != DT_READY_FOR_CHUNK)
+            throw protocol_exception("Expected DT_READY_FOR_CHUNK");
+        uint32_t avail_len = s->pop<uint32_t>();
+
+        // Only do one chunk for now.
+        kassert(data_len <= avail_len);
+        if (!npoints)
+            break;
+
+        uint32_t hdr[] = {DT_CHUNK,npoints,bitmap_offset,data_len};
+        s->send_all(hdr,sizeof(hdr));
+        s->send_all(data,data_len);
+
+        npoints -= npoints;
+    }
+    s->push(DT_END);
+
+    dt = s->pop<data_token>();
+    if (dt != DT_STATUS_CODE)
+        throw protocol_exception("Expected DT_STATUS_CODE");
+    check_status((tsdb::status_code)s->pop<int32_t>());
 }
 catch (const tsdb::exception&)
 {
@@ -155,12 +213,8 @@ client::connect() try
     s = ssl_context.wrap(std::make_unique<tcp::client_socket>(addrs[0]),
                          remote_hostname.c_str());
     s->push(CT_AUTHENTICATE);
-    s->push(DT_USERNAME);
-    s->push<uint16_t>(remote_user.size());
-    s->push(remote_user);
-    s->push(DT_PASSWORD);
-    s->push<uint16_t>(remote_password.size());
-    s->push(remote_password);
+    push_string(DT_USERNAME,remote_user);
+    push_string(DT_PASSWORD,remote_password);
     s->push(DT_END);
 
     if (s->pop<data_token>() != DT_STATUS_CODE)
