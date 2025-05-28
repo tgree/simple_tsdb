@@ -14,3 +14,10 @@ tsdbclienttest.OBJ := \
 	$(MODULE_BUILD_DIR)/client_test.o \
 	$(MODULE_BUILD_DIR)/client.o \
 	$(BUILD_O_DIR)/floor/kassert.o
+
+tsdbreflector.MK  := $(MODULE_MK)
+tsdbreflector.LIB := libtsdb.a libz-ng.a libssl.a libcrypto.a
+tsdbreflector.OBJ := \
+	$(MODULE_BUILD_DIR)/reflector.o \
+	$(MODULE_BUILD_DIR)/client.o \
+	$(BUILD_O_DIR)/floor/kassert.o
