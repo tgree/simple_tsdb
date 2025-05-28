@@ -1,0 +1,94 @@
+The tsdbreflector binary can be used to reflect data points to a remote
+tsdbserver instance without storing them locally.  However, if the remote
+instance becomes unreachable, the reflector will store points in a local
+simple_tsdb instance and flush them to the remote when it becomes reachable
+again.  This allows a local sensor to safely record data that is destined to a
+remote database without unnecessary wear of the local SSD.  Without a
+reflector, the sensor would have to persist all data locally and some other
+process would independently read the local database for new points, write them
+to a remote and then delete them from the local database.
+
+tsdbreflector currently only supports reflecting a local non-SSL connection to
+a remote SSL server.  This means that the remote server must have a
+certificate and that the reflector will need authentication credentials for
+the remote instance.
+
+tsdbreflector maps local database names to remote database names.  This allows
+the software that monitors the sensor to use a common configuration on all
+data loggers, perhaps always writing to the "sensor_data" database in the
+local simple_tsdb instance.  When the data logger is set up, the reflector
+configuration file could then map the "sensor_data" database name to something
+more appropriate in the remote, such as "data_logger_xyz123_data" where xyz123
+is different for all data loggers.  This is very convenient for the case where
+you have many data loggers that you want to push to a common remote tsdbserver
+instance but keep their data series independent.
+
+The process for setting up a reflector system is as follows:
+
+1. First, we need to set up the remote simple_tsdb instance.  On the remote
+server, initialize the instance with tsdbcli2.  Use the "add user <username>
+<password>" command to create a unique user for each data logger.  Use the
+"create database" command to create a unique database for eac data logger.
+Use the "create measurement" command to set up the schemas for the different
+measurements you want to reflect into the cloud.  Something like this:
+
+    tsdbcli2 --init-root 2M
+    add user data_logger_xyz123 <password>
+    create database data_logger_xyz123_data
+    create measurement data_logger_xyz123_data/points with fields value/f64
+
+2. Now that the databases and schemas have been initialized, we need to start
+the remote tsdbserver in SSL mode.  This requires that the remote server have
+a DNS host name and that it has valid signed SSL certificates (which can be
+obtained from a free provider such as LetsEncrypt).  The tsdbserver process
+will need the full certificate chain as well as the private key file.  Launch
+it as follows:
+
+    tsdbserver --ssl-files fullchain.pem privkey.pem --port <port number>
+
+The fullchain.pem and privkey.pem files should be stored somewhere securely on
+the server where only approved users can read them.  You may want to do
+something like create a group named letsencrypt_cert which can have read
+permissions to the certificates and then add the users under which tsdbserver
+will be running to this new group.
+
+3. Now, on each of the data loggers we need to set up the reflector.  The
+reflector will store in a local simple_tsdb instance when the remote is
+unreachable, so we have to create that instance first.  Something like this:
+
+    tsdbcli2 --init-root 2M
+    create database sensor_data
+    create measurement sensor_data/points with fields value/f64
+
+4. Now that the local database has been created on each logger, we need to
+create a configuration file that the tsdbreflector process will use to figure
+out where to reflect data to.  It should contain the following:
+
+    remote_host     <remote DNS host name>
+    remote_port     <port on which remote tsdbserver is listening>
+    remote_user     data_logger_xyz123
+    remote_password <password in remote database for data_logger_xyz123>
+
+    map sensor_data data_logger_xyz123_data
+
+This configuration file tells tsdbreflector everything it needs to know about
+connecting to the remote tsdbserver instance, as well as what local TCP port
+the reflector will listen on for loopback connections and a mapping of local
+database names to remote ones.  The "map" parameter can be specified multiple
+times to map multiple local databases to remote ones.
+
+5. Finally, we need to launch the tsdbreflector process:
+
+    tsdbreflector --reflector-cfg reflector.cfg --port <port number>
+
+This will launch a reflector instance locally, reflecting local write
+operations to the remote database.  When the remote database becomes
+unreachable, the points will instead be written locally, and later flushed
+when we can reach the remote again.
+
+From a client perspective, the tsdbreflector socket behaves just like a
+tsdbserver socket, except that the only supported operations are writing and
+retrieving measurement schema.  Specifically, database queries are not
+supported since the remote database may not even be reachable when a query is
+submitted.  Measurement schema are returned from the local simple_tsdb
+instance; it is assumed that they match up with the remote instance's schema.

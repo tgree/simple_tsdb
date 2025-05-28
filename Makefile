@@ -9,6 +9,7 @@
 TARGETS := \
 	tsdbcli2 \
 	tsdbclienttest \
+	tsdbreflector \
 	tsdbserver \
 	tsdbtest
 
@@ -19,6 +20,7 @@ OPT_LEVEL := -O2
 INSTALL_DIR := /usr/local/bin
 INSTALL_BINS := \
 	tsdbcli2 \
+	tsdbreflector \
 	tsdbserver
 
 # Standard directories.
