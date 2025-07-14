@@ -51,7 +51,6 @@ COMMON_CXXFLAGS := \
 	-gstrict-dwarf \
 	-fno-math-errno \
 	-freciprocal-math \
-	-ffinite-math-only \
 	-fno-signed-zeros \
 	-Wall \
 	-Werror \
