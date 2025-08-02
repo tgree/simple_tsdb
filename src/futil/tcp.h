@@ -64,6 +64,17 @@ namespace tcp
             return v;
         }
 
+        template<typename T>
+        void push(const T& v)
+        {
+            send_all(&v,sizeof(v));
+        }
+
+        void push(const std::string& s)
+        {
+            send_all(&s[0],s.size());
+        }
+
         virtual ~stream() {}
     };
 
