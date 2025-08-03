@@ -391,6 +391,15 @@ main(int argc, const char* argv[])
 {
     printf("%s\n",GIT_VERSION);
 
+    for (size_t i=1; i<(size_t)argc; ++i)
+    {
+        if (!strcmp(argv[i],"--help"))
+        {
+            printf("tsdbcli2 [--init-root <chunksize>]\n");
+            return -1;
+        }
+    }
+
     bool init_root = false;
     size_t chunk_size = 0;
 
