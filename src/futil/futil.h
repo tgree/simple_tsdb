@@ -613,7 +613,7 @@ namespace futil
             }
         }
 
-        void write_all(const void* _p, size_t n)
+        void write_all(const void* _p, size_t n) const
         {
             auto* p = (const char*)_p;
             while (n)
@@ -632,7 +632,7 @@ namespace futil
             }
         }
 
-        off_t lseek(off_t offset, int whence)
+        off_t lseek(off_t offset, int whence) const
         {
             for (;;)
             {
