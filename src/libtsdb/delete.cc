@@ -8,26 +8,22 @@
 #include <algorithm>
 
 void
-tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
+tsdb::delete_points(const series_total_lock& stl, uint64_t t)
 {
+    // We need to get time_first.  We lock time_first so that nobody else tries
+    // to access the series while we are adjusting things.
+    if (t < stl.time_first)
+        return;
+
     // We need to find the first valid timestamp > t.  This becomes the new
     // value for time_first and then we drop all points before it.  If no such
     // timestamp exists, then time_first becomes time_last + 1 and we drop
     // everything except the last chunk, which only drop if it is full.  This
     // all has to be done while holding the time_first lock.
-    futil::directory series_dir(m.dir,series);
-    futil::directory time_ns_dir(series_dir,"time_ns");
-
-    // We need to get time_first.  We lock time_first so that nobody else tries
-    // to access the series while we are adjusting things.
-    futil::file time_first_fd(series_dir,"time_first",O_RDWR);
-    time_first_fd.flock(LOCK_EX);
-    uint64_t time_first = time_first_fd.read_u64();
-    if (t < time_first)
-        return;
+    futil::directory time_ns_dir(stl.series_dir,"time_ns");
 
     // Map the index file and find the beginning and end.
-    futil::file index_fd(series_dir,"index",O_RDWR);
+    futil::file index_fd(stl.series_dir,"index",O_RDWR);
     auto index_m = index_fd.mmap(NULL,index_fd.lseek(0,SEEK_END),
                                  PROT_READ | PROT_WRITE,MAP_SHARED,0);
     auto* index_begin = (index_entry*)index_m.addr;
@@ -39,6 +35,7 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     // a value in the gap between slots.  It could also be the case that the
     // index is completely empty (everything is in the WAL) and so no index
     // slot exists to even hold t.
+    uint64_t time_first;
     auto* index_slot = std::upper_bound(index_begin,index_end,t);
     if (index_slot != index_begin)
     {
@@ -90,17 +87,17 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     }
 
     // Update time_first.
-    time_first_fd.lseek(0,SEEK_SET);
-    time_first_fd.write_all(&time_first,8);
+    stl.time_first_fd.lseek(0,SEEK_SET);
+    stl.time_first_fd.write_all(&time_first,8);
 
     // If we are keeping all the index slots or we have an empty index, then we
     // are done now.
     if (index_slot == index_begin)
     {
-        time_first_fd.fsync_and_flush();
+        stl.time_first_fd.fsync_and_flush();
         return;
     }
-    time_first_fd.fsync_and_barrier();
+    stl.time_first_fd.fsync_and_barrier();
 
     // A crash here leaves slots in the index file that precede time_first.  As
     // long as code honors the time_first limit, then these extra slots won't
@@ -108,13 +105,13 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     // operation.
 
     // Delete all orphaned chunks.
-    futil::directory fields_dir(series_dir,"fields");
-    futil::directory bitmaps_dir(series_dir,"bitmaps");
+    futil::directory fields_dir(stl.series_dir,"fields");
+    futil::directory bitmaps_dir(stl.series_dir,"bitmaps");
     for (auto* slot = index_begin; slot < index_slot; ++slot)
     {
         futil::unlink_if_exists(time_ns_dir,slot->timestamp_file);
         std::string gz_file = std::string(slot->timestamp_file) + ".gz";
-        for (const auto& f : m.fields)
+        for (const auto& f : stl.m.fields)
         {
             futil::path sub_path(f.name,slot->timestamp_file);
             futil::path gz_sub_path(f.name,gz_file);
@@ -131,13 +128,21 @@ tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
     // file being deleted might no longer exist.
 
     // Shift the index file appropriately.
-    futil::xact_mktemp tmp_index_fd(m.db.root.tmp_dir,0660);
+    futil::xact_mktemp tmp_index_fd(stl.m.db.root.tmp_dir,0660);
     tmp_index_fd.write_all(index_slot,
                            (index_end - index_slot)*sizeof(index_entry));
     tmp_index_fd.fsync_and_barrier();
-    futil::rename(m.db.root.tmp_dir,tmp_index_fd.name,series_dir,"index");
+    futil::rename(stl.m.db.root.tmp_dir,tmp_index_fd.name,stl.series_dir,
+                  "index");
     tmp_index_fd.commit();
-    series_dir.fsync_and_flush();
-    m.db.root.debugf("Deleted %zu slots from the start of the index file.\n",
-                     index_slot - index_begin);
+    stl.series_dir.fsync_and_flush();
+    stl.m.db.root.debugf("Deleted %zu slots from the start of the index "
+                         "file.\n",index_slot - index_begin);
+}
+
+void
+tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
+{
+    tsdb::series_total_lock stl(m,series);
+    tsdb::delete_points(stl,t);
 }
