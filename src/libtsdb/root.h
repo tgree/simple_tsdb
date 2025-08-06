@@ -73,7 +73,7 @@ namespace tsdb
         root(const futil::path& root_path, bool debug_enabled);
 
         // Root in the current working directory.
-        root(bool debug_enabled);
+        explicit root(bool debug_enabled);
     };
 
     // Creates a new ROOT root in the specified directory.
