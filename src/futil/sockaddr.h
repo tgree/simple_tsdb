@@ -4,6 +4,7 @@
 #define __SRC_FUTIL_SOCKADDR_H
 
 #include "futil.h"
+#include <hdr/kassert.h>
 #include <stdexcept>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -52,7 +53,12 @@ namespace net
             }
         }
 
-        constexpr addr(const struct ::sockaddr& sa):sa(sa) {}
+        addr(const struct ::sockaddr& _sa, size_t sa_len):
+            ss{}
+        {
+            kassert(sa_len <= sizeof(ss));
+            memcpy(&sa,&_sa,sa_len);
+        }
         constexpr addr(const struct ::sockaddr_in& sin):sin(sin) {}
         constexpr addr(const struct ::sockaddr_in6& sin6):sin6(sin6) {}
         constexpr addr(const struct ::sockaddr_storage& ss):ss(ss) {}
@@ -67,6 +73,42 @@ namespace net
         if (::getsockname(fd,(struct sockaddr*)&ss,&addr_len) == -1)
             throw futil::errno_exception(errno);
         return addr(ss);
+    }
+
+    inline std::vector<net::addr> get_addrs(const char* host, uint16_t port = 0)
+    {
+        char port_name[6];
+        snprintf(port_name,sizeof(port_name),"%u",port);
+
+        struct addrinfo hints{};
+        struct addrinfo* res0;
+
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+#if IS_MACOS
+        hints.ai_flags = AI_DEFAULT | AI_NUMERICSERV;
+#elif IS_LINUX
+        hints.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG | AI_NUMERICSERV;
+#else
+#error Unknown system.
+#endif
+        int err = ::getaddrinfo(host,port_name,&hints,&res0);
+        if (err)
+            throw std::runtime_error(gai_strerror(err));
+
+        try
+        {
+            std::vector<net::addr> addrs;
+            for (auto* res = res0; res; res = res->ai_next)
+                addrs.emplace_back(*res->ai_addr,res->ai_addrlen);
+            freeaddrinfo(res0);
+            return addrs;
+        }
+        catch (...)
+        {
+            freeaddrinfo(res0);
+            throw;
+        }
     }
 }
 

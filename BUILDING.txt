@@ -1,0 +1,43 @@
+simple_tsdb can be built to run on macOS (12.7.6 or later) or Linux.  The main
+requirement is having a compiler that supports c++20; you may be able to build
+simple_tsdb on an older macOS system, but I don't have one to test against.
+
+After having cloned the simple_tsdb repo, you need to clone the third_party
+submodules:
+
+    git submodule update --init --recursive
+
+Two submodules are used: zlib-ng for compressing data points and editline for
+doing line editing in tsdbcli2.  Building editline requires the following
+packages: autoconf, automake, libtool.  On macOS these can be installed with
+brew, while on Linux you can use your system package manager.
+
+To build them:
+
+    cd third_party/zlib-ng
+    ./configure
+    make
+    cd ../editline
+    ./autogen.sh
+    ./configure
+    make
+    cd ../../
+
+Now you are ready to build simple_tsdb:
+
+    make -j
+
+This will generate binaries in the bin/ subdirectory:
+
+    tsdbcli2
+    tsdbclienttest
+    tsdbserver
+    tsdbtest
+
+If you wish to install the binaries so that they are available system-wide,
+you can run the following command to have tsdbcli2 and tsdbserver installed in
+/usr/local/bin:
+
+    make install
+
+simple_tsdb should now be ready for use.

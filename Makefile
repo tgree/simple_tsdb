@@ -8,6 +8,8 @@
 # 	T.LD       - linker file to use
 TARGETS := \
 	tsdbcli2 \
+	tsdbclienttest \
+	tsdbreflector \
 	tsdbserver \
 	tsdbtest
 
@@ -18,6 +20,7 @@ OPT_LEVEL := -O2
 INSTALL_DIR := /usr/local/bin
 INSTALL_BINS := \
 	tsdbcli2 \
+	tsdbreflector \
 	tsdbserver
 
 # Standard directories.
@@ -51,7 +54,6 @@ COMMON_CXXFLAGS := \
 	-gstrict-dwarf \
 	-fno-math-errno \
 	-freciprocal-math \
-	-ffinite-math-only \
 	-fno-signed-zeros \
 	-Wall \
 	-Werror \
