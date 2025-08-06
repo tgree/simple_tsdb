@@ -72,10 +72,8 @@ out where to reflect data to.  It should contain the following:
     map sensor_data data_logger_xyz123_data
 
 This configuration file tells tsdbreflector everything it needs to know about
-connecting to the remote tsdbserver instance, as well as what local TCP port
-the reflector will listen on for loopback connections and a mapping of local
-database names to remote ones.  The "map" parameter can be specified multiple
-times to map multiple local databases to remote ones.
+connecting to the remote tsdbserver instance.  The "map" parameter can be
+specified multiple times to map multiple local databases to remote ones.
 
 5. Finally, we need to launch the tsdbreflector process:
 
@@ -91,4 +89,5 @@ tsdbserver socket, except that the only supported operations are writing and
 retrieving measurement schema.  Specifically, database queries are not
 supported since the remote database may not even be reachable when a query is
 submitted.  Measurement schema are returned from the local simple_tsdb
-instance; it is assumed that they match up with the remote instance's schema.
+instance; it is assumed that they match up with the remote instance's schema
+and the reflector verifies that when it is able to access the remote.
