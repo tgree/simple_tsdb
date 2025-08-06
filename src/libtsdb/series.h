@@ -53,6 +53,7 @@ namespace tsdb
             time_first_fd(series_dir,"time_first",oflag),
             time_first(time_first_fd.flock(LOCK_SH).read_u64())
         {
+            time_first_fd.lseek(0,SEEK_SET);
         }
         catch (const futil::errno_exception& e)
         {
@@ -68,6 +69,7 @@ namespace tsdb
             time_first_fd(std::move(_time_first_fd)),
             time_first(time_first_fd.read_u64())
         {
+            time_first_fd.lseek(0,SEEK_SET);
         }
         catch (const futil::errno_exception& e)
         {
@@ -98,6 +100,7 @@ namespace tsdb
             time_last_fd(series_dir,"time_last",O_RDONLY),
             time_last(time_last_fd.flock(LOCK_SH).read_u64())
         {
+            time_last_fd.lseek(0,SEEK_SET);
         }
 
     protected:
@@ -110,6 +113,7 @@ namespace tsdb
             time_last_fd(std::move(_time_last_fd)),
             time_last(time_last_fd.read_u64())
         {
+            time_last_fd.lseek(0,SEEK_SET);
         }
     };
 
