@@ -31,12 +31,13 @@ This will generate binaries in the bin/ subdirectory:
 
     tsdbcli2
     tsdbclienttest
+    tsdbreflector
     tsdbserver
     tsdbtest
 
 If you wish to install the binaries so that they are available system-wide,
-you can run the following command to have tsdbcli2 and tsdbserver installed in
-/usr/local/bin:
+you can run the following command to have tsdbcli2, tsdbserver and
+tsdbreflector installed in /usr/local/bin:
 
     make install
 
