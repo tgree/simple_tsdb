@@ -66,6 +66,9 @@ namespace tsdb
     // This acquires a shared lock on time_first so that no delete operation
     // can happen while we are reading and a shared lock on time_last so that
     // no commit/truncate WAL operation can happen while we may be accessing it.
+    // This means that we can have many readers on a series (concurrent queries)
+    // but that any reader will be mutally exclusive with a writer, and a long
+    // write operation will block all readers.
     //
     // Order of operations:
     //  1. Acquire shared lock on time_first_fd.
