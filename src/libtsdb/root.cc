@@ -156,6 +156,19 @@ tsdb::root::list_databases()
     return v;
 }
 
+bool
+tsdb::root::database_exists(const futil::path& path) try
+{
+    futil::directory dir(databases_dir,path);
+    return true;
+}
+catch (const futil::errno_exception& e)
+{
+    if (e.errnov == ENOENT)
+        return false;
+    throw;
+}
+
 int
 tsdb::root::debugf(const char* fmt, ...) const
 {

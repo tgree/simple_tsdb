@@ -62,6 +62,9 @@ namespace tsdb
         // Returns a list of all databases.
         std::vector<std::string> list_databases();
 
+        // Returns true if a given databases exists.
+        bool database_exists(const futil::path& path);
+
         // Prints a debug message.
         int debugf(const char* fmt, ...) const __PRINTF__(2,3);
         int vdebugf(const char* fmt, va_list ap) const;
