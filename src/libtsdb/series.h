@@ -146,6 +146,33 @@ namespace tsdb
     // exist, atomically create it and return the write lock on it.
     series_write_lock open_or_create_and_lock_series(const measurement& m,
                                                      const futil::path& series);
+
+    // Obtains a total lock on a series.
+    // This prevents any readers or writers from executing concurrently to us.
+    // This type of lock should be used judiciously; it is required for delete
+    // operations.
+    //
+    // Order of operations:
+    //  1. Acquire exclusive lock on time_first_fd [RDWR].
+    //  2. Open time_last_fd without any lock [RDWR].
+    struct series_total_lock : public series_write_lock
+    {
+        series_total_lock(const measurement& m, const futil::path& series) try:
+            series_write_lock(
+                m,series,
+                std::move(futil::file(futil::directory(m.dir,series),
+                                      "time_first",O_RDWR).flock(LOCK_EX)),
+                futil::file(futil::directory(m.dir,series),
+                            "time_last",O_RDWR))
+        {
+        }
+        catch (const futil::errno_exception& e)
+        {
+            if (e.errnov == ENOENT)
+                throw tsdb::no_such_series_exception();
+            throw;
+        }
+    };
 }
 
 #endif /* __SRC_LIBTSDB_SERIES_H */
