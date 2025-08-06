@@ -62,14 +62,18 @@ namespace tsdb
         // Returns a list of all databases.
         std::vector<std::string> list_databases();
 
+        // Returns true if a given databases exists.
+        bool database_exists(const futil::path& path);
+
         // Prints a debug message.
         int debugf(const char* fmt, ...) const __PRINTF__(2,3);
+        int vdebugf(const char* fmt, va_list ap) const;
 
         // Root at the specified path.
         root(const futil::path& root_path, bool debug_enabled);
 
         // Root in the current working directory.
-        root(bool debug_enabled);
+        explicit root(bool debug_enabled);
     };
 
     // Creates a new ROOT root in the specified directory.

@@ -95,7 +95,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
     }
 
     // Check any overwrites that exist in the main data store.  Note: this is
-    // not inconsistent with the previous loop avoce.  It is allowed to have
+    // not inconsistent with the previous loop above.  It is allowed to have
     // time_first > time_last if we have deleted points that only ever existed
     // in the WAL.
     if (wci.timestamps[0] <= write_lock.time_last)

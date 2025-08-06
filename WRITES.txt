@@ -1,0 +1,66 @@
+Writes to the simple_tsdb database all go through the write-ahead log (WAL),
+using the API call tsdb::write_wal().  The API takes a set of data points in
+chunk format, which is a column-based format, and remaps it to WAL format,
+which is a row-based format.  This row-based format minimizes the number of
+disk synchronization operations, reducing wear on the SSD, since only a single
+write operation to the WAL file is needed even when writing multiple points.
+The downside to the WAL is that it is less efficient to query and the data
+points are never compressed so it consumes more disk space.
+
+When the WAL fills up, the contents are remapped back to the column-based
+chunk format and then committed to the series' main data store.  If a single
+tsdb::write_wal() call contains many data points, it will trigger an immediate
+commit of the WAL's current contents, without writing any of the
+tsdb::write_wal() chunk points to the WAL, and then finally pass the entire
+tsdb::write_wal() chunk to the main data store, avoiding the remapping between
+column- and row-based formats.
+
+The main data store itself breaks up data points into a column-based format
+where each column stores the values of a specific field contiguously on disk.
+This allows specific fields to be queried and transmitted very efficiently.
+The values for each column are broken up into individual files, whose size is
+limited by the "chunk_size" database configuration parameter.  When a backing
+file grows to the chunk_size limit, it is compressed to save space on the
+disk.  Compressed files are "full" and can be considered as read-only data at
+this point.
+
+Each data point also has a 64-bit Unix timestamp measured in nanoseconds since
+the epoch, and a bitmap indicating which fields in the point are NULL.
+
+The tsdb::write_wal() API call takes a point count, a bitmap offset value
+indicating how many bits to ignore at the start of the bitmap data (allowing
+bitmaps to be retransmitted without realignment) and an untyped data buffer
+which contains the actual chunk data.
+
+The chunk data requires knowledge of the series schema since the order of the
+columns in the chunk matches the order of the fields in the schema, and the
+data type for each column matches the type defined for that field in the
+schema.
+
+A chunk of N data points is encoded as follows:
+
+    uint64_t[N] - timestamps
+    column[]    - data for each field
+
+A column is encoded as follows:
+
+    uint64_t[]    - bitmap comprising bitmap_offset bits that are ignored,
+                    then N bits indicating which entries are NULL, then
+                    ignored trailing bits to pad out to a multiple of 8 bytes
+    field_type[N] - array of field values, according to the schema's field type
+    uint8_t[]     - padding to align to a multiple of 8 bytes
+
+Chunks are always a multiple of 8 bytes and columns are always aligned to an
+8-byte offset from the start of the chunk.
+
+The size of a column i is as follows (using floating-point division):
+
+    column_size(i) = ceil((bitmap_offset + N)/64) * 8 +
+                     ceil((sizeof(field_type[i]) * N) / 8) * 8
+
+The size of a chunk is as follows:
+
+    sizeof(uint64_t) * N +
+    sum(column_size(i) for all fields i)
+
+

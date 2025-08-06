@@ -1,0 +1,38 @@
+The tsdbserver binary provides a server process that can handle transactions
+via TCP.  It can use either an unsecure port, in which case no user
+authentication is performed, or it can use an SSL port, which also requires
+user authentication.  It is recommended to not use an unsecure port on the
+open Internet.
+
+The protocol used by tsdbserver is token-based where each token is a uint32_t,
+possibly followed by more data according to the token.  There are two types of
+token: command tokens, which delineate the start of a command, and data
+tokens, which encode parameters needed by the command.  This token values can
+be found in src/tsdbserver/tokens.h.
+
+CT_WRITE_POINTS
+===============
+This command allows a set of data points to be written to a specific series.
+The transaction goes like this:
+
+    Client                              Server
+    ------                              ------
+    CT_WRITE_POINTS                 ->
+    DT_DATABASE <database>          ->
+    DT_MEASUREMENT <measurement>    ->
+    DT_SERIES <series>              ->
+                                    <-  DT_READY_FOR_CHUNK <max_chunk_size>
+    DT_CHUNK <chunk_data>           ->  Commit chunk_data
+                                ...
+                                    <-  DT_READY_FOR_CHUNK <max_chunk_size>
+    DT_CHUNK <chunk_data>           ->  Commit chunk_data
+                                    <-  DT_READY_FOR_CHUNK <max_chunk_size>
+    DT_END                          ->
+                                    <-  DT_STATUS_CODE <status_code>
+
+The chunk_data is encoded in column-based format as described in WRITES.txt.
+There is no limit to the number of chunks that can be written in a single
+CT_WRITE_POINTS command.  When the next DT_READy_FOR_CHUNK token is received
+by the client after the client sends a DT_CHUNK, the client can be confident
+that the DT_CHUNK has been committed to the remote database and is in
+reliable, safe storage and not in RAM.

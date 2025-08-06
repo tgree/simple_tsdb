@@ -53,6 +53,23 @@ namespace tsdb
             time_first_fd(series_dir,"time_first",oflag),
             time_first(time_first_fd.flock(LOCK_SH).read_u64())
         {
+            time_first_fd.lseek(0,SEEK_SET);
+        }
+        catch (const futil::errno_exception& e)
+        {
+            if (e.errnov == ENOENT)
+                throw tsdb::no_such_series_exception();
+            throw;
+        }
+
+        _series_lock(const measurement& m, const futil::path& series,
+                     futil::file&& _time_first_fd) try:
+            m(m),
+            series_dir(m.dir,series),
+            time_first_fd(std::move(_time_first_fd)),
+            time_first(time_first_fd.read_u64())
+        {
+            time_first_fd.lseek(0,SEEK_SET);
         }
         catch (const futil::errno_exception& e)
         {
@@ -66,13 +83,13 @@ namespace tsdb
     // This acquires a shared lock on time_first so that no delete operation
     // can happen while we are reading and a shared lock on time_last so that
     // no commit/truncate WAL operation can happen while we may be accessing it.
+    // This means that we can have many readers on a series (concurrent queries)
+    // but that any reader will be mutally exclusive with a writer, and a long
+    // write operation will block all readers.
     //
     // Order of operations:
-    //  1. Acquire shared lock on time_first_fd.
-    //  2. Acquire shared lock on time_last_fd.
-    //
-    // Danger!  Do not use exclusive locks at all when acquiring read locks
-    // otherwise we will deadlock with write locking.
+    //  1. Acquire shared lock on time_first_fd [RD].
+    //  2. Acquire shared lock on time_last_fd [RD].
     struct series_read_lock : public _series_lock
     {
         futil::file time_last_fd;
@@ -83,17 +100,20 @@ namespace tsdb
             time_last_fd(series_dir,"time_last",O_RDONLY),
             time_last(time_last_fd.flock(LOCK_SH).read_u64())
         {
+            time_last_fd.lseek(0,SEEK_SET);
         }
 
     protected:
         // Passing up an already-opened time_last_fd that has an exclusive
         // lock - this is so that write_lock can also be a read_lock.
         series_read_lock(const measurement& m, const futil::path& series,
+                         futil::file&& _time_first_fd,
                          futil::file&& _time_last_fd):
-            _series_lock(m,series,O_RDWR),
+            _series_lock(m,series,std::move(_time_first_fd)),
             time_last_fd(std::move(_time_last_fd)),
             time_last(time_last_fd.read_u64())
         {
+            time_last_fd.lseek(0,SEEK_SET);
         }
     };
 
@@ -108,19 +128,16 @@ namespace tsdb
     // a write method to handle overwrite.
     //
     // Order of operations:
-    //  1. Acquire exclusive lock on time_last_fd.
-    //  2. Acquire shared lock on time_first_fd.
-    //
-    // Danger!  This order of locking is the opposite order that a read lock
-    // takes, because we acquire the time_last_fd exclusive lock inside
-    // open_or_create_and_lock_series().  However, because the read lock only
-    // takes shared locks we avoid deadlock here.
+    //  1. Acquire shared lock on time_first_fd [RDWR].
+    //  2. Acquire exclusive lock on time_last_fd [RDWR].
     struct series_write_lock : public series_read_lock
     {
         // Transfer ownership of an exclusive lock on time_last to us.
         series_write_lock(const measurement& m, const futil::path& series,
+                          futil::file&& _time_first_fd,
                           futil::file&& _time_last_fd):
-            series_read_lock(m,series,std::move(_time_last_fd))
+            series_read_lock(m,series,std::move(_time_first_fd),
+                             std::move(_time_last_fd))
         {
         }
     };
@@ -129,6 +146,33 @@ namespace tsdb
     // exist, atomically create it and return the write lock on it.
     series_write_lock open_or_create_and_lock_series(const measurement& m,
                                                      const futil::path& series);
+
+    // Obtains a total lock on a series.
+    // This prevents any readers or writers from executing concurrently to us.
+    // This type of lock should be used judiciously; it is required for delete
+    // operations.
+    //
+    // Order of operations:
+    //  1. Acquire exclusive lock on time_first_fd [RDWR].
+    //  2. Open time_last_fd without any lock [RDWR].
+    struct series_total_lock : public series_write_lock
+    {
+        series_total_lock(const measurement& m, const futil::path& series) try:
+            series_write_lock(
+                m,series,
+                std::move(futil::file(futil::directory(m.dir,series),
+                                      "time_first",O_RDWR).flock(LOCK_EX)),
+                futil::file(futil::directory(m.dir,series),
+                            "time_last",O_RDWR))
+        {
+        }
+        catch (const futil::errno_exception& e)
+        {
+            if (e.errnov == ENOENT)
+                throw tsdb::no_such_series_exception();
+            throw;
+        }
+    };
 }
 
 #endif /* __SRC_LIBTSDB_SERIES_H */

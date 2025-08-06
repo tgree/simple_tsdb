@@ -78,8 +78,8 @@ namespace tsdb
 
         // Returns a list of all series that have at least one data point in
         // the range [t0, t1].
-        std::vector<std::string> list_active_series(uint64_t t0,
-                                                    uint64_t t1) const;
+        std::vector<std::string> list_active_series(
+            uint64_t t0 = 0, uint64_t t1 = 0xFFFFFFFFFFFFFFFF) const;
 
         size_t compute_write_chunk_len(size_t npoints,
                                        size_t bitmap_offset = 0) const
@@ -97,6 +97,18 @@ namespace tsdb
             }
 
             return len;
+        }
+
+        size_t max_points_for_data_len(size_t data_len) const
+        {
+            // See the Python client.py for an explanation.
+            size_t M = fields.size();
+            size_t S = 0;
+            for (const auto& se : fields)
+                S += ftinfos[se.type].nbytes;
+            size_t N = ((data_len / (64 + 8*S + M)) / 8) * 64;
+            kassert(compute_write_chunk_len(N) <= data_len);
+            return N;
         }
 
         field_vector<const schema_entry*> gen_entries(
