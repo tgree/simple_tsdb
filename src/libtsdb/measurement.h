@@ -99,6 +99,18 @@ namespace tsdb
             return len;
         }
 
+        size_t max_points_for_data_len(size_t data_len) const
+        {
+            // See the Python client.py for an explanation.
+            size_t M = fields.size();
+            size_t S = 0;
+            for (const auto& se : fields)
+                S += ftinfos[se.type].nbytes;
+            size_t N = ((data_len / (64 + 8*S + M)) / 8) * 64;
+            kassert(compute_write_chunk_len(N) <= data_len);
+            return N;
+        }
+
         field_vector<const schema_entry*> gen_entries(
             const std::vector<std::string>& field_names) const
         {
