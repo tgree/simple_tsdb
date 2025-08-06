@@ -811,8 +811,8 @@ usage(const char* err)
 {
     printf("Usage: tsdbserver [options]\n"
            "  [--ssl-files cert_file key_file]\n"
-           "    cert_file - path to certificate file\n"
-           "    key_file  - path to key file\n"
+           "    cert_file - path to fullchain.pem file\n"
+           "    key_file  - path to privkey.pem file\n"
            "  [--root root_dir]\n"
            "    root_dir  - path to root directory of database\n"
            "                (defaults to current working directory\n"
@@ -843,7 +843,7 @@ main(int argc, const char* argv[])
         {
             if (rem < 2)
             {
-                usage("Expected --ssl-files cert_file key_file");
+                usage("Expected --ssl-files fullchain.pem privkey.pem");
                 return -1;
             }
             cert_file = argv[i + 1];
