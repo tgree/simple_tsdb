@@ -172,12 +172,9 @@ catch (const futil::errno_exception& e)
 int
 tsdb::root::debugf(const char* fmt, ...) const
 {
-    if (!debug_enabled)
-        return 0;
-
     va_list ap;
     va_start(ap,fmt);
-    int rv = vprintf(fmt,ap);
+    int rv = vdebugf(fmt,ap);
     va_end(ap);
 
     return rv;
@@ -186,6 +183,9 @@ tsdb::root::debugf(const char* fmt, ...) const
 int
 tsdb::root::vdebugf(const char* fmt, va_list ap) const
 {
+    if (!debug_enabled)
+        return 0;
+
     return vprintf(fmt,ap);
 }
 
