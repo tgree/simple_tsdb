@@ -10,18 +10,34 @@ submodules:
 Two submodules are used: zlib-ng for compressing data points and editline for
 doing line editing in tsdbcli2.  Building editline requires the following
 packages: autoconf, automake, libtool.  On macOS these can be installed with
-brew, while on Linux you can use your system package manager.
+brew:
+
+    brew install autoconf automake libtool
+
+while on Linux you can use your package manager, i.e.:
+
+    sudo apt-get install autoconf automake libtool
 
 To build them:
 
     cd third_party/zlib-ng
     ./configure
     make
+    rm test.c
     cd ../editline
     ./autogen.sh
     ./configure
     make
     cd ../../
+
+In order to build simple_tsdb, we also need OpenSSL libraries and headers.  On
+macOS these can be installed with brew:
+
+    brew install openssl
+
+while on Linux you can use your package manager, i.e.:
+
+    sudo apt-get install libssl-dev
 
 Now you are ready to build simple_tsdb:
 
@@ -42,3 +58,16 @@ tsdbreflector installed in /usr/local/bin:
     make install
 
 simple_tsdb should now be ready for use.
+
+You can also install the Python simple_tsdb module directly from PyPI.org
+which will allow you to use Python to talk to a tsdbserver or tsdbreflector
+instance:
+
+    sudo python3 -m pip install -U simple_tsdb
+
+If you prefer, instead of using PyPI you may go into the python/ subdirectory
+and build/install manually:
+
+    cd python
+    make
+    make install

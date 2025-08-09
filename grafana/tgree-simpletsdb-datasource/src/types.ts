@@ -15,12 +15,15 @@ export interface BasicQuery extends DataQuery {
  */
 export interface BasicDataSourceOptions extends DataSourceJsonData {
   database?: string;
+  hostname?: string;
+  username?: string;
 }
 
 /**
  * Value that is used in the backend, but never sent over HTTP to the frontend
  */
 export interface BasicSecureJsonData {
+  password?: string;
 }
 
 export type DatabaseList = {

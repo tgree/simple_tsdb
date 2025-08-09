@@ -1,16 +1,17 @@
 package plugin
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"encoding/binary"
 	"fmt"
 	"time"
-	"net"
 	"net/http"
 	"io"
 	"unsafe"
 	"strings"
+	"crypto/tls"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -34,6 +35,7 @@ const (
 	CT_COUNT_POINTS         uint32 = 0x0E329B19
 	CT_SUM_POINTS           uint32 = 0x90305A39
 	CT_NOP                  uint32 = 0x22CF1296
+	CT_AUTHENTICATE         uint32 = 0x0995EBDA
 
 	DT_DATABASE             uint32 = 0x39385A4F   // <database>
 	DT_MEASUREMENT          uint32 = 0xDC1F48F3   // <measurement>
@@ -53,6 +55,8 @@ const (
 	DT_NPOINTS              uint32 = 0x5F469D08   // <npoints> (uint64_t)
 	DT_WINDOW_NS            uint32 = 0x76F0C374   // <window_ns> (uint64_t)
 	DT_SUMS_CHUNK           uint32 = 0x53FC76FC   // <chunk_npoints> (uint16_t)
+	DT_USERNAME             uint32 = 0x6E39D1DE   // <username>
+	DT_PASSWORD             uint32 = 0x602E5B01   // <password>
 
 	FT_BOOL uint8 = 1
 	FT_U32 uint8  = 2
@@ -86,10 +90,23 @@ var (
 )
 
 // NewDatasource creates a new datasource instance.
-func NewDatasource(ctx context.Context, _ backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	d := &Datasource{}
+func NewDatasource(ctx context.Context, dsis backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+	var dm datasourceModel
+	err := json.Unmarshal(dsis.JSONData, &dm)
+	if err != nil {
+		return nil, err
+	}
+	password, exists := dsis.DecryptedSecureJSONData["password"]
+	if !exists {
+		return nil, errors.New("Missing password")
+	}
+	d := &Datasource{
+		hostname: dm.Hostname,
+		username: dm.Username,
+		password: password,
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/databases", d.handleDatabases)
+	mux.HandleFunc("/databases", d.handleDatabases) // Possibly unused
 	mux.HandleFunc("/measurements", d.handleMeasurements)
 	mux.HandleFunc("/series", d.handleSeries)
 	mux.HandleFunc("/fields", d.handleFields)
@@ -101,6 +118,9 @@ func NewDatasource(ctx context.Context, _ backend.DataSourceInstanceSettings) (i
 // its health and has streaming skills.
 type Datasource struct {
 	resourceHandler		backend.CallResourceHandler
+	hostname		string
+	username		string
+	password		string
 }
 
 // Dispose here tells plugin SDK that plugin wants to clean up resources when a new instance
@@ -112,6 +132,8 @@ func (d *Datasource) Dispose() {
 
 type datasourceModel struct {
 	Database	string
+	Hostname	string
+	Username	string
 }
 
 // QueryData handles multiple queries and returns multiple responses.
@@ -119,18 +141,24 @@ type datasourceModel struct {
 // The QueryDataResponse contains a map of RefID to the response for each query, and each response
 // contains Frames ([]*Frame).
 func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+	instanceSettings := req.PluginContext.DataSourceInstanceSettings
+
 	// create response struct
 	response := backend.NewQueryDataResponse()
 
 	// Unmarshal the backend database.
 	var dm datasourceModel
-	err := json.Unmarshal(req.PluginContext.DataSourceInstanceSettings.JSONData, &dm)
+	err := json.Unmarshal(instanceSettings.JSONData, &dm)
 	if err != nil {
 		return nil, err
 	}
 
 	// Open a connection to the TSDB server.
-	tc, err := NewTSDBClient()
+	password, exists := instanceSettings.DecryptedSecureJSONData["password"]
+	if !exists {
+		return nil, errors.New("Missing password")
+	}
+	tc, err := NewTSDBClient(dm.Hostname, dm.Username, password)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +426,7 @@ func (d *Datasource) CheckHealth(_ context.Context, req *backend.CheckHealthRequ
 	*/
 
 	// Open a connection to the TSDB server.
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
@@ -431,7 +459,10 @@ type databasesResponse struct {
 }
 
 func (d *Datasource) handleDatabases(rw http.ResponseWriter, req *http.Request) {
-	tc, err := NewTSDBClient()
+	// This *SEEMS* to be unused in the front end.  I think originally we were gonig to
+	// make the database selectable in the QueryEditor, but then we forced each datasource
+	// to be tied to a specific database, so now it has no use.
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return
 	}
@@ -464,7 +495,7 @@ type measurementsResponse struct {
 }
 
 func (d *Datasource) handleMeasurements(rw http.ResponseWriter, req *http.Request) {
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return
 	}
@@ -502,7 +533,7 @@ type seriesResponse struct {
 }
 
 func (d *Datasource) handleSeries(rw http.ResponseWriter, req *http.Request) {
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return
 	}
@@ -545,7 +576,7 @@ type fieldsResponse struct {
 }
 
 func (d *Datasource) handleFields(rw http.ResponseWriter, req *http.Request) {
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return
 	}
@@ -582,17 +613,23 @@ func (d *Datasource) handleFields(rw http.ResponseWriter, req *http.Request) {
 }
 
 type TSDBClient struct {
-	conn	net.Conn
+	conn	*tls.Conn
 }
 
-func NewTSDBClient() (*TSDBClient, error) {
-	conn, err := net.Dial("tcp", "host.docker.internal:4000")
+func NewTSDBClient(hostname string, username string, password string) (*TSDBClient, error) {
+	conn, err := tls.Dial("tcp", hostname, &tls.Config{})
 	if err != nil {
 		return nil, err
 	}
-	return &TSDBClient{
+	client := &TSDBClient{
 		conn: conn,
-	}, nil
+	}
+	err = client.Authenticate(username, password)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+	return client, nil
 }
 
 func (self *TSDBClient) Close() {
@@ -703,6 +740,44 @@ func (self *TSDBClient) ReadString(size uint16) (string, error) {
 		panic("Unexpected read length!")
 	}
 	return string(buf), nil
+}
+
+func (self *TSDBClient) Authenticate(username string, password string) error {
+	err := self.WriteU32(CT_AUTHENTICATE)
+	if err != nil {
+		return err
+	}
+
+	err = self.WriteStringToken(DT_USERNAME, username)
+	if err != nil {
+		return err
+	}
+	err = self.WriteStringToken(DT_PASSWORD, password)
+	if err != nil {
+		return err
+	}
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return err
+	}
+
+	dt, err := self.ReadU32()
+	if err != nil {
+		return err
+	}
+	if dt != DT_STATUS_CODE {
+		panic("Expected DT_STATUS_CODE.")
+	}
+	sc, err := self.ReadI32()
+	if err != nil {
+		return err
+	}
+	if sc != 0 {
+		backend.Logger.Debug("Status", "status", sc)
+		panic("Unexpected AUTHENTICATE status")
+	}
+
+	return nil
 }
 
 func (self *TSDBClient) NOP() error {
