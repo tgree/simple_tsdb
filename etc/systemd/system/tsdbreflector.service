@@ -1,0 +1,12 @@
+[Unit]
+Description=Simple TSDB reflector
+After=network-online.target
+
+[Service]
+User=simple_tsdb
+Group=simple_tsdb
+ExecStart=/usr/local/bin/tsdbreflector --root /var/lib/simple_tsdb/ --no-debug --unbuffered --reflector-cfg /var/lib/simple_tsdb/reflector.cfg
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
