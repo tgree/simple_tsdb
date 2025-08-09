@@ -38,7 +38,8 @@ Run the background script that watches for changes to the source tree:
 npm run dev
 
 Build the backend Go source:
-mage -v build:linuxARM64
+# mage -v build:linuxARM64
+mage -v build:linux
 
 Start the Grafana dev server.
 docker compose up
