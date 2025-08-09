@@ -92,7 +92,7 @@ var (
 func NewDatasource(ctx context.Context, _ backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 	d := &Datasource{}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/databases", d.handleDatabases)
+	mux.HandleFunc("/databases", d.handleDatabases) // Possibly unused
 	mux.HandleFunc("/measurements", d.handleMeasurements)
 	mux.HandleFunc("/series", d.handleSeries)
 	mux.HandleFunc("/fields", d.handleFields)
@@ -434,6 +434,9 @@ type databasesResponse struct {
 }
 
 func (d *Datasource) handleDatabases(rw http.ResponseWriter, req *http.Request) {
+	// This *SEEMS* to be unused in the front end.  I think originally we were gonig to
+	// make the database selectable in the QueryEditor, but then we forced each datasource
+	// to be tied to a specific database, so now it has no use.
 	tc, err := NewTSDBClient()
 	if err != nil {
 		return
