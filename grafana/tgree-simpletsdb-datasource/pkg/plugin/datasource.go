@@ -1,16 +1,17 @@
 package plugin
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"encoding/binary"
 	"fmt"
 	"time"
-	"net"
 	"net/http"
 	"io"
 	"unsafe"
 	"strings"
+	"crypto/tls"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -89,8 +90,21 @@ var (
 )
 
 // NewDatasource creates a new datasource instance.
-func NewDatasource(ctx context.Context, _ backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-	d := &Datasource{}
+func NewDatasource(ctx context.Context, dsis backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+	var dm datasourceModel
+	err := json.Unmarshal(dsis.JSONData, &dm)
+	if err != nil {
+		return nil, err
+	}
+	password, exists := dsis.DecryptedSecureJSONData["password"]
+	if !exists {
+		return nil, errors.New("Missing password")
+	}
+	d := &Datasource{
+		hostname: dm.Hostname,
+		username: dm.Username,
+		password: password,
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/databases", d.handleDatabases) // Possibly unused
 	mux.HandleFunc("/measurements", d.handleMeasurements)
@@ -104,6 +118,9 @@ func NewDatasource(ctx context.Context, _ backend.DataSourceInstanceSettings) (i
 // its health and has streaming skills.
 type Datasource struct {
 	resourceHandler		backend.CallResourceHandler
+	hostname		string
+	username		string
+	password		string
 }
 
 // Dispose here tells plugin SDK that plugin wants to clean up resources when a new instance
@@ -115,6 +132,8 @@ func (d *Datasource) Dispose() {
 
 type datasourceModel struct {
 	Database	string
+	Hostname	string
+	Username	string
 }
 
 // QueryData handles multiple queries and returns multiple responses.
@@ -122,18 +141,24 @@ type datasourceModel struct {
 // The QueryDataResponse contains a map of RefID to the response for each query, and each response
 // contains Frames ([]*Frame).
 func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+	instanceSettings := req.PluginContext.DataSourceInstanceSettings
+
 	// create response struct
 	response := backend.NewQueryDataResponse()
 
 	// Unmarshal the backend database.
 	var dm datasourceModel
-	err := json.Unmarshal(req.PluginContext.DataSourceInstanceSettings.JSONData, &dm)
+	err := json.Unmarshal(instanceSettings.JSONData, &dm)
 	if err != nil {
 		return nil, err
 	}
 
 	// Open a connection to the TSDB server.
-	tc, err := NewTSDBClient()
+	password, exists := instanceSettings.DecryptedSecureJSONData["password"]
+	if !exists {
+		return nil, errors.New("Missing password")
+	}
+	tc, err := NewTSDBClient(dm.Hostname, dm.Username, password)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +426,7 @@ func (d *Datasource) CheckHealth(_ context.Context, req *backend.CheckHealthRequ
 	*/
 
 	// Open a connection to the TSDB server.
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
@@ -437,7 +462,7 @@ func (d *Datasource) handleDatabases(rw http.ResponseWriter, req *http.Request) 
 	// This *SEEMS* to be unused in the front end.  I think originally we were gonig to
 	// make the database selectable in the QueryEditor, but then we forced each datasource
 	// to be tied to a specific database, so now it has no use.
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return
 	}
@@ -470,7 +495,7 @@ type measurementsResponse struct {
 }
 
 func (d *Datasource) handleMeasurements(rw http.ResponseWriter, req *http.Request) {
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return
 	}
@@ -508,7 +533,7 @@ type seriesResponse struct {
 }
 
 func (d *Datasource) handleSeries(rw http.ResponseWriter, req *http.Request) {
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return
 	}
@@ -551,7 +576,7 @@ type fieldsResponse struct {
 }
 
 func (d *Datasource) handleFields(rw http.ResponseWriter, req *http.Request) {
-	tc, err := NewTSDBClient()
+	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
 	if err != nil {
 		return
 	}
@@ -588,17 +613,23 @@ func (d *Datasource) handleFields(rw http.ResponseWriter, req *http.Request) {
 }
 
 type TSDBClient struct {
-	conn	net.Conn
+	conn	*tls.Conn
 }
 
-func NewTSDBClient() (*TSDBClient, error) {
-	conn, err := net.Dial("tcp", "host.docker.internal:4000")
+func NewTSDBClient(hostname string, username string, password string) (*TSDBClient, error) {
+	conn, err := tls.Dial("tcp", hostname, &tls.Config{})
 	if err != nil {
 		return nil, err
 	}
-	return &TSDBClient{
+	client := &TSDBClient{
 		conn: conn,
-	}, nil
+	}
+	err = client.Authenticate(username, password)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+	return client, nil
 }
 
 func (self *TSDBClient) Close() {
