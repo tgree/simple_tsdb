@@ -31,6 +31,7 @@ export class BasicDataSource extends DataSourceWithBackend<BasicQuery, BasicData
     return true;
   }
 
+  // Seems to be unused.
   getDatabaseList(): Promise<DatabaseList> {
     return this.getResource('/databases');
   }
