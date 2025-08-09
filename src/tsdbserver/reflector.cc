@@ -477,7 +477,7 @@ flush_workloop()
 
     for (;;)
     {
-        printf("Starting flush scan...\n");
+        debugf("Starting flush scan...\n");
 
         // Validate that the local schemas match the remote ones.
         // validated_dbs will be the set of all existing local databases that
@@ -513,7 +513,7 @@ flush_workloop()
         }
 
         // Give it a rest.
-        printf("Resting...\n");
+        debugf("Resting...\n");
         sleep_for_ns(10UL*1000000000UL);
     }
 }
