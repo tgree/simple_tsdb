@@ -196,7 +196,19 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	}
 	backend.Logger.Debug("Query", "query", query)
 
-	seriesList := strings.Split(qm.Series, " + ")
+	t0 := uint64(query.TimeRange.From.UnixNano())
+	t1 := uint64(query.TimeRange.To.UnixNano())
+
+	var seriesList []string
+	if qm.Series == "All" {
+		seriesList, err = tc.ListActiveSeries(dm.Database, qm.Measurement, t0, t1)
+		if err != nil {
+			return backend.ErrDataResponse(backend.StatusBadRequest, "error from ListSeries")
+		}
+	} else {
+		seriesList = strings.Split(qm.Series, " + ")
+	}
+
 	response := backend.DataResponse{Frames: []*data.Frame{}}
 
 	for _, series := range seriesList {
@@ -205,8 +217,6 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			alias = strings.Replace(qm.Alias, "$series", series, 1)
 		}
 		// Retrieve the point count for this measurement.
-		t0 := uint64(query.TimeRange.From.UnixNano())
-		t1 := uint64(query.TimeRange.To.UnixNano())
 		count_result, err := tc.CountPoints(dm.Database, qm.Measurement, series, t0, t1)
 		if err != nil {
 			return backend.ErrDataResponse(backend.StatusBadRequest, "error from COUNT")
