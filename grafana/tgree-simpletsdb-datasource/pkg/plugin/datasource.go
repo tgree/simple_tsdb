@@ -32,6 +32,7 @@ const (
 	CT_LIST_DATABASES       uint32 = 0x29200D6D
 	CT_LIST_MEASUREMENTS    uint32 = 0x0FEB1399
 	CT_LIST_SERIES          uint32 = 0x7B8238D6
+	CT_ACTIVE_SERIES        uint32 = 0xF3B5093D
 	CT_COUNT_POINTS         uint32 = 0x0E329B19
 	CT_SUM_POINTS           uint32 = 0x90305A39
 	CT_NOP                  uint32 = 0x22CF1296
@@ -195,7 +196,19 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	}
 	backend.Logger.Debug("Query", "query", query)
 
-	seriesList := strings.Split(qm.Series, " + ")
+	t0 := uint64(query.TimeRange.From.UnixNano())
+	t1 := uint64(query.TimeRange.To.UnixNano())
+
+	var seriesList []string
+	if qm.Series == "All" {
+		seriesList, err = tc.ListActiveSeries(dm.Database, qm.Measurement, t0, t1)
+		if err != nil {
+			return backend.ErrDataResponse(backend.StatusBadRequest, "error from ListSeries")
+		}
+	} else {
+		seriesList = strings.Split(qm.Series, " + ")
+	}
+
 	response := backend.DataResponse{Frames: []*data.Frame{}}
 
 	for _, series := range seriesList {
@@ -204,8 +217,6 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			alias = strings.Replace(qm.Alias, "$series", series, 1)
 		}
 		// Retrieve the point count for this measurement.
-		t0 := uint64(query.TimeRange.From.UnixNano())
-		t1 := uint64(query.TimeRange.To.UnixNano())
 		count_result, err := tc.CountPoints(dm.Database, qm.Measurement, series, t0, t1)
 		if err != nil {
 			return backend.ErrDataResponse(backend.StatusBadRequest, "error from COUNT")
@@ -271,6 +282,7 @@ func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement st
 	// Pull chunks of data from the server and append them to our running data.
 	timestamps := []time.Time{}
 	ptrs := schema.MakePtrArray(field)
+	all_nil := true
 	for {
 		rxc, err := op.ReadChunk()
 		if err != nil {
@@ -284,7 +296,16 @@ func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement st
 			timestamps = append(timestamps, time.Unix(0, int64(time_ns)))
 		}
 
-		ptrs = rxc.AppendToArray(ptrs)
+		var chunk_all_nil bool
+		ptrs, chunk_all_nil = rxc.AppendToArray(ptrs)
+		if !chunk_all_nil {
+			all_nil = false
+		}
+	}
+	
+	// If no data, return empty frame.
+	if all_nil {
+		return nil, nil
 	}
 
 	// Return the response.
@@ -308,6 +329,7 @@ func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement stri
 	means := []float64{}
 	ptrs := []*float64{}
 	chunk_base := uint64(0)
+	total_points := uint64(0)
 	for {
 		rxc, err := op.ReadChunk()
 		if err != nil {
@@ -328,6 +350,7 @@ func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement stri
 			}
 		}
 		for i := uint16(0); i < rxc.nbuckets; i++ {
+			total_points += rxc.npoints[i]
 			if rxc.npoints[i] == 0 {
 				ptrs = append(ptrs, nil)
 			} else {
@@ -336,6 +359,11 @@ func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement stri
 		}
 
 		chunk_base += uint64(rxc.nbuckets)
+	}
+
+	// If no data, return empty frame.
+	if total_points == 0 {
+		return nil, nil
 	}
 
 	// Return the response.
@@ -966,6 +994,73 @@ func (self *TSDBClient) ListSeries(database string, measurement string) ([]strin
 	}
 }
 
+func (self *TSDBClient) ListActiveSeries(database string, measurement string, t0 uint64, t1 uint64) ([]string, error) {
+	err := self.WriteU32(CT_ACTIVE_SERIES)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	series := []string{}
+	for {
+		dt, err := self.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt == DT_STATUS_CODE {
+			sc, err := self.ReadI32()
+			if err != nil {
+				return nil, err
+			}
+			if sc != 0 {
+				backend.Logger.Debug("Status", "status", sc)
+				panic("Unexpected status")
+			}
+
+			return series, nil
+		}
+
+		if dt != DT_SERIES {
+			panic("Expected DT_SERIES")
+		}
+		size, err := self.ReadU16()
+		if err != nil {
+			return nil, err
+		}
+		name, err := self.ReadString(size)
+		if err != nil {
+			return nil, err
+		}
+
+		backend.Logger.Debug("Got Series", "series", name)
+		series = append(series, name)
+	}
+}
+
 func (self *TSDBClient) GetSchema(database string, measurement string) (*Schema, error) {
 	err := self.WriteU32(CT_GET_SCHEMA)
 	if err != nil {
@@ -1406,8 +1501,9 @@ func (self *RXChunk) IsNull(i uint32) bool {
 	return (self.bitmap[bitmap_index] & (1 << shift)) == 0
 }
 
-func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
+func (self *RXChunk) AppendToArray(ptrs interface{}) (interface{}, bool) {
 	p := unsafe.Pointer(&self.data[self.data_offset])
+	all_nil := true
 	switch ptrs.(type) {
 	case []*float64:
 		vf64 := unsafe.Slice((*float64)(p), self.npoints)
@@ -1416,6 +1512,7 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 				ptrs = append(ptrs.([]*float64), nil)
 			} else {
 				ptrs = append(ptrs.([]*float64), &vf64[i])
+				all_nil = false
 			}
 		}
 
@@ -1426,6 +1523,7 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 				ptrs = append(ptrs.([]*float32), nil)
 			} else {
 				ptrs = append(ptrs.([]*float32), &vf32[i])
+				all_nil = false
 			}
 		}
 
@@ -1436,6 +1534,7 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 				ptrs = append(ptrs.([]*uint64), nil)
 			} else {
 				ptrs = append(ptrs.([]*uint64), &vu64[i])
+				all_nil = false
 			}
 		}
 
@@ -1446,6 +1545,7 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 				ptrs = append(ptrs.([]*uint32), nil)
 			} else {
 				ptrs = append(ptrs.([]*uint32), &vu32[i])
+				all_nil = false
 			}
 		}
 
@@ -1456,6 +1556,7 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 				ptrs = append(ptrs.([]*int64), nil)
 			} else {
 				ptrs = append(ptrs.([]*int64), &vi64[i])
+				all_nil = false
 			}
 		}
 
@@ -1466,6 +1567,7 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 				ptrs = append(ptrs.([]*int32), nil)
 			} else {
 				ptrs = append(ptrs.([]*int32), &vi32[i])
+				all_nil = false
 			}
 		}
 
@@ -1476,6 +1578,7 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 				ptrs = append(ptrs.([]*uint8), nil)
 			} else {
 				ptrs = append(ptrs.([]*uint8), &vu8[i])
+				all_nil = false
 			}
 		}
 
@@ -1484,7 +1587,7 @@ func (self *RXChunk) AppendToArray(ptrs interface{}) interface{} {
 		panic("Unknown field type!")
 	}
 
-	return ptrs
+	return ptrs, all_nil
 }
 
 func (self *RXChunk) String() string {
