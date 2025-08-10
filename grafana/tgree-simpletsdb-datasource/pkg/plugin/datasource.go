@@ -32,6 +32,7 @@ const (
 	CT_LIST_DATABASES       uint32 = 0x29200D6D
 	CT_LIST_MEASUREMENTS    uint32 = 0x0FEB1399
 	CT_LIST_SERIES          uint32 = 0x7B8238D6
+	CT_ACTIVE_SERIES        uint32 = 0xF3B5093D
 	CT_COUNT_POINTS         uint32 = 0x0E329B19
 	CT_SUM_POINTS           uint32 = 0x90305A39
 	CT_NOP                  uint32 = 0x22CF1296
@@ -938,6 +939,73 @@ func (self *TSDBClient) ListSeries(database string, measurement string) ([]strin
 	}
 
 	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	series := []string{}
+	for {
+		dt, err := self.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt == DT_STATUS_CODE {
+			sc, err := self.ReadI32()
+			if err != nil {
+				return nil, err
+			}
+			if sc != 0 {
+				backend.Logger.Debug("Status", "status", sc)
+				panic("Unexpected status")
+			}
+
+			return series, nil
+		}
+
+		if dt != DT_SERIES {
+			panic("Expected DT_SERIES")
+		}
+		size, err := self.ReadU16()
+		if err != nil {
+			return nil, err
+		}
+		name, err := self.ReadString(size)
+		if err != nil {
+			return nil, err
+		}
+
+		backend.Logger.Debug("Got Series", "series", name)
+		series = append(series, name)
+	}
+}
+
+func (self *TSDBClient) ListActiveSeries(database string, measurement string, t0 uint64, t1 uint64) ([]string, error) {
+	err := self.WriteU32(CT_ACTIVE_SERIES)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
 	if err != nil {
 		return nil, err
 	}
