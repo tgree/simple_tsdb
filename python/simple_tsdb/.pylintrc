@@ -19,4 +19,5 @@ disable=missing-module-docstring,
         superfluous-parens,
         consider-using-f-string,
         too-many-return-statements,
-        too-many-positional-arguments
+        too-many-positional-arguments,
+        too-many-lines
