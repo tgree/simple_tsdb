@@ -90,6 +90,36 @@ namespace tsdb
             return ((const T*)field_data[FieldIndex])[i];
         }
 
+        template<typename T>
+        T constexpr cast_field(size_t field_index, size_t i) const
+        {
+            switch (fields[field_index]->type)
+            {
+                case tsdb::FT_BOOL:
+                    return ((uint8_t*)field_data[field_index])[i];
+
+                case tsdb::FT_U32:
+                    return ((uint32_t*)field_data[field_index])[i];
+
+                case tsdb::FT_U64:
+                    return ((uint64_t*)field_data[field_index])[i];
+
+                case tsdb::FT_F32:
+                    return ((float*)field_data[field_index])[i];
+
+                case tsdb::FT_F64:
+                    return ((double*)field_data[field_index])[i];
+
+                case tsdb::FT_I32:
+                    return ((int32_t*)field_data[field_index])[i];
+
+                case tsdb::FT_I64:
+                    return ((int64_t*)field_data[field_index])[i];
+            }
+
+            kabort();
+        }
+
     protected:
         void map_timestamps();
         void map_data();
