@@ -50,6 +50,8 @@ static void handle_select_points_last(
     connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_sum_points(
     connection& conn, const std::vector<parsed_data_token>& tokens);
+static void handle_integrate_points(
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_nop(
     connection& conn, const std::vector<parsed_data_token>& tokens);
 
@@ -123,6 +125,12 @@ static const command_syntax<connection&> commands[] =
         CT_SUM_POINTS,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
          DT_TIME_LAST, DT_WINDOW_NS, DT_END},
+    },
+    {
+        func_delegate(handle_integrate_points),
+        CT_INTEGRATE_POINTS,
+        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_FIELD_LIST, DT_TIME_FIRST,
+         DT_TIME_LAST, DT_END},
     },
     {
         func_delegate(handle_nop),
@@ -688,6 +696,43 @@ handle_sum_points(connection& conn,
 
     data_token dt = DT_END;
     conn.s.send_all(&dt,sizeof(dt));
+}
+
+static void
+handle_integrate_points(connection& conn,
+    const std::vector<parsed_data_token>& tokens)
+{
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
+    futil::path path(database,measurement,series);
+    std::string field_list(tokens[3].data,tokens[3].len);
+    uint64_t t0 = tokens[4].u64;
+    uint64_t t1 = tokens[5].u64;
+
+    root->debugf("INTEGRATE %s FROM %s WHERE %" PRIu64
+                 " <= time_ns <= %" PRIu64 "\n",
+                 field_list.c_str(),path.c_str(),t0,t1);
+    tsdb::database db(*root,database);
+    tsdb::measurement m(db,measurement);
+    tsdb::series_read_lock read_lock(m,series);
+    tsdb::integral_op op(read_lock,path,str::split(field_list,","),t0,t1);
+
+    uint64_t bitmap = 0;
+    for (size_t i=0; i<op.is_null.size(); ++i)
+        bitmap |= ((uint64_t)op.is_null[i] << i);
+
+    conn.s.push(DT_TIME_FIRST);
+    conn.s.push(op.t0_ns);
+
+    conn.s.push(DT_TIME_LAST);
+    conn.s.push(op.t1_ns);
+
+    conn.s.push(DT_INTEGRAL_BITMAP);
+    conn.s.push(bitmap);
+    
+    conn.s.push(DT_INTEGRALS);
+    conn.s.send_all(op.integral.elems,op.integral.size()*sizeof(double));
 }
 
 static void
