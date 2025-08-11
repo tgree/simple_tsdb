@@ -22,6 +22,7 @@ CT_LIST_SERIES          = 0x7B8238D6
 CT_ACTIVE_SERIES        = 0xF3B5093D
 CT_COUNT_POINTS         = 0x0E329B19
 CT_SUM_POINTS           = 0x90305A39
+CT_INTEGRATE_POINTS     = 0x75120AD9
 CT_NOP                  = 0x22CF1296
 CT_AUTHENTICATE         = 0x0995EBDA
 
@@ -44,6 +45,8 @@ DT_READY_FOR_CHUNK      = 0x6000531C
 DT_NPOINTS              = 0x5F469D08
 DT_WINDOW_NS            = 0x76F0C374
 DT_SUMS_CHUNK           = 0x53FC76FC
+DT_INTEGRALS            = 0x78760A3D
+DT_INTEGRAL_BITMAP      = 0xD3760722
 DT_USERNAME             = 0x6E39D1DE
 DT_PASSWORD             = 0x602E5B01
 
@@ -437,6 +440,29 @@ class CountResult:
                                             self.npoints)
 
 
+class IntegralResult:
+    def __init__(self, time_first, time_last, bitmap, integrals):
+        self.time_first = time_first
+        self.time_last  = time_last
+        self.integrals  = []
+        self.averages   = []
+
+        dt = (time_last - time_first) / 1e9
+        for i, integral in enumerate(integrals):
+            if (bitmap >> i) & 1:
+                self.integrals.append(None)
+                self.averages.append(None)
+            else:
+                self.integrals.append(integral)
+                self.averages.append(integral / dt)
+
+    def __repr__(self):
+        return 'IntegralResult(%u, %u, %s, %s)' % (self.time_first,
+                                                   self.time_last,
+                                                   self.integrals,
+                                                   self.averages)
+
+
 class Connection:
     DEFAULT_SSL_CTX = None
 
@@ -480,6 +506,9 @@ class Connection:
 
     def _recv_i32(self):
         return struct.unpack('<i', self._recvall(4))[0]
+
+    def _recv_f64(self):
+        return struct.unpack('<d', self._recvall(8))[0]
 
     def _transact(self, cmd):
         self._sendall(cmd)
@@ -794,6 +823,58 @@ class Connection:
         return SumsOP(self, database, measurement, series, fields, t0, t1,
                       window_ns)
 
+    def integrate_points(self, database, measurement, series, fields, t0, t1):
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        field_list = ','.join(fields).encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIH%usIQIQI' % (len(database),
+                                                           len(measurement),
+                                                           len(series),
+                                                           len(field_list)),
+                          CT_INTEGRATE_POINTS,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_FIELD_LIST, len(field_list), field_list,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          DT_END)
+        self._sendall(cmd)
+
+        dt = self._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self._recv_i32())
+
+        if dt != DT_TIME_FIRST:
+            raise ProtocolException('Expected DT_TIME_FIRST')
+        time_first = self._recv_u64()
+
+        dt = self._recv_u32()
+        if dt != DT_TIME_LAST:
+            raise ProtocolException('Expected DT_TIME_LAST')
+        time_last = self._recv_u64()
+
+        dt = self._recv_u32()
+        if dt != DT_INTEGRAL_BITMAP:
+            raise ProtocolException('Expected DT_INTEGRAL_BITMAP')
+        bitmap = self._recv_u64()
+
+        dt = self._recv_u32()
+        if dt != DT_INTEGRALS:
+            raise ProtocolException('Expected DT_INTEGRALS')
+        integrals = []
+        for _ in range(len(fields)):
+            integrals.append(self._recv_f64())
+
+        dt = self._recv_u32()
+        if dt != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
+        if self._recv_i32() != 0:
+            raise ProtocolException('Expected status 0')
+
+        return IntegralResult(time_first, time_last, bitmap, integrals)
+
 
 class Client:
     def __init__(self, host='127.0.0.1', port=4000, credentials=None):
@@ -975,6 +1056,19 @@ class Client:
         try:
             return self.conn.sum_points(database, measurement, series, fields,
                                         t0, t1, window_ns)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def integrate_points(self, database, measurement, series, fields, t0, t1):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.integrate_points(database, measurement, series,
+                                              fields, t0, t1)
         except StatusException:
             raise
         except:  # noqa: E722
