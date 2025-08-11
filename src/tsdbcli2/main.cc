@@ -238,6 +238,56 @@ handle_mean(
 }
 
 static void
+handle_integrate(
+    const fields_list& fs,
+    const FROM_keyword,
+    const series_specifier& ss,
+    const select_time_range& tr)
+{
+    // Handles:
+    // INTEGRATE <fields> FROM <database/measurement/series>
+    //           [WHERE ...time_ns...]
+    tsdb::database db(*root,ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    tsdb::series_read_lock read_lock(m,ss.series);
+    tsdb::integral_op op(read_lock,ss.series,fs.fields,tr.t0,tr.t1);
+
+    printf("%20s %20s\n","t0_ns","t1_ns");
+    printf("-------------------- --------------------\n");
+    printf("%20" PRIu64 " %20" PRIu64 "\n",op.t0_ns,op.t1_ns);
+
+    printf("          ");
+    for (const auto& f : fs.fields)
+        printf("%20s ",f.c_str());
+    printf("\n");
+    printf("          ");
+    for (size_t i=0; i<fs.fields.size(); ++i)
+        printf("-------------------- ");
+    printf("\n");
+    printf("Integral: ");
+    for (size_t i=0; i<fs.fields.size(); ++i)
+    {
+        if (op.is_null[i])
+            printf("%20s ","null");
+        else
+            printf("%20.9f ",op.integral[i]);
+    }
+    printf("\n");
+    printf(" Average: ");
+    for (size_t i=0; i<fs.fields.size(); ++i)
+    {
+        if (op.is_null[i])
+            printf("%20s ","null");
+        else
+        {
+            double dt = (double)(op.t1_ns - op.t0_ns) / 1e9;
+            printf("%20.9f ",op.integral[i] / dt);
+        }
+    }
+    printf("\n");
+}
+
+static void
 handle_delete(
     const FROM_keyword,
     const series_specifier& ss,
@@ -354,6 +404,7 @@ static const command_handler command_handlers[] =
     {"SELECT",{XLATE(handle_select_1),XLATE(handle_select_2),
                XLATE(handle_select_3)}},
     {"MEAN",{XLATE(handle_mean)}},
+    {"INTEGRATE",{XLATE(handle_integrate)}},
     {"DELETE",{XLATE(handle_delete)}},
     {"UPDATE SCHEMA",{XLATE(handle_update_schema)}},
     {"UPDATE WAL",{XLATE(handle_update_wal)}},
