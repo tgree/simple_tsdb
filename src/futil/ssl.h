@@ -164,6 +164,21 @@ namespace tcp::ssl
             throw ssl_error_exception(err);
         }
 
+        virtual void cork() override
+        {
+            s->cork();
+        }
+
+        virtual void uncork() override
+        {
+            s->uncork();
+        }
+
+        virtual void nodelay() override
+        {
+            s->nodelay();
+        }
+
         stream(std::unique_ptr<tcp::socket> s, SSL* cSSL):
             s(std::move(s)),
             cSSL(cSSL),

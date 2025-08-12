@@ -33,6 +33,11 @@ namespace tcp
         // of bytes received.
         virtual size_t recv(void* buffer, size_t len) = 0;
 
+        // Corking support.
+        virtual void cork() = 0;
+        virtual void uncork() = 0;
+        virtual void nodelay() = 0;
+
         void send_all(const void* buffer, size_t len)
         {
             const char* p = (const char*)buffer;
@@ -126,6 +131,39 @@ namespace tcp
                 if (errno != EINTR)
                     throw futil::errno_exception(errno);
             }
+        }
+
+        virtual void cork() override
+        {
+            int on = 1;
+#if IS_MACOS
+        if (setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int)))
+            throw futil::errno_exception(errno);
+#elif IS_LINUX
+        if (setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int)))
+            throw futil::errno_exception(errno);
+#else
+#warning Unknown system, corking not supported.
+#endif
+        }
+
+        virtual void uncork() override
+        {
+            int on = 0;
+#if IS_MACOS
+            if (setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int)))
+                throw futil::errno_exception(errno);
+#elif IS_LINUX
+            if (setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int)))
+                throw futil::errno_exception(errno);
+#endif
+        }
+
+        virtual void nodelay() override
+        {
+            int on = 1;
+            if (setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(int)))
+                throw futil::errno_exception(errno);
         }
 
         constexpr socket(int fd, const net::addr& local_addr,
