@@ -443,6 +443,7 @@ class Connection:
     def __init__(self, host='127.0.0.1', port=4000, credentials=None):
         self.addr = (host, port)
         self.raw_socket = socket.create_connection(self.addr)
+        self.raw_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
         if credentials:
             assert len(credentials) == 2
             if Connection.DEFAULT_SSL_CTX is None:
