@@ -41,6 +41,22 @@ namespace tsdb
         {
             return *(const T*)(&fields[i]);
         }
+
+        template<typename T>
+        constexpr T cast_field(size_t i, const tsdb::field_type ft)
+        {
+            switch (ft)
+            {
+                case tsdb::FT_BOOL: return fields[i].u8;
+                case tsdb::FT_U32:  return fields[i].u32;
+                case tsdb::FT_U64:  return fields[i].u64;
+                case tsdb::FT_F32:  return fields[i].f32;
+                case tsdb::FT_F64:  return fields[i].f64;
+                case tsdb::FT_I32:  return fields[i].i32;
+                case tsdb::FT_I64:  return fields[i].i64;
+            }
+            kabort();
+        }
     };
     inline bool operator<(const wal_entry& lhs, const wal_entry& rhs)
     {

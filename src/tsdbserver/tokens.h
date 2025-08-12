@@ -25,6 +25,7 @@ enum command_token : uint32_t
     CT_ACTIVE_SERIES        = 0xF3B5093D,
     CT_COUNT_POINTS         = 0x0E329B19,
     CT_SUM_POINTS           = 0x90305A39,
+    CT_INTEGRATE_POINTS     = 0x75120AD9,
     CT_NOP                  = 0x22CF1296,
     CT_AUTHENTICATE         = 0x0995EBDA,
 };
@@ -49,6 +50,8 @@ enum data_token : uint32_t
     DT_NPOINTS          = 0x5F469D08,   // <npoints> (uint64_t)
     DT_WINDOW_NS        = 0x76F0C374,   // <window_ns> (uint64_t)
     DT_SUMS_CHUNK       = 0x53FC76FC,   // <chunk_npoints> (uint16_t)
+    DT_INTEGRALS        = 0x78760A3D,   // <integral1> <integral2> ...
+    DT_INTEGRAL_BITMAP  = 0xD3760722,   // <bitmap> (uint64_t)
     DT_USERNAME         = 0x6E39D1DE,   // <username>
     DT_PASSWORD         = 0x602E5B01,   // <password>
 };
