@@ -703,6 +703,7 @@ request_handler(std::unique_ptr<tcp::stream> s)
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
     connection conn{*s,0};
+    s->nodelay();
     process_stream(conn.s,commands,conn);
 
     printf("Teardown local %s remote %s.\n",
