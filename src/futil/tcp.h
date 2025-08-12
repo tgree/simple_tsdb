@@ -33,6 +33,11 @@ namespace tcp
         // of bytes received.
         virtual size_t recv(void* buffer, size_t len) = 0;
 
+        // Keepalive support.
+        virtual void enable_keepalive(int keepidle_secs = 5,
+                                      int keepintvl_secs = 1, int keepcnt = 10,
+                                      int connection_timeout_secs = 10) = 0;
+
         // Corking support.
         virtual void cork() = 0;
         virtual void uncork() = 0;
@@ -133,9 +138,10 @@ namespace tcp
             }
         }
 
-        void enable_keepalive(int keepidle_secs = 5, int keepintvl_secs = 1,
-                              int keepcnt = 10,
-                              int connection_timeout_secs = 10)
+        virtual void enable_keepalive(int keepidle_secs = 5,
+                                      int keepintvl_secs = 1, int keepcnt = 10,
+                                      int connection_timeout_secs = 10)
+                                        override
         {
             // Enables keepalive probing on the socket.
             //  keepidle      - number of seconds of idleness on the socket
