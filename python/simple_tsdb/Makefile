@@ -1,6 +1,6 @@
 # Copyright (c) 2025 by Terry Greeniaus.  All rights reserved.
 MODULE      := simple_tsdb
-MODULE_VERS := 0.9.5
+MODULE_VERS := 0.9.6
 MODULE_DEPS :=
 MODULES := \
 	setup.cfg \
