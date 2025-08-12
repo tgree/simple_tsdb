@@ -232,6 +232,8 @@ request_handler(std::unique_ptr<tcp::stream> s)
              reflector_cfg.remote_user,
              reflector_cfg.remote_password);
     connection conn{*s,c,0};
+    s->enable_keepalive();
+    s->nodelay();
     process_stream(conn.s,commands,conn);
 
     printf("Teardown local %s remote %s.\n",
