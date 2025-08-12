@@ -68,6 +68,15 @@ class StatusCode:
     INVALID_TIME_LAST            = -16
     NO_SUCH_SERIES               = -17
     NO_SUCH_DATABASE             = -18
+    NO_SUCH_MEASUREMENT          = -19
+    MEASUREMENT_EXISTS           = -20
+    USER_EXISTS                  = -21
+    NO_SUCH_USER                 = -22
+    NOT_A_TSDB_ROOT              = -23
+    DUPLICATE_FIELD              = -24
+    TOO_MANY_FIELDS              = -25
+    INVALID_CONFIG_FILE          = -26
+    INVALID_CHUNK_SIZE           = -27
 
 
 class StatusException(Exception):
