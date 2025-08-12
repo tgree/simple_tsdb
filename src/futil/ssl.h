@@ -164,6 +164,15 @@ namespace tcp::ssl
             throw ssl_error_exception(err);
         }
 
+        virtual void enable_keepalive(int keepidle_secs = 5,
+                                      int keepintvl_secs = 1, int keepcnt = 10,
+                                      int connection_timeout_secs = 10)
+                                        override
+        {
+            s->enable_keepalive(keepidle_secs,keepintvl_secs,keepcnt,
+                                connection_timeout_secs);
+        }
+
         virtual void cork() override
         {
             s->cork();
