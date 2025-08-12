@@ -1,15 +1,15 @@
 # Copyright (c) 2025 by Terry Greeniaus.  All rights reserved.
-MODULE      := simple_tsdb
-MODULE_VERS := 0.9.5
+MODULE      := flask_simple_tsdb
+MODULE_VERS := 2.1.3.0
 MODULE_DEPS :=
 MODULES := \
 	setup.cfg \
 	setup.py \
-	simple_tsdb/*.py
+	flask_simple_tsdb/*.py
 PYTHON := python3
 
-FLAKE_MODULES := simple_tsdb
-LINT_MODULES  := simple_tsdb
+FLAKE_MODULES := flask_simple_tsdb
+LINT_MODULES  := flask_simple_tsdb
 WHEEL_PATH    := dist/$(MODULE)-$(MODULE_VERS)-py3-none-any.whl
 TGZ_PATH      := dist/$(MODULE)-$(MODULE_VERS).tar.gz
 

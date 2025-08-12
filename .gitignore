@@ -17,5 +17,5 @@
 /databases/
 tags
 .DS_Store
-/python/dist/
-*.egg-info/
+/python/*/dist/
+/python/*/*.egg-info/
