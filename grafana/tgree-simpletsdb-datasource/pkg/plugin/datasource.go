@@ -191,6 +191,7 @@ type queryModel struct {
 
 	// From DataQuery.
 	IntervalMs      uint64
+	MaxDataPoints	uint64
 }
 
 func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *TSDBClient, dm *datasourceModel, query backend.DataQuery) backend.DataResponse {
@@ -233,7 +234,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 		}
 
 		var frame *data.Frame;
-		if (count_result.npoints >= 10000) {
+		if (count_result.npoints > qm.MaxDataPoints) {
 			switch qm.Zoom {
 			case "Min/Max":
 				frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
