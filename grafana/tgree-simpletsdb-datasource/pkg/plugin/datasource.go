@@ -177,13 +177,19 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	return response, nil
 }
 
+// These fields are defind directly by BasicQuery in src/types.ts.
+// BasicQuery gets turned into JSON and then we unmarshal it into
+// this struct here, discarding any JSON fields we don't care about.
 type queryModel struct {
+	// From BasicQuery.
 	Measurement	string
 	Series		string
 	Field		string
-	Alias           string
-	Zoom            string
 	Transform       string
+	Zoom            string
+	Alias           string
+
+	// From DataQuery.
 	IntervalMs      uint64
 }
 
