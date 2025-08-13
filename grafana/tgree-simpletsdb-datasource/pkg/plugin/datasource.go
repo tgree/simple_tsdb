@@ -417,7 +417,9 @@ func (d *Datasource) queryMinMax(tc *TSDBClient, database string, measurement st
 				ptrs = rxc.AppendNil(ptrs)
 			} else if !have_non_nil {
 				ptrs = rxc.AppendMean(ptrs, i)
+				ptrs = rxc.AppendMax(ptrs, i)
 				ptrs = rxc.AppendMin(ptrs, i)
+				timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i]) + 2000000))
 				have_non_nil = true
 			} else {
 				ptrs = rxc.AppendMax(ptrs, i)
