@@ -25,7 +25,6 @@ struct reflector_config
 {
     std::string                         remote_host;
     uint16_t                            remote_port;
-    net::addr                           remote_addr;
     std::string                         remote_user;
     std::string                         remote_password;
     std::map<std::string,std::string>   db_map;
@@ -608,14 +607,6 @@ parse_reflector_config(const char* path)
         throw std::invalid_argument("Missing 'remote_password'");
     if (reflector_cfg.db_map.empty())
         throw std::invalid_argument("No databases mapped");
-
-    auto addrs = net::get_addrs(reflector_cfg.remote_host.c_str(),
-                                reflector_cfg.remote_port);
-    if (addrs.empty())
-        throw std::invalid_argument("Cannot resolve remote host.");
-    for (const auto& addr : addrs)
-        printf("Resolved reflector target: %s\n",addr.to_string().c_str());
-    reflector_cfg.remote_addr = addrs[0];
 }
 
 static void
