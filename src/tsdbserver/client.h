@@ -43,6 +43,12 @@ struct client
     std::vector<tsdb::schema_entry> get_schema(const std::string& database,
                                                const std::string& measurement);
 
+    // Creates a measurement in the specified database; this is a no-op if the
+    // measurement already exists and matches the requested schema.
+    void create_measurement(const std::string& database,
+                            const std::string& measurement,
+                            const std::vector<tsdb::schema_entry>& fields);
+
     // Writes data points to the specified series.
     void write_points(const std::string& database,
                       const std::string& measurement,

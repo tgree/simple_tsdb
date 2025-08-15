@@ -748,6 +748,7 @@ request_handler(std::unique_ptr<tcp::stream> s)
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
     connection conn{*s,0};
+    s->enable_keepalive();
     s->nodelay();
     process_stream(conn.s,commands,conn);
 
@@ -952,7 +953,7 @@ main(int argc, const char* argv[])
         setlinebuf(stdout);
 
 
-    printf("%s\n",GIT_VERSION);
+    printf("simple_tsdb " SIMPLE_TSDB_VERSION_STR " " GIT_VERSION "\n");
 
     signal(SIGPIPE,SIG_IGN);
 

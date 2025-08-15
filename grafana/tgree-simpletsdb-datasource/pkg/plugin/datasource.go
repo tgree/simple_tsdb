@@ -177,14 +177,21 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	return response, nil
 }
 
+// These fields are defind directly by BasicQuery in src/types.ts.
+// BasicQuery gets turned into JSON and then we unmarshal it into
+// this struct here, discarding any JSON fields we don't care about.
 type queryModel struct {
+	// From BasicQuery.
 	Measurement	string
 	Series		string
 	Field		string
-	Alias           string
-	Zoom            string
 	Transform       string
+	Zoom            string
+	Alias           string
+
+	// From DataQuery.
 	IntervalMs      uint64
+	MaxDataPoints	uint64
 }
 
 func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *TSDBClient, dm *datasourceModel, query backend.DataQuery) backend.DataResponse {
@@ -227,7 +234,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 		}
 
 		var frame *data.Frame;
-		if (count_result.npoints >= 10000) {
+		if (count_result.npoints > qm.MaxDataPoints) {
 			switch qm.Zoom {
 			case "Min/Max":
 				frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
@@ -410,7 +417,9 @@ func (d *Datasource) queryMinMax(tc *TSDBClient, database string, measurement st
 				ptrs = rxc.AppendNil(ptrs)
 			} else if !have_non_nil {
 				ptrs = rxc.AppendMean(ptrs, i)
+				ptrs = rxc.AppendMax(ptrs, i)
 				ptrs = rxc.AppendMin(ptrs, i)
+				timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i]) + 2000000))
 				have_non_nil = true
 			} else {
 				ptrs = rxc.AppendMax(ptrs, i)
