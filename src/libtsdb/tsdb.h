@@ -3,8 +3,8 @@
 #ifndef __SRC_LIBTSDB_TSDB_H
 #define __SRC_LIBTSDB_TSDB_H
 
-#define SIMPLE_TSDB_VERSION         0x099
-#define SIMPLE_TSDB_VERSION_STR     "0.9.9"
+#define SIMPLE_TSDB_VERSION         0x100
+#define SIMPLE_TSDB_VERSION_STR     "1.0.0"
 
 #include "exception.h"
 #include "root.h"
