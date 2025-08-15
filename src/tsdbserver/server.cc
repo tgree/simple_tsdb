@@ -742,14 +742,12 @@ handle_nop(connection& conn, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-request_handler(std::unique_ptr<tcp::stream> s)
+stream_request_handler(std::unique_ptr<tcp::stream> s)
 {
     printf("Handling local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
     connection conn{*s,0};
-    s->enable_keepalive();
-    s->nodelay();
     process_stream(conn.s,commands,conn);
 
     printf("Teardown local %s remote %s.\n",
@@ -757,9 +755,22 @@ request_handler(std::unique_ptr<tcp::stream> s)
 }
 
 static void
-auth_request_handler(std::unique_ptr<tcp::stream> s)
+request_handler(std::unique_ptr<tcp::socket> sock)
+{
+    sock->enable_keepalive();
+    sock->nodelay();
+    stream_request_handler(std::move(sock));
+}
+
+static void
+auth_request_handler(tcp::ssl::server_context* sslctx,
+    std::unique_ptr<tcp::socket> sock)
 {
     uint64_t t0 = time_ns();
+
+    sock->enable_keepalive();
+    sock->nodelay();
+    std::unique_ptr<tcp::ssl::stream> s(sslctx->wrap(std::move(sock)));
 
     printf("Authenticating local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
@@ -809,7 +820,7 @@ auth_request_handler(std::unique_ptr<tcp::stream> s)
         return;
     }
 
-    request_handler(std::move(s));
+    stream_request_handler(std::move(s));
 }
 
 static void
@@ -843,7 +854,8 @@ ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
     {
         try
         {
-            std::thread t(auth_request_handler,sslctx.wrap(ss.accept()));
+            // Handle the request, letting the target thread wrap it.
+            std::thread t(auth_request_handler,&sslctx,ss.accept());
             t.detach();
         }
         catch (const std::exception& e)
