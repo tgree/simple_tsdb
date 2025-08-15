@@ -953,7 +953,7 @@ main(int argc, const char* argv[])
         setlinebuf(stdout);
 
 
-    printf("%s\n",GIT_VERSION);
+    printf("simple_tsdb " SIMPLE_TSDB_VERSION_STR " " GIT_VERSION "\n");
 
     signal(SIGPIPE,SIG_IGN);
 
