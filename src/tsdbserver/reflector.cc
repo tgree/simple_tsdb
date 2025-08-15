@@ -25,7 +25,6 @@ struct reflector_config
 {
     std::string                         remote_host;
     uint16_t                            remote_port;
-    net::addr                           remote_addr;
     std::string                         remote_user;
     std::string                         remote_password;
     std::map<std::string,std::string>   db_map;
@@ -232,6 +231,8 @@ request_handler(std::unique_ptr<tcp::stream> s)
              reflector_cfg.remote_user,
              reflector_cfg.remote_password);
     connection conn{*s,c,0};
+    s->enable_keepalive();
+    s->nodelay();
     process_stream(conn.s,commands,conn);
 
     printf("Teardown local %s remote %s.\n",
@@ -259,21 +260,7 @@ socket4_workloop(uint16_t port)
 }
 
 static void
-dump_schema(const tsdb::measurement& m)
-{
-    for (const auto& se : m.fields)
-        printf("    %s %s\n",tsdb::ftinfos[se.type].name,se.name);
-}
-
-static void
-dump_schema(const std::vector<tsdb::schema_entry>& s)
-{
-    for (const auto& se : s)
-        printf("    %s %s\n",tsdb::ftinfos[se.type].name,se.name);
-}
-
-static void
-validate_db_schemas(client& c, std::set<std::string>& validated_dbs)
+create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
 {
     for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
     {
@@ -292,37 +279,10 @@ validate_db_schemas(client& c, std::set<std::string>& validated_dbs)
                        local_db_path.c_str(),m_path.c_str(),
                        remote_db_path.c_str(),m_path.c_str());
                 tsdb::measurement local_m(local_db,m_path);
-                auto remote_schema = c.get_schema(remote_db_path,m_path);
-
-                bool same = (local_m.fields.size() == remote_schema.size());
-                if (same)
-                {
-                    for (size_t i=0; i<local_m.fields.size(); ++i)
-                    {
-                        const auto& lse = local_m.fields[i];
-                        const auto& rse = remote_schema[i];
-                        if (lse.type != rse.type || strcmp(lse.name,rse.name))
-                        {
-                            same = false;
-                            break;
-                        }
-                    }
-                }
-
-                if (!same)
-                {
-                    printf("Schemas differ.  Local:\n");
-                    dump_schema(local_m);
-                    printf("Remote:\n");
-                    dump_schema(remote_schema);
-                    abort();
-                }
+                std::vector<tsdb::schema_entry> fields(
+                    local_m.fields.begin(),local_m.fields.end());
+                c.create_measurement(remote_db_path,m_path,fields);
             }
-        }
-        catch (const tsdb::no_such_measurement_exception&)
-        {
-            printf("Remote measurement missing.\n");
-            abort();
         }
         catch (const std::exception& e)
         {
@@ -479,11 +439,10 @@ flush_workloop()
     {
         debugf("Starting flush scan...\n");
 
-        // Validate that the local schemas match the remote ones.
-        // validated_dbs will be the set of all existing local databases that
-        // map to a remote database.  All of them will have matching schemas
-        // with the remote database.
-        validate_db_schemas(c,validated_dbs);
+        // Create the remote measurements if they don't exist; validate for a
+        // matching schema if they do exist.  Skip any databases that we have
+        // already completely validated.
+        create_remote_measurements(c,validated_dbs);
 
         // Iterate over all mapped databases, flushing as we go.
         for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
@@ -606,14 +565,6 @@ parse_reflector_config(const char* path)
         throw std::invalid_argument("Missing 'remote_password'");
     if (reflector_cfg.db_map.empty())
         throw std::invalid_argument("No databases mapped");
-
-    auto addrs = net::get_addrs(reflector_cfg.remote_host.c_str(),
-                                reflector_cfg.remote_port);
-    if (addrs.empty())
-        throw std::invalid_argument("Cannot resolve remote host.");
-    for (const auto& addr : addrs)
-        printf("Resolved reflector target: %s\n",addr.to_string().c_str());
-    reflector_cfg.remote_addr = addrs[0];
 }
 
 static void
@@ -718,7 +669,7 @@ main(int argc, const char* argv[])
     if (unbuffered)
         setlinebuf(stdout);
 
-    printf("%s\n",GIT_VERSION);
+    printf("simple_tsdb " SIMPLE_TSDB_VERSION_STR " " GIT_VERSION "\n");
 
     signal(SIGPIPE,SIG_IGN);
 

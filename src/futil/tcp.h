@@ -33,6 +33,11 @@ namespace tcp
         // of bytes received.
         virtual size_t recv(void* buffer, size_t len) = 0;
 
+        // Keepalive support.
+        virtual void enable_keepalive(int keepidle_secs = 5,
+                                      int keepintvl_secs = 1, int keepcnt = 10,
+                                      int connection_timeout_secs = 10) = 0;
+
         // Corking support.
         virtual void cork() = 0;
         virtual void uncork() = 0;
@@ -133,6 +138,58 @@ namespace tcp
             }
         }
 
+        virtual void enable_keepalive(int keepidle_secs = 5,
+                                      int keepintvl_secs = 1, int keepcnt = 10,
+                                      int connection_timeout_secs = 10)
+                                        override
+        {
+            // Enables keepalive probing on the socket.
+            //  keepidle      - number of seconds of idleness on the socket
+            //                  until keepalive probes will be started
+            //  keepinvtl     - interval in seconds between keepalive probes
+            //  keepcnt       - number of un-acknowledged keepalive probes
+            //                  until the connection is declared dead
+            //  connection_timeout - timeout for initial connection
+            //                       establishment
+            int on = 1;
+#if IS_MACOS
+            if (setsockopt(fd,IPPROTO_TCP,TCP_CONNECTIONTIMEOUT,
+                           &connection_timeout_secs,sizeof(int)))
+                throw futil::errno_exception(errno);
+            if (setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int)))
+                throw futil::errno_exception(errno);
+            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPALIVE,&keepidle_secs,
+                           sizeof(int)))
+            {
+                throw futil::errno_exception(errno);
+            }
+            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
+                           sizeof(int)))
+            {
+                throw futil::errno_exception(errno);
+            }
+            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int)))
+                throw futil::errno_exception(errno);
+#elif IS_LINUX
+            if (setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int)))
+                throw futil::errno_exception(errno);
+            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPIDLE,&keepidle_secs,
+                           sizeof(int)))
+            {
+                throw futil::errno_exception(errno);
+            }
+            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
+                           sizeof(int)))
+            {
+                throw futil::errno_exception(errno);
+            }
+            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int)))
+                throw futil::errno_exception(errno);
+#else
+#warning Unknown system, keepalive not supported.
+#endif
+        }
+
         virtual void cork() override
         {
             int on = 1;
@@ -205,57 +262,6 @@ namespace tcp
             if (::connect(fd,&remote_addr.sa,sizeof(remote_addr.sa)) == -1)
                 throw futil::errno_exception(errno);
             return fd;
-        }
-
-        void enable_keepalive(int keepidle_secs = 5, int keepintvl_secs = 1,
-                              int keepcnt = 10,
-                              int connection_timeout_secs = 10)
-        {
-            // Enables keepalive probing on the socket.
-            //  keepidle      - number of seconds of idleness on the socket
-            //                  until keepalive probes will be started
-            //  keepinvtl     - interval in seconds between keepalive probes
-            //  keepcnt       - number of un-acknowledged keepalive probes
-            //                  until the connection is declared dead
-            //  connection_timeout - timeout for initial connection
-            //                       establishment
-            int on = 1;
-#if IS_MACOS
-            if (setsockopt(fd,IPPROTO_TCP,TCP_CONNECTIONTIMEOUT,
-                           &connection_timeout_secs,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPALIVE,&keepidle_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int)))
-                throw futil::errno_exception(errno);
-#elif IS_LINUX
-            if (setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPIDLE,&keepidle_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int)))
-                throw futil::errno_exception(errno);
-#else
-#warning Unknown system, keepalive not supported.
-#endif
         }
 
         client_socket(const net::addr& remote_addr):

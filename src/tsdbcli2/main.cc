@@ -440,7 +440,7 @@ handle_command(
 int
 main(int argc, const char* argv[])
 {
-    printf("%s\n",GIT_VERSION);
+    printf("simple_tsdb " SIMPLE_TSDB_VERSION_STR " " GIT_VERSION "\n");
 
     for (size_t i=1; i<(size_t)argc; ++i)
     {
