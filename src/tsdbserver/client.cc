@@ -145,6 +145,44 @@ catch (...)
 }
 
 void
+client::create_measurement(const std::string& database,
+    const std::string& measurement,
+    const std::vector<tsdb::schema_entry>& fields) try
+{
+    std::string typed_fields;
+    for (size_t i=0; i<fields.size(); ++i)
+    {
+        const auto& f = fields[i];
+        typed_fields += f.name;
+        typed_fields += "/";
+        typed_fields += tsdb::ftinfos[f.type].name;
+        if (i+1 < fields.size())
+            typed_fields += ",";
+    }
+
+    connect();
+    s->push(CT_CREATE_MEASUREMENT);
+    push_string(DT_DATABASE,database);
+    push_string(DT_MEASUREMENT,measurement);
+    push_string(DT_TYPED_FIELDS,typed_fields);
+    s->push(DT_END);
+
+    data_token dt = s->pop<data_token>();
+    if (dt != DT_STATUS_CODE)
+        throw protocol_exception("Expected DT_STATUS_CODE");
+    check_status((tsdb::status_code)s->pop<int32_t>());
+}
+catch (const tsdb::exception&)
+{
+    throw;
+}
+catch (...)
+{
+    s.reset();
+    throw;
+}
+
+void
 client::write_points(const std::string& database,
     const std::string& measurement, const std::string& series, uint32_t npoints,
     uint32_t bitmap_offset, uint32_t data_len, const void* data) try
