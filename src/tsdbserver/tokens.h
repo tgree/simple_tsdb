@@ -30,6 +30,8 @@ enum command_token : uint32_t
     CT_AUTHENTICATE         = 0x0995EBDA,
 };
 
+const char* get_command_token_str(command_token ct);
+
 enum data_token : uint32_t
 {
     DT_DATABASE         = 0x39385A4F,   // <database>
