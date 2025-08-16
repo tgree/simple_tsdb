@@ -139,10 +139,3 @@ tsdb::delete_points(const series_total_lock& stl, uint64_t t)
     stl.m.db.root.debugf("Deleted %zu slots from the start of the index "
                          "file.\n",index_slot - index_begin);
 }
-
-void
-tsdb::delete_points(const measurement& m, const futil::path& series, uint64_t t)
-{
-    tsdb::series_total_lock stl(m,series);
-    tsdb::delete_points(stl,t);
-}
