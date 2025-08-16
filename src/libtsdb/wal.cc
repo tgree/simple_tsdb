@@ -14,8 +14,8 @@ tsdb::commit_wal(series_write_lock& write_lock)
     wal_query wq(write_lock,write_lock.time_first,(uint64_t)-1,O_RDWR);
     if (!wq.nentries)
     {
-        wq.wal_fd.truncate(0);
-        wq.wal_fd.fsync();
+        write_lock.wal_fd.truncate(0);
+        write_lock.wal_fd.fsync();
         return;
     }
 
@@ -56,8 +56,8 @@ tsdb::commit_wal(series_write_lock& write_lock)
     // operations.  We will re-attempt a truncate on the next write to the
     // series after recovering from the crash.
     tsdb::write_series(write_lock,wci);
-    wq.wal_fd.truncate(0);
-    wq.wal_fd.fsync();
+    write_lock.wal_fd.truncate(0);
+    write_lock.wal_fd.fsync();
 }
 
 void
@@ -161,16 +161,15 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
     }
 
     // Map the WAL file.
-    futil::file wal_fd(write_lock.series_dir,"wal",O_RDWR);
-    size_t wal_size = wal_fd.lseek(0,SEEK_END);
+    size_t wal_size = write_lock.wal_fd.lseek(0,SEEK_END);
     size_t entry_size = sizeof(wal_entry) + write_lock.m.fields.size()*8;
     size_t wal_nentries = wal_size/entry_size;
 
     // Check for any overwrites in the WAL.
     if (wal_nentries)
     {
-        wal_fd.lseek((wal_nentries - 1)*entry_size,SEEK_SET);
-        uint64_t wal_time_last = wal_fd.read_u64();
+        write_lock.wal_fd.lseek((wal_nentries - 1)*entry_size,SEEK_SET);
+        uint64_t wal_time_last = write_lock.wal_fd.read_u64();
 
         if (wci.timestamps[0] <= wal_time_last)
         {
@@ -317,7 +316,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
     // cross two 16K blocks so need to write 20K.  Without doing any real math,
     // 12.5K is around the middle of that range and maybe we also need to
     // update metadata from time to time.
-    wal_fd.lseek(wal_nentries*entry_size,SEEK_SET);
-    wal_fd.write_all(rows_buf.data,entry_size*wci.npoints);
-    wal_fd.fsync_and_flush();
+    write_lock.wal_fd.lseek(wal_nentries*entry_size,SEEK_SET);
+    write_lock.wal_fd.write_all(rows_buf.data,entry_size*wci.npoints);
+    write_lock.wal_fd.fsync_and_flush();
 }

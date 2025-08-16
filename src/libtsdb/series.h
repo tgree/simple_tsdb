@@ -89,14 +89,17 @@ namespace tsdb
     //
     // Order of operations:
     //  1. Acquire shared lock on time_first_fd [RD].
-    //  2. Acquire shared lock on time_last_fd [RD].
+    //  2. Open WAL to get a file reference [RD].
+    //  3. Acquire shared lock on time_last_fd [RD].
     struct series_read_lock : public _series_lock
     {
+        futil::file wal_fd;
         futil::file time_last_fd;
         uint64_t    time_last;
 
         series_read_lock(const measurement& m, const futil::path& series):
             _series_lock(m,series,O_RDONLY),
+            wal_fd(series_dir,"wal",O_RDONLY),
             time_last_fd(series_dir,"time_last",O_RDONLY),
             time_last(time_last_fd.flock(LOCK_SH).read_u64())
         {
@@ -108,8 +111,10 @@ namespace tsdb
         // lock - this is so that write_lock can also be a read_lock.
         series_read_lock(const measurement& m, const futil::path& series,
                          futil::file&& _time_first_fd,
+                         futil::file&& _wal_fd,
                          futil::file&& _time_last_fd):
             _series_lock(m,series,std::move(_time_first_fd)),
+            wal_fd(std::move(_wal_fd)),
             time_last_fd(std::move(_time_last_fd)),
             time_last(time_last_fd.read_u64())
         {
@@ -130,14 +135,16 @@ namespace tsdb
     // Order of operations:
     //  1. Acquire shared lock on time_first_fd [RDWR].
     //  2. Acquire exclusive lock on time_last_fd [RDWR].
+    //  3. Open WAL to get a file reference [RDWR].
     struct series_write_lock : public series_read_lock
     {
         // Transfer ownership of an exclusive lock on time_last to us.
         series_write_lock(const measurement& m, const futil::path& series,
                           futil::file&& _time_first_fd,
+                          futil::file&& _wal_fd,
                           futil::file&& _time_last_fd):
             series_read_lock(m,series,std::move(_time_first_fd),
-                             std::move(_time_last_fd))
+                             std::move(_wal_fd),std::move(_time_last_fd))
         {
         }
     };
@@ -154,7 +161,8 @@ namespace tsdb
     //
     // Order of operations:
     //  1. Acquire exclusive lock on time_first_fd [RDWR].
-    //  2. Open time_last_fd without any lock [RDWR].
+    //  2. Open WAL to get a file reference [RDWR].
+    //  3. Open time_last_fd without any lock [RDWR].
     struct series_total_lock : public series_write_lock
     {
         series_total_lock(const measurement& m, const futil::path& series) try:
@@ -162,6 +170,7 @@ namespace tsdb
                 m,series,
                 std::move(futil::file(futil::directory(m.dir,series),
                                       "time_first",O_RDWR).flock(LOCK_EX)),
+                futil::file(futil::directory(m.dir,series),"wal",O_RDWR),
                 futil::file(futil::directory(m.dir,series),"time_last",O_RDWR))
         {
         }
