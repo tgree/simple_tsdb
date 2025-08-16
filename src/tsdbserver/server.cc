@@ -54,6 +54,17 @@ get_thread_id()
 #endif
 }
 
+enum lock_type
+{
+    LT_NONE            = 0,
+    LT_HOLDING_READ    = 1,
+    LT_HOLDING_WRITE   = 2,
+    LT_HOLDING_TOTAL   = 3,
+    LT_ACQUIRING_READ  = 4,
+    LT_ACQUIRING_WRITE = 5,
+    LT_ACQUIRING_TOTAL = 6,
+};
+
 struct connection
 {
     // Link to other connections.
@@ -66,6 +77,9 @@ struct connection
     std::string                     established_str;
     uint64_t                        last_write_ns;
     std::string                     username;
+
+    // Command state.
+    lock_type                       lt;
 
     connection(tcp::stream& s, const std::string& username):
         s(s),
@@ -418,7 +432,9 @@ handle_count_points(connection& conn,
 
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     auto cr = tsdb::count_points(read_lock,t0,t1);
 
     uint32_t dt = DT_TIME_FIRST;
@@ -456,7 +472,9 @@ handle_write_points(connection& conn,
     }
     conn.last_write_ns = now;
 
+    conn.lt = LT_ACQUIRING_WRITE;
     auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
+    conn.lt = LT_HOLDING_WRITE;
     for (;;)
     {
         uint32_t tokens[2] = {DT_READY_FOR_CHUNK,10*1024*1024};
@@ -499,7 +517,9 @@ handle_delete_points(connection& conn,
                  t);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_TOTAL;
     tsdb::series_total_lock total_lock(m,series);
+    conn.lt = LT_HOLDING_TOTAL;
     tsdb::delete_points(total_lock,t);
 }
 
@@ -628,7 +648,9 @@ handle_select_points_limit(connection& conn,
                  field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     tsdb::wal_query wq(read_lock,t0,t1);
     tsdb::select_op_first op(read_lock,path,str::split(field_list,","),t0,t1,N);
     _handle_select_points(conn,op,wq,N);
@@ -652,7 +674,9 @@ handle_select_points_last(connection& conn,
                  field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     tsdb::wal_query wq(read_lock,t0,t1);
     if (wq.nentries > N)
     {
@@ -682,7 +706,9 @@ handle_sum_points(connection& conn,
                  field_list.c_str(),path.c_str(),t0,t1,window_ns);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     tsdb::sum_op op(read_lock,path,str::split(field_list,","),t0,t1,window_ns);
 
     const size_t nfields = op.op.fields.size();
@@ -779,7 +805,9 @@ handle_integrate_points(connection& conn,
                  field_list.c_str(),path.c_str(),t0,t1);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     tsdb::integral_op op(read_lock,path,str::split(field_list,","),t0,t1);
 
     uint64_t bitmap = 0;
