@@ -461,7 +461,10 @@ rotate_test()
     tsdb::measurement m(db,ss.measurement);
     printf("DELETE FROM %s WHERE time_ns < %" PRIu64 "\n",
            ss.dms_path.c_str(),t);
-    tsdb::delete_points(m,ss.series,t);
+    {
+        tsdb::series_total_lock total_lock(m,ss.series);
+        tsdb::delete_points(total_lock,t);
+    }
 
     // Incrementing the timestamp for everything that will be rotated.
     uint64_t dt = ss.points.back().time_ns - ss.points.front().time_ns + 1;

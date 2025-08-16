@@ -436,7 +436,8 @@ handle_delete_points(connection& conn,
                  t);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
-    tsdb::delete_points(m,series,t);
+    tsdb::series_total_lock total_lock(m,series);
+    tsdb::delete_points(total_lock,t);
 }
 
 static void

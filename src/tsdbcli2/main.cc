@@ -295,7 +295,8 @@ handle_delete(
 {
     tsdb::database db(*root,ss.database);
     tsdb::measurement m(db,ss.measurement);
-    tsdb::delete_points(m,ss.series,tr.t);
+    tsdb::series_total_lock total_lock(m,ss.series);
+    tsdb::delete_points(total_lock,tr.t);
 }
 
 static void
