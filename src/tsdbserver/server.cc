@@ -66,7 +66,7 @@ enum lock_type
 };
 
 const char* const lock_str[] = {
-    "",
+    " ",
     "R",
     "W",
     "T",
