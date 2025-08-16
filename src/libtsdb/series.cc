@@ -12,8 +12,9 @@ open_and_lock_series(const tsdb::measurement& m, const futil::path& series)
     time_first_fd.flock(LOCK_SH);
     futil::file time_last_fd(series_dir,"time_last",O_RDWR);
     time_last_fd.flock(LOCK_EX);
+    futil::file wal_fd(series_dir,"wal",O_RDWR);
     return tsdb::series_write_lock(m,series,std::move(time_first_fd),
-                                   std::move(time_last_fd));
+                                   std::move(wal_fd),std::move(time_last_fd));
 }
 
 tsdb::series_write_lock
@@ -98,5 +99,5 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
     // Sync the new directory and return the locked series.
     m.dir.fsync_and_flush();
     return series_write_lock(m,series,std::move(time_first_fd),
-                             std::move(time_last_fd));
+                             std::move(wal_fd),std::move(time_last_fd));
 }
