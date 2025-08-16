@@ -65,6 +65,16 @@ enum lock_type
     LT_ACQUIRING_TOTAL = 6,
 };
 
+const char* const lock_str[] = {
+    "",
+    "R",
+    "W",
+    "T",
+    "r",
+    "w",
+    "t",
+};
+
 struct connection
 {
     // Link to other connections.
@@ -84,6 +94,60 @@ struct connection
     command_token                   ct;
     std::vector<parsed_data_token>  tokens;
     lock_type                       lt;
+
+    std::string decode_command()
+    {
+        // Assumes command_lock is held.
+        std::string s = get_command_token_str(ct);
+        s += " ";
+        switch (ct)
+        {
+            case CT_CREATE_DATABASE:
+            case CT_LIST_MEASUREMENTS:
+                if (tokens.size() >= 1)
+                    s += tokens[0].to_string();
+            break;
+
+            case CT_GET_SCHEMA:
+            case CT_LIST_SERIES:
+            case CT_ACTIVE_SERIES:
+                if (tokens.size() >= 2)
+                {
+                    s += tokens[0].to_string() + "/" +
+                         tokens[1].to_string();
+                }
+            break;
+
+            case CT_COUNT_POINTS:
+            case CT_WRITE_POINTS:
+            case CT_DELETE_POINTS:
+            case CT_SELECT_POINTS_LIMIT:
+            case CT_SELECT_POINTS_LAST:
+            case CT_SUM_POINTS:
+            case CT_INTEGRATE_POINTS:
+                if (tokens.size() >= 3)
+                {
+                    s += tokens[0].to_string() + "/" +
+                         tokens[1].to_string() + "/" +
+                         tokens[2].to_string();
+                }
+            break;
+
+            case CT_CREATE_MEASUREMENT:
+                if (tokens.size() >= 3)
+                {
+                    s += tokens[0].to_string() + "/" +
+                         tokens[1].to_string() + " " +
+                         tokens[2].to_string();
+                }
+            break;
+
+            default:
+            break;
+        }
+
+        return s;
+    }
 
     void log_idle()
     {
@@ -1037,6 +1101,72 @@ ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 }
 
 static void
+info_handler(std::unique_ptr<tcp::socket> sock)
+{
+    size_t nconnections = 0;
+    std::string output = "TID                 Established               "
+                         "Username               Client IP              "
+                         "Elapsed (ms)  L  Command\n"
+                         "==================  ========================  "
+                         "=====================  =====================  "
+                         "============  =  =======\n";
+    uint64_t now = time_ns();
+    with_lock_guard (connection_lock)
+    {
+        for (auto& conn : klist_elems(connection_list,link))
+        {
+            with_lock_guard (conn.command_lock)
+            {
+                if (conn.ct)
+                {
+                    uint64_t elapsed_ms = (now - conn.command_start_ns) / 1e6;
+                    output += str::printf("0x%016" PRIu64 "  %-24s  %-21s  "
+                                          "%-21s  %12" PRIu64 "  %s  %s\n",
+                                          conn.tid,conn.established_str.c_str(),
+                                          conn.username.c_str(),
+                                          conn.s.remote_addr_string().c_str(),
+                                          elapsed_ms,lock_str[conn.lt],
+                                          conn.decode_command().c_str());
+                }
+                else
+                {
+                    output += str::printf("0x%016" PRIu64 "  %-24s  %-21s  "
+                                          "%-21s  %12s  %s  %s\n",
+                                          conn.tid,conn.established_str.c_str(),
+                                          conn.username.c_str(),
+                                          conn.s.remote_addr_string().c_str(),
+                                          "",lock_str[conn.lt],
+                                          conn.decode_command().c_str());
+                }
+            }
+            ++nconnections;
+        }
+    }
+    output += str::printf("%zu connections.\n",nconnections);
+    sock->push(output);
+}
+
+static void
+info_workloop(uint16_t port)
+{
+    tcp::server_socket ss(net::ipv4::loopback_addr(port));
+    ss.listen(4);
+    printf("Info listening on %s.\n",ss.bind_addr.to_string().c_str());
+    for (;;)
+    {
+        try
+        {
+            std::thread t(info_handler,ss.accept());
+            t.detach();
+        }
+        catch (const std::exception& e)
+        {
+            printf("Exception accepting Info connection: %s\n",e.what());
+        }
+    }
+}
+
+static void
 usage(const char* err)
 {
     printf("Usage: tsdbserver [options]\n"
@@ -1048,6 +1178,8 @@ usage(const char* err)
            "                (defaults to current working directory\n"
            "  [--port port]\n"
            "    port      - TCP listening port number (defaults to 4000)\n"
+           "  [--info-port port]\n"
+           "    port      - localhost TCP listening port (defaults to 4001)\n"
            "  [--no-debug]\n"
            "              - disable debug output\n"
            );
@@ -1062,6 +1194,7 @@ main(int argc, const char* argv[])
     const char* cert_file = NULL;
     const char* key_file = NULL;
     uint16_t port = 4000;
+    uint16_t info_port = 4001;
     bool no_debug = false;
     bool unbuffered = false;
 
@@ -1113,6 +1246,24 @@ main(int argc, const char* argv[])
             }
             i += 2;
         }
+        else if (!strcmp(arg,"--info-port"))
+        {
+            if (!rem)
+            {
+                usage("Expected --info-port port");
+                return -1;
+            }
+            char* endptr;
+            info_port = strtoul(argv[i + 1],&endptr,10);
+            if (*endptr)
+            {
+                std::string err("Not a number: ");
+                err += argv[i + 1];
+                usage(err.c_str());
+                return -1;
+            }
+            i += 2;
+        }
         else if (!strcmp(arg,"--no-debug"))
         {
             no_debug = true;
@@ -1144,6 +1295,9 @@ main(int argc, const char* argv[])
     printf("    Chunk size: %zu bytes\n",root->config.chunk_size);
     printf("      WAL size: %zu points\n",root->config.wal_max_entries);
     printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
+
+    std::thread info_thread(info_workloop,info_port);
+    info_thread.detach();
 
     if (cert_file && key_file)
         ssl_workloop(cert_file,key_file,port);
