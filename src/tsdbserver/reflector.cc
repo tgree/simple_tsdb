@@ -43,6 +43,13 @@ struct connection
     tcp::stream&    s;
     client&         reflector_client;
     uint64_t        last_write_ns;
+
+    void log_idle() {}
+    std::vector<parsed_data_token>& log_tokens(
+        uint32_t ct, std::vector<parsed_data_token>& tokens)
+    {
+        return tokens;
+    }
 };
 
 static void handle_get_schema(
