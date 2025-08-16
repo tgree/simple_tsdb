@@ -85,6 +85,8 @@ namespace tsdb
     //
     // Order of operations:
     //  1. Acquire shared lock on time_first_fd [RD].
+    //  2. Open WAL to get a file reference [RD].
+    //  3. Open time_last [RD].
     struct series_read_lock : public _series_lock
     {
         futil::file wal_fd;
@@ -128,7 +130,8 @@ namespace tsdb
     //
     // Order of operations:
     //  1. Acquire shared lock on time_first_fd [RDWR].
-    //  2. Acquire exclusive lock on time_last_fd [RDWR].
+    //  2. Open WAL to get a file reference [RDWR].
+    //  3. Acquire exclusive lock on time_last_fd [RDWR].
     struct series_write_lock : public series_read_lock
     {
         // Transfer ownership of an exclusive lock on time_last to us.
@@ -154,7 +157,8 @@ namespace tsdb
     //
     // Order of operations:
     //  1. Acquire exclusive lock on time_first_fd [RDWR].
-    //  2. Open time_last_fd without any lock [RDWR].
+    //  2. Open WAL to get a file reference [RDWR].
+    //  3. Open time_last_fd without any lock [RDWR].
     struct series_total_lock : public series_write_lock
     {
         series_total_lock(const measurement& m, const futil::path& series) try:
