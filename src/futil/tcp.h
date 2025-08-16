@@ -223,6 +223,24 @@ namespace tcp
                 throw futil::errno_exception(errno);
         }
 
+        void set_send_timeout_us(uint64_t us)
+        {
+            struct timeval timeout;
+            timeout.tv_sec = (us / 1000000);
+            timeout.tv_usec = (us % 1000000);
+            if (setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout)))
+                throw futil::errno_exception(errno);
+        }
+
+        void set_recv_timeout_us(uint64_t us)
+        {
+            struct timeval timeout;
+            timeout.tv_sec = (us / 1000000);
+            timeout.tv_usec = (us % 1000000);
+            if (setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout)))
+                throw futil::errno_exception(errno);
+        }
+
         constexpr socket(int fd, const net::addr& local_addr,
                          const net::addr& remote_addr):
             futil::file_descriptor(fd),
