@@ -52,15 +52,23 @@ struct connection
     // Connection state.
     tcp::stream&                    s;
     const uint64_t                  tid;
+    const time_t                    established_s;
+    std::string                     established_str;
     uint64_t                        last_write_ns;
     std::string                     username;
 
     connection(tcp::stream& s, const std::string& username):
         s(s),
         tid(get_thread_id()),
+        established_s(time(NULL)),
         last_write_ns(0),
         username(username)
     {
+        char time_str[128];
+        struct tm t_tm;
+        localtime_r(&established_s,&t_tm);
+        strftime(time_str,sizeof(time_str),"%c",&t_tm);
+        established_str = time_str;
     }
 };
 
