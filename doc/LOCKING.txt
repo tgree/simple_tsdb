@@ -1,0 +1,132 @@
+LOCKING
+=======
+simple_tsdb is designed to have relatively simple locking rules.  The database
+is "embarassingly parallel" in the sense that data points in one series are
+completely independent from data points in a different series.  Performing
+read/write/delete operations on one series can be done without blocking other
+series or other database operations from taking place.
+
+Within a given series, locking is a little bit more complex.  The design
+intention is that reading and writing within a series are independent
+operations and don't block each other, but deleting is expensive and blocks
+everybody.  simple_tsdb was designed for our use case, which is to have many
+data loggers running reflectors which all vector into a single cloud database
+instance.  The reflectors typically don't write to their local database at all
+except when their internet connections are down, in which case they write
+locally and then when the internet connection returns they will flush all
+local points to the cloud and then delete them all.  The cloud database itself
+only ever stores more points and never deletes old points because that data is
+precious to us to evaluate sensor performance over time.  On the other hand,
+the cloud database must service many read queries while it is ingesting data,
+so the reads and writes must be independent.
+
+With that in mind, we specify a few requirements:
+
+1. Read operations must block delete operations.
+2. Write operations must block delete operations.
+3. Write operations must block other write operations*.
+4. Delete operations must block both read and write operations.
+
+*simple_tsdb does not allow writing data points out of order.  The implication
+is that concurrent write operations to the same series is probably a
+programmer error (unless both writes are identical) since if they are racing
+each other then the first write serviced may have timestamps later than the
+second write serviced.  However, we want to preserve the integrity of the
+simple_tsdb data structures in the event of this programmer error so we
+require a write lock.
+
+simple_tsdb also uses a write-ahead-log (WAL) in order to reduce SSD wear.
+Each series has its own, dedicated WAL.  When the WAL reaches capacity, it is
+committed to the main data store and the WAL is atomically replaced with a new
+one, which may either be empty or may contain spillover points which didn't fit
+inside the original nearly-full WAL.  This gives us a final requirement:
+
+5. When comitting the WAL, a reader should never see recent points "disappear"
+due to any window where the reader has an outdated view of the main data
+store (not realizing that a writer has done a WAL commit opoeration to add
+more points to the main data store), but sees the swapped and (nearly) empty
+WAL file.
+
+Within a series, there are two files that tell us the range of timestamps that
+are live in the main data store for that series: time_first and time_last.
+The initial state of a series has:
+
+    time_first = 1
+    time_last  = 0
+
+When time_first > time_last, there are no data points in the main data store.
+If time_first == time_last, then there is only a single data point in the main
+data store.  If time_first < time_last, then there are multiple data points in
+the main data store.
+
+When a write operation takes place, the timestamp of the first data point
+being written must be larger than time_last, and once complete time_last will
+be updated to equal the timestamp of the last data point added.  This updating
+of the time_last value is how write operations are performed atomically.
+
+When a delete operation takes place, the time_first value is updated and will
+either be set to the timestamp of the first data point that wasn't deleted, or
+will be set to "t + 1" where t is the time we were deleting up to.  This "t +
+1" setting ensures that future writes that hit in the deleted region are
+properly discarded, and it also is used to force queries to ignore points at
+the start of the WAL if they fall in the deleted region.
+
+With all that in mind, we have implement the following locking rules.
+
+
+READ LOCKING
+============
+1. The reader obtains a shared lock on time_first.  This blocks all delete
+operations on the series.
+2. The reader opens the WAL file.  This obtains a reference on the WAL file
+that precedes looking at the time_last value.  If a WAL commit occurs while
+the reader is working, it will have a reference to the WAL contents from before
+it was swapped out with a new, possibly-empty WAL file.
+3. The reader opens the time_last value and records it.
+
+The reader will then satisfy the query using points in the main data store
+from [time_first, time_last] and points from its referenced WAL file from
+[MAX(time_first, time_last + 1), time_of(WAL_last_entry)].
+
+
+WRITE LOCKING
+=============
+1. The writer obtains a shared lock on time_first.  This blocks all delete
+operations on the series.
+2. The writer obtains an exclusive lock on time_last.  This blocks other
+writeres for interfering.
+3. The write opens the WAL file.
+
+The write first blocks delete operations and then blocks concurrent write
+operations.  The WAL can then be safely opened.  If the WAL is opened before
+we attempt to acquire the exclusive lock on time_last, a competing writer may
+win, perform a commit operation and then swap out the WAL file on us.  Then we
+would have a dangling reference to an old WAL where we would try and append
+our data points to, probably corrupting everything and at the minimum leading
+to lost data.
+
+
+DELETE/TOTAL LOCKING
+====================
+1. The deleter obtains an exclusive lock on time_first.  This blocks all other
+operations.
+
+Taking a total lock on a series prevents anybody else from accessing it.  No
+WAL commit operations can take place and no other operations can even have an
+open reference to the WAL file.  The series is essentially frozen and we can
+do whatever we want with it and not worry about any ordering after taking the
+initial exclusive lock.
+
+
+As long as we satisfy the locking rules described above, simple_tsdb can
+safely allow independent readers and writers on a single series which allows
+things like reflectors to push data points to a cloud server in a timely
+manner, even if a client such as a Grafana dashboard is performing a very
+lengthy read operation on the same series which might take tens of seconds or
+even minutes to complete.
+
+With this implementation, even though it is required for readers and writers
+to acquire locks, the locks should always be uncontested unless either a
+delete operation is taking place or if programmer error has led to multiple
+writers dueling each other for access to a victim series.  In practice, for
+the common case we achieve "embarassingly parallel" operation.
