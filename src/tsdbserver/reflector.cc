@@ -43,6 +43,13 @@ struct connection
     tcp::stream&    s;
     client&         reflector_client;
     uint64_t        last_write_ns;
+
+    void log_idle() {}
+    std::vector<parsed_data_token>& log_tokens(
+        uint32_t ct, std::vector<parsed_data_token>& tokens)
+    {
+        return tokens;
+    }
 };
 
 static void handle_get_schema(
@@ -233,7 +240,7 @@ request_handler(std::unique_ptr<tcp::stream> s)
     connection conn{*s,c,0};
     s->enable_keepalive();
     s->nodelay();
-    process_stream(conn.s,commands,conn);
+    process_stream(conn,commands);
 
     printf("Teardown local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
