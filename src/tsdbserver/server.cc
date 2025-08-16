@@ -5,6 +5,8 @@
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
 #include <hdr/fixed_vector.h>
+#include <hdr/klist.h>
+#include <hdr/with_lock.h>
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <futil/ssl.h>
@@ -12,16 +14,192 @@
 
 #include <algorithm>
 #include <thread>
+#if IS_MACOS
+#include <pthread.h>
+#elif IS_LINUX
+#include <unistd.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <time.h>
 #include <inttypes.h>
 
+struct connection;
+
+static std::mutex connection_lock;
+static kernel::kdlist<connection> connection_list;
+
+static uint64_t
+time_ns()
+{
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
+    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
+}
+
+static uint64_t
+get_thread_id()
+{
+#if IS_MACOS
+    uint64_t thread_id;
+    int err = pthread_threadid_np(NULL,&thread_id);
+    if (err)
+        throw futil::errno_exception(err);
+    return thread_id;
+#elif IS_LINUX
+    return gettid();
+#else
+#error Dont know how to get a thread ID.
+#endif
+}
+
+enum lock_type
+{
+    LT_NONE            = 0,
+    LT_HOLDING_READ    = 1,
+    LT_HOLDING_WRITE   = 2,
+    LT_HOLDING_TOTAL   = 3,
+    LT_ACQUIRING_READ  = 4,
+    LT_ACQUIRING_WRITE = 5,
+    LT_ACQUIRING_TOTAL = 6,
+};
+
+const char* const lock_str[] = {
+    "",
+    "R",
+    "W",
+    "T",
+    "r",
+    "w",
+    "t",
+};
+
 struct connection
 {
-    tcp::stream&    s;
-    uint64_t        last_write_ns;
+    // Link to other connections.
+    kernel::kdlink                  link;
+
+    // Connection state.
+    tcp::stream&                    s;
+    const uint64_t                  tid;
+    const time_t                    established_s;
+    std::string                     established_str;
+    uint64_t                        last_write_ns;
+    std::string                     username;
+
+    // Command state.
+    std::mutex                      command_lock;
+    uint64_t                        command_start_ns;
+    command_token                   ct;
+    std::vector<parsed_data_token>  tokens;
+    lock_type                       lt;
+
+    std::string decode_command()
+    {
+        // Assumes command_lock is held.
+        std::string s = get_command_token_str(ct);
+        s += " ";
+        switch (ct)
+        {
+            case CT_CREATE_DATABASE:
+            case CT_LIST_MEASUREMENTS:
+                if (tokens.size() >= 1)
+                    s += tokens[0].to_string();
+            break;
+
+            case CT_GET_SCHEMA:
+            case CT_LIST_SERIES:
+            case CT_ACTIVE_SERIES:
+                if (tokens.size() >= 2)
+                {
+                    s += tokens[0].to_string() + "/" +
+                         tokens[1].to_string();
+                }
+            break;
+
+            case CT_COUNT_POINTS:
+            case CT_WRITE_POINTS:
+            case CT_DELETE_POINTS:
+            case CT_SELECT_POINTS_LIMIT:
+            case CT_SELECT_POINTS_LAST:
+            case CT_SUM_POINTS:
+            case CT_INTEGRATE_POINTS:
+                if (tokens.size() >= 3)
+                {
+                    s += tokens[0].to_string() + "/" +
+                         tokens[1].to_string() + "/" +
+                         tokens[2].to_string();
+                }
+            break;
+
+            case CT_CREATE_MEASUREMENT:
+                if (tokens.size() >= 3)
+                {
+                    s += tokens[0].to_string() + "/" +
+                         tokens[1].to_string() + " " +
+                         tokens[2].to_string();
+                }
+            break;
+
+            default:
+            break;
+        }
+
+        return s;
+    }
+
+    void log_idle()
+    {
+        with_lock_guard (command_lock)
+        {
+            ct = (command_token)0;
+            lt = LT_NONE;
+            tokens.clear();
+        }
+    }
+
+    std::vector<parsed_data_token>& log_tokens(
+        command_token _ct, std::vector<parsed_data_token>& _tokens)
+    {
+        uint64_t now = time_ns();
+        with_lock_guard (command_lock)
+        {
+            command_start_ns = now;
+            ct = _ct;
+            tokens.swap(_tokens);
+        }
+        return tokens;
+    }
+
+    connection(tcp::stream& s, const std::string& username):
+        s(s),
+        tid(get_thread_id()),
+        established_s(time(NULL)),
+        last_write_ns(0),
+        username(username),
+        command_start_ns(0),
+        ct((command_token)0)
+    {
+        char time_str[128];
+        struct tm t_tm;
+        localtime_r(&established_s,&t_tm);
+        strftime(time_str,sizeof(time_str),"%c",&t_tm);
+        established_str = time_str;
+
+        with_lock_guard (connection_lock)
+        {
+            connection_list.push_back(&link);
+        }
+    }
+
+    ~connection()
+    {
+        with_lock_guard (connection_lock)
+        {
+            link.unlink();
+        }
+    }
 };
 
 static void handle_create_database(
@@ -157,14 +335,6 @@ debugf(const char* fmt, ...)
     va_start(ap,fmt);
     root->vdebugf(fmt,ap);
     va_end(ap);
-}
-
-static uint64_t
-time_ns()
-{
-    struct timespec tp;
-    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
-    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
 }
 
 static void
@@ -355,7 +525,9 @@ handle_count_points(connection& conn,
 
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     auto cr = tsdb::count_points(read_lock,t0,t1);
 
     uint32_t dt = DT_TIME_FIRST;
@@ -393,7 +565,9 @@ handle_write_points(connection& conn,
     }
     conn.last_write_ns = now;
 
+    conn.lt = LT_ACQUIRING_WRITE;
     auto write_lock = tsdb::open_or_create_and_lock_series(m,series);
+    conn.lt = LT_HOLDING_WRITE;
     for (;;)
     {
         uint32_t tokens[2] = {DT_READY_FOR_CHUNK,10*1024*1024};
@@ -436,7 +610,10 @@ handle_delete_points(connection& conn,
                  t);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
-    tsdb::delete_points(m,series,t);
+    conn.lt = LT_ACQUIRING_TOTAL;
+    tsdb::series_total_lock total_lock(m,series);
+    conn.lt = LT_HOLDING_TOTAL;
+    tsdb::delete_points(total_lock,t);
 }
 
 static void
@@ -564,7 +741,9 @@ handle_select_points_limit(connection& conn,
                  field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     tsdb::wal_query wq(read_lock,t0,t1);
     tsdb::select_op_first op(read_lock,path,str::split(field_list,","),t0,t1,N);
     _handle_select_points(conn,op,wq,N);
@@ -588,7 +767,9 @@ handle_select_points_last(connection& conn,
                  field_list.c_str(),path.c_str(),t0,t1,N);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     tsdb::wal_query wq(read_lock,t0,t1);
     if (wq.nentries > N)
     {
@@ -618,7 +799,9 @@ handle_sum_points(connection& conn,
                  field_list.c_str(),path.c_str(),t0,t1,window_ns);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     tsdb::sum_op op(read_lock,path,str::split(field_list,","),t0,t1,window_ns);
 
     const size_t nfields = op.op.fields.size();
@@ -715,7 +898,9 @@ handle_integrate_points(connection& conn,
                  field_list.c_str(),path.c_str(),t0,t1);
     tsdb::database db(*root,database);
     tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
     tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
     tsdb::integral_op op(read_lock,path,str::split(field_list,","),t0,t1);
 
     uint64_t bitmap = 0;
@@ -742,16 +927,17 @@ handle_nop(connection& conn, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-stream_request_handler(std::unique_ptr<tcp::stream> s)
+stream_request_handler(connection& conn)
 {
     printf("Handling local %s remote %s.\n",
-           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+           conn.s.local_addr_string().c_str(),
+           conn.s.remote_addr_string().c_str());
 
-    connection conn{*s,0};
-    process_stream(conn.s,commands,conn);
+    process_stream(conn,commands);
 
     printf("Teardown local %s remote %s.\n",
-           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+           conn.s.local_addr_string().c_str(),
+           conn.s.remote_addr_string().c_str());
 }
 
 static void
@@ -759,7 +945,10 @@ request_handler(std::unique_ptr<tcp::socket> sock)
 {
     sock->enable_keepalive();
     sock->nodelay();
-    stream_request_handler(std::move(sock));
+
+    std::unique_ptr<tcp::stream> stream(std::move(sock));
+    connection conn(*stream,"");
+    stream_request_handler(conn);
 }
 
 static void
@@ -781,8 +970,6 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     sock->set_send_timeout_us(3*1000000);
     sock->set_recv_timeout_us(3*1000000);
 
-    std::string username;
-    std::string password;
     std::unique_ptr<tcp::ssl::stream> s;
 
     try
@@ -790,40 +977,68 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
         try
         {
             s = sslctx->wrap(std::move(sock));
-
-            uint32_t dt = s->pop<uint32_t>();
-            if (dt != CT_AUTHENTICATE)
-                throw futil::errno_exception(EINVAL);
-
-            std::vector<parsed_data_token> tokens;
-            parse_cmd(*s,auth_command,tokens);
-
-            username = tokens[0].to_string();
-            password = tokens[1].to_string();
-            printf("Authenticating user %s from %s...\n",
-                   username.c_str(),s->remote_addr_string().c_str());
-            if (!root->verify_user(username,password))
-                throw futil::errno_exception(EPERM);
-            printf("Authentication from %s for user %s succeeded.\n",
-                   s->remote_addr_string().c_str(),
-                   username.c_str());
-
-            uint32_t status[2] = {DT_STATUS_CODE, 0};
-            s->send_all(&status,sizeof(status));
         }
         catch (const tcp::ssl::ssl_error_exception& e)
         {
             if (e.ssl_error == SSL_ERROR_WANT_READ)
                 printf("Zombie detected: %s\n",remote_addr_string.c_str());
+            else
+            {
+                printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
+                       e.what());
+            }
+
+            throw;
+        }
+        catch (const std::exception& e)
+        {
+            printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
+                   e.what());
+            throw;
+        }
+        catch (...)
+        {
+            printf("SSL wrap failure: %s (?)\n",remote_addr_string.c_str());
             throw;
         }
     }
+    catch (...)
+    {
+        uint64_t t1 = time_ns();
+        uint64_t nsecs = round_up_to_nearest_multiple(t1 - t0,
+                                                      (uint64_t)2000000000);
+        sleep_for_ns(nsecs + 1);
+        return;
+    }
+
+    connection conn(*s,"");
+
+    try
+    {
+        uint32_t ct = conn.s.pop<uint32_t>();
+        if (ct != CT_AUTHENTICATE)
+            throw futil::errno_exception(EINVAL);
+
+        std::vector<parsed_data_token> tokens;
+        parse_cmd(conn,auth_command,tokens);
+
+        conn.username = tokens[0].to_string();
+        printf("Authenticating user %s from %s...\n",
+               conn.username.c_str(),remote_addr_string.c_str());
+        if (!root->verify_user(conn.username,tokens[1].to_string()))
+            throw futil::errno_exception(EPERM);
+        printf("Authentication from %s for user %s succeeded.\n",
+               remote_addr_string.c_str(),conn.username.c_str());
+
+        uint32_t status[2] = {DT_STATUS_CODE, 0};
+        conn.s.send_all(&status,sizeof(status));
+    }
     catch (const std::exception& e)
     {
-        if (!username.empty())
+        if (!conn.username.empty())
         {
             printf("Authentication from %s for user %s failed.\n",
-                   remote_addr_string.c_str(),username.c_str());
+                   remote_addr_string.c_str(),conn.username.c_str());
         }
         else
         {
@@ -840,7 +1055,7 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
 
     s->s->set_send_timeout_us(0);
     s->s->set_recv_timeout_us(0);
-    stream_request_handler(std::move(s));
+    stream_request_handler(conn);
 }
 
 static void
@@ -886,6 +1101,72 @@ ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
 }
 
 static void
+info_handler(std::unique_ptr<tcp::socket> sock)
+{
+    size_t nconnections = 0;
+    std::string output = "TID                 Established               "
+                         "Username               Client IP              "
+                         "Elapsed (ms)  L  Command\n"
+                         "==================  ========================  "
+                         "=====================  =====================  "
+                         "============  =  =======\n";
+    uint64_t now = time_ns();
+    with_lock_guard (connection_lock)
+    {
+        for (auto& conn : klist_elems(connection_list,link))
+        {
+            with_lock_guard (conn.command_lock)
+            {
+                if (conn.ct)
+                {
+                    uint64_t elapsed_ms = (now - conn.command_start_ns) / 1e6;
+                    output += str::printf("0x%016" PRIu64 "  %-24s  %-21s  "
+                                          "%-21s  %12" PRIu64 "  %s  %s\n",
+                                          conn.tid,conn.established_str.c_str(),
+                                          conn.username.c_str(),
+                                          conn.s.remote_addr_string().c_str(),
+                                          elapsed_ms,lock_str[conn.lt],
+                                          conn.decode_command().c_str());
+                }
+                else
+                {
+                    output += str::printf("0x%016" PRIu64 "  %-24s  %-21s  "
+                                          "%-21s  %12s  %s  %s\n",
+                                          conn.tid,conn.established_str.c_str(),
+                                          conn.username.c_str(),
+                                          conn.s.remote_addr_string().c_str(),
+                                          "",lock_str[conn.lt],
+                                          conn.decode_command().c_str());
+                }
+            }
+            ++nconnections;
+        }
+    }
+    output += str::printf("%zu connections.\n",nconnections);
+    sock->push(output);
+}
+
+static void
+info_workloop(uint16_t port)
+{
+    tcp::server_socket ss(net::ipv4::loopback_addr(port));
+    ss.listen(4);
+    printf("Info listening on %s.\n",ss.bind_addr.to_string().c_str());
+    for (;;)
+    {
+        try
+        {
+            std::thread t(info_handler,ss.accept());
+            t.detach();
+        }
+        catch (const std::exception& e)
+        {
+            printf("Exception accepting Info connection: %s\n",e.what());
+        }
+    }
+}
+
+static void
 usage(const char* err)
 {
     printf("Usage: tsdbserver [options]\n"
@@ -897,6 +1178,8 @@ usage(const char* err)
            "                (defaults to current working directory\n"
            "  [--port port]\n"
            "    port      - TCP listening port number (defaults to 4000)\n"
+           "  [--info-port port]\n"
+           "    port      - localhost TCP listening port (defaults to 4001)\n"
            "  [--no-debug]\n"
            "              - disable debug output\n"
            );
@@ -911,6 +1194,7 @@ main(int argc, const char* argv[])
     const char* cert_file = NULL;
     const char* key_file = NULL;
     uint16_t port = 4000;
+    uint16_t info_port = 4001;
     bool no_debug = false;
     bool unbuffered = false;
 
@@ -962,6 +1246,24 @@ main(int argc, const char* argv[])
             }
             i += 2;
         }
+        else if (!strcmp(arg,"--info-port"))
+        {
+            if (!rem)
+            {
+                usage("Expected --info-port port");
+                return -1;
+            }
+            char* endptr;
+            info_port = strtoul(argv[i + 1],&endptr,10);
+            if (*endptr)
+            {
+                std::string err("Not a number: ");
+                err += argv[i + 1];
+                usage(err.c_str());
+                return -1;
+            }
+            i += 2;
+        }
         else if (!strcmp(arg,"--no-debug"))
         {
             no_debug = true;
@@ -993,6 +1295,9 @@ main(int argc, const char* argv[])
     printf("    Chunk size: %zu bytes\n",root->config.chunk_size);
     printf("      WAL size: %zu points\n",root->config.wal_max_entries);
     printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
+
+    std::thread info_thread(info_workloop,info_port);
+    info_thread.detach();
 
     if (cert_file && key_file)
         ssl_workloop(cert_file,key_file,port);

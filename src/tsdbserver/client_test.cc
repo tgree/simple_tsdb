@@ -3,16 +3,11 @@
 #include "client.h"
 #include <strutil/strutil.h>
 #include <hdr/auto_buf.h>
-#include <mutex>
+#include <hdr/with_lock.h>
 #include <condition_variable>
 #include <thread>
 #include <time.h>
 #include <math.h>
-
-#define with_lock_guard(l) \
-    if constexpr( \
-        const auto __with_lock_guard_helper = std::lock_guard(l); \
-        true)
 
 struct sine_point
 {
