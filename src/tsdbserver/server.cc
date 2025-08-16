@@ -5,6 +5,8 @@
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
 #include <hdr/fixed_vector.h>
+#include <hdr/klist.h>
+#include <hdr/with_lock.h>
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <futil/ssl.h>
@@ -22,6 +24,11 @@
 #include <signal.h>
 #include <time.h>
 #include <inttypes.h>
+
+struct connection;
+
+static std::mutex connection_lock;
+static kernel::kdlist<connection> connection_list;
 
 static uint64_t
 time_ns()
@@ -49,6 +56,9 @@ get_thread_id()
 
 struct connection
 {
+    // Link to other connections.
+    kernel::kdlink                  link;
+
     // Connection state.
     tcp::stream&                    s;
     const uint64_t                  tid;
@@ -69,6 +79,19 @@ struct connection
         localtime_r(&established_s,&t_tm);
         strftime(time_str,sizeof(time_str),"%c",&t_tm);
         established_str = time_str;
+
+        with_lock_guard (connection_lock)
+        {
+            connection_list.push_back(&link);
+        }
+    }
+
+    ~connection()
+    {
+        with_lock_guard (connection_lock)
+        {
+            link.unlink();
+        }
     }
 };
 
