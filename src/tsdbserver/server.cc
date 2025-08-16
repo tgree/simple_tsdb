@@ -28,8 +28,17 @@ time_ns()
 
 struct connection
 {
-    tcp::stream&    s;
-    uint64_t        last_write_ns;
+    // Connection state.
+    tcp::stream&                    s;
+    uint64_t                        last_write_ns;
+    std::string                     username;
+
+    connection(tcp::stream& s, const std::string& username):
+        s(s),
+        last_write_ns(0),
+        username(username)
+    {
+    }
 };
 
 static void handle_create_database(
@@ -743,16 +752,17 @@ handle_nop(connection& conn, const std::vector<parsed_data_token>& tokens)
 }
 
 static void
-stream_request_handler(std::unique_ptr<tcp::stream> s)
+stream_request_handler(connection& conn)
 {
     printf("Handling local %s remote %s.\n",
-           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+           conn.s.local_addr_string().c_str(),
+           conn.s.remote_addr_string().c_str());
 
-    connection conn{*s,0};
     process_stream(conn.s,commands,conn);
 
     printf("Teardown local %s remote %s.\n",
-           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+           conn.s.local_addr_string().c_str(),
+           conn.s.remote_addr_string().c_str());
 }
 
 static void
@@ -760,7 +770,10 @@ request_handler(std::unique_ptr<tcp::socket> sock)
 {
     sock->enable_keepalive();
     sock->nodelay();
-    stream_request_handler(std::move(sock));
+
+    std::unique_ptr<tcp::stream> stream(std::move(sock));
+    connection conn(*stream,"");
+    stream_request_handler(conn);
 }
 
 static void
@@ -782,8 +795,6 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     sock->set_send_timeout_us(3*1000000);
     sock->set_recv_timeout_us(3*1000000);
 
-    std::string username;
-    std::string password;
     std::unique_ptr<tcp::ssl::stream> s;
 
     try
@@ -791,40 +802,68 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
         try
         {
             s = sslctx->wrap(std::move(sock));
-
-            uint32_t dt = s->pop<uint32_t>();
-            if (dt != CT_AUTHENTICATE)
-                throw futil::errno_exception(EINVAL);
-
-            std::vector<parsed_data_token> tokens;
-            parse_cmd(*s,auth_command,tokens);
-
-            username = tokens[0].to_string();
-            password = tokens[1].to_string();
-            printf("Authenticating user %s from %s...\n",
-                   username.c_str(),s->remote_addr_string().c_str());
-            if (!root->verify_user(username,password))
-                throw futil::errno_exception(EPERM);
-            printf("Authentication from %s for user %s succeeded.\n",
-                   s->remote_addr_string().c_str(),
-                   username.c_str());
-
-            uint32_t status[2] = {DT_STATUS_CODE, 0};
-            s->send_all(&status,sizeof(status));
         }
         catch (const tcp::ssl::ssl_error_exception& e)
         {
             if (e.ssl_error == SSL_ERROR_WANT_READ)
                 printf("Zombie detected: %s\n",remote_addr_string.c_str());
+            else
+            {
+                printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
+                       e.what());
+            }
+
+            throw;
+        }
+        catch (const std::exception& e)
+        {
+            printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
+                   e.what());
+            throw;
+        }
+        catch (...)
+        {
+            printf("SSL wrap failure: %s (?)\n",remote_addr_string.c_str());
             throw;
         }
     }
+    catch (...)
+    {
+        uint64_t t1 = time_ns();
+        uint64_t nsecs = round_up_to_nearest_multiple(t1 - t0,
+                                                      (uint64_t)2000000000);
+        sleep_for_ns(nsecs + 1);
+        return;
+    }
+
+    connection conn(*s,"");
+
+    try
+    {
+        uint32_t ct = conn.s.pop<uint32_t>();
+        if (ct != CT_AUTHENTICATE)
+            throw futil::errno_exception(EINVAL);
+
+        std::vector<parsed_data_token> tokens;
+        parse_cmd(conn.s,auth_command,tokens);
+
+        conn.username = tokens[0].to_string();
+        printf("Authenticating user %s from %s...\n",
+               conn.username.c_str(),remote_addr_string.c_str());
+        if (!root->verify_user(conn.username,tokens[1].to_string()))
+            throw futil::errno_exception(EPERM);
+        printf("Authentication from %s for user %s succeeded.\n",
+               remote_addr_string.c_str(),conn.username.c_str());
+
+        uint32_t status[2] = {DT_STATUS_CODE, 0};
+        conn.s.send_all(&status,sizeof(status));
+    }
     catch (const std::exception& e)
     {
-        if (!username.empty())
+        if (!conn.username.empty())
         {
             printf("Authentication from %s for user %s failed.\n",
-                   remote_addr_string.c_str(),username.c_str());
+                   remote_addr_string.c_str(),conn.username.c_str());
         }
         else
         {
@@ -841,7 +880,7 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
 
     s->s->set_send_timeout_us(0);
     s->s->set_recv_timeout_us(0);
-    stream_request_handler(std::move(s));
+    stream_request_handler(conn);
 }
 
 static void
