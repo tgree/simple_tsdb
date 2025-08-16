@@ -12,6 +12,7 @@
 #include <sys/file.h>
 #include <dirent.h>
 #include <string.h>
+#include <stdarg.h>
 #include <string>
 #include <vector>
 
@@ -377,6 +378,21 @@ namespace futil
 #endif
         }
 
+        int vprintf(const char* fmt, va_list ap)
+        {
+            return ::vdprintf(fd,fmt,ap);
+        }
+
+        int printf(const char* fmt, ...) __PRINTF__(2,3)
+        {
+            va_list ap;
+            va_start(ap,fmt);
+            int rv = this->vprintf(fmt,ap);
+            va_end(ap);
+
+            return rv;
+        }
+
         constexpr file_descriptor():fd(-1) {}
         
         constexpr file_descriptor(int fd):fd(fd) {}
@@ -413,7 +429,7 @@ namespace futil
             auto* dirp = ::fdopendir(search_fd);
             if (dirp == NULL)
             {
-                printf("fdopendir returned NULL.\n");
+                ::printf("fdopendir returned NULL.\n");
                 throw errno_exception(EBADF);
             }
             struct dirent* dp;
