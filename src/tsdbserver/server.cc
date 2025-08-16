@@ -12,6 +12,11 @@
 
 #include <algorithm>
 #include <thread>
+#if IS_MACOS
+#include <pthread.h>
+#elif IS_LINUX
+#include <unistd.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -26,15 +31,33 @@ time_ns()
     return tp.tv_sec*1000000000ULL + tp.tv_nsec;
 }
 
+static uint64_t
+get_thread_id()
+{
+#if IS_MACOS
+    uint64_t thread_id;
+    int err = pthread_threadid_np(NULL,&thread_id);
+    if (err)
+        throw futil::errno_exception(err);
+    return thread_id;
+#elif IS_LINUX
+    return gettid();
+#else
+#error Dont know how to get a thread ID.
+#endif
+}
+
 struct connection
 {
     // Connection state.
     tcp::stream&                    s;
+    const uint64_t                  tid;
     uint64_t                        last_write_ns;
     std::string                     username;
 
     connection(tcp::stream& s, const std::string& username):
         s(s),
+        tid(get_thread_id()),
         last_write_ns(0),
         username(username)
     {
