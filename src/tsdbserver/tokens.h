@@ -179,8 +179,9 @@ template<typename Conn, typename ...Args>
 static void
 parse_and_exec(Conn& conn, const command_syntax<Conn&, Args...>& cs)
 {
-    std::vector<parsed_data_token> tokens;
-    parse_cmd(conn,cs,tokens);
+    std::vector<parsed_data_token> _tokens;
+    parse_cmd(conn,cs,_tokens);
+    auto& tokens = conn.log_tokens(cs.cmd_token,_tokens);
 
     uint32_t status[2] = {DT_STATUS_CODE, 0};
     try
@@ -203,6 +204,8 @@ process_stream(Conn& conn, const command_syntax<Args...> (&commands)[N]) try
 {
     for (;;)
     {
+        conn.log_idle();
+
         uint32_t ct;
         try
         {

@@ -79,14 +79,43 @@ struct connection
     std::string                     username;
 
     // Command state.
+    std::mutex                      command_lock;
+    uint64_t                        command_start_ns;
+    command_token                   ct;
+    std::vector<parsed_data_token>  tokens;
     lock_type                       lt;
+
+    void log_idle()
+    {
+        with_lock_guard (command_lock)
+        {
+            ct = (command_token)0;
+            lt = LT_NONE;
+            tokens.clear();
+        }
+    }
+
+    std::vector<parsed_data_token>& log_tokens(
+        command_token _ct, std::vector<parsed_data_token>& _tokens)
+    {
+        uint64_t now = time_ns();
+        with_lock_guard (command_lock)
+        {
+            command_start_ns = now;
+            ct = _ct;
+            tokens.swap(_tokens);
+        }
+        return tokens;
+    }
 
     connection(tcp::stream& s, const std::string& username):
         s(s),
         tid(get_thread_id()),
         established_s(time(NULL)),
         last_write_ns(0),
-        username(username)
+        username(username),
+        command_start_ns(0),
+        ct((command_token)0)
     {
         char time_str[128];
         struct tm t_tm;
