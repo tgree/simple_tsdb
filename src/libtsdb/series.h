@@ -162,8 +162,7 @@ namespace tsdb
                 m,series,
                 std::move(futil::file(futil::directory(m.dir,series),
                                       "time_first",O_RDWR).flock(LOCK_EX)),
-                futil::file(futil::directory(m.dir,series),
-                            "time_last",O_RDWR))
+                futil::file(futil::directory(m.dir,series),"time_last",O_RDWR))
         {
         }
         catch (const futil::errno_exception& e)
