@@ -840,7 +840,7 @@ stream_request_handler(connection& conn)
            conn.s.local_addr_string().c_str(),
            conn.s.remote_addr_string().c_str());
 
-    process_stream(conn.s,commands,conn);
+    process_stream(conn,commands);
 
     printf("Teardown local %s remote %s.\n",
            conn.s.local_addr_string().c_str(),
@@ -927,7 +927,7 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
             throw futil::errno_exception(EINVAL);
 
         std::vector<parsed_data_token> tokens;
-        parse_cmd(conn.s,auth_command,tokens);
+        parse_cmd(conn,auth_command,tokens);
 
         conn.username = tokens[0].to_string();
         printf("Authenticating user %s from %s...\n",

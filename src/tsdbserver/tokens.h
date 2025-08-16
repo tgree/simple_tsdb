@@ -109,16 +109,16 @@ struct command_syntax
 extern void
 debugf(const char* fmt, ...) __PRINTF__(1,2);
 
-template<typename ...Args>
+template<typename Conn, typename ...Args>
 static void
-parse_cmd(tcp::stream& s, const command_syntax<Args...>& cs,
+parse_cmd(Conn& conn, const command_syntax<Conn&, Args...>& cs,
     std::vector<parsed_data_token>& tokens)
 {
     debugf("Got command 0x%08X.\n",cs.cmd_token);
 
     for (auto dt : cs.data_tokens)
     {
-        uint32_t v = s.pop<uint32_t>();
+        uint32_t v = conn.s.template pop<uint32_t>();
         if (v != dt)
         {
             printf("Expected 0x%08X got 0x%08X\n",dt,v);
@@ -139,14 +139,14 @@ parse_cmd(tcp::stream& s, const command_syntax<Args...>& cs,
             case DT_FIELD_LIST:
             case DT_USERNAME:
             case DT_PASSWORD:
-                pdt.len = s.pop<uint16_t>();
+                pdt.len = conn.s.template pop<uint16_t>();
                 if (pdt.len >= 1024)
                 {
                     printf("String length %zu too long.\n",pdt.len);
                     throw futil::errno_exception(EINVAL);
                 }
                 pdt.data = (char*)malloc(pdt.len);
-                s.recv_all((char*)pdt.data,pdt.len);
+                conn.s.recv_all((char*)pdt.data,pdt.len);
                 tokens.push_back(std::move(pdt));
             break;
 
@@ -160,7 +160,7 @@ parse_cmd(tcp::stream& s, const command_syntax<Args...>& cs,
             case DT_NLIMIT:
             case DT_NLAST:
             case DT_WINDOW_NS:
-                pdt.u64 = s.pop<uint64_t>();
+                pdt.u64 = conn.s.template pop<uint64_t>();
                 tokens.push_back(std::move(pdt));
             break;
 
@@ -175,18 +175,17 @@ parse_cmd(tcp::stream& s, const command_syntax<Args...>& cs,
     }
 }
 
-template<typename ...Args>
+template<typename Conn, typename ...Args>
 static void
-parse_and_exec(tcp::stream& s, const command_syntax<Args...>& cs,
-    Args&&... args)
+parse_and_exec(Conn& conn, const command_syntax<Conn&, Args...>& cs)
 {
     std::vector<parsed_data_token> tokens;
-    parse_cmd(s,cs,tokens);
+    parse_cmd(conn,cs,tokens);
 
     uint32_t status[2] = {DT_STATUS_CODE, 0};
     try
     {
-        cs.handler(args...,tokens);
+        cs.handler(conn,tokens);
     }
     catch (const tsdb::exception& e)
     {
@@ -195,20 +194,19 @@ parse_and_exec(tcp::stream& s, const command_syntax<Args...>& cs,
     }
     
     debugf("Sending status %d...\n",(int32_t)status[1]);
-    s.send_all(status,sizeof(status));
+    conn.s.send_all(status,sizeof(status));
 }
 
-template<typename ...Args, size_t N>
+template<typename Conn, typename ...Args, size_t N>
 static void
-process_stream(tcp::stream& s, const command_syntax<Args...> (&commands)[N],
-    Args&&... args) try
+process_stream(Conn& conn, const command_syntax<Args...> (&commands)[N]) try
 {
     for (;;)
     {
         uint32_t ct;
         try
         {
-            ct = s.pop<uint32_t>();
+            ct = conn.s.template pop<uint32_t>();
         }
         catch (const futil::errno_exception& e)
         {
@@ -222,7 +220,7 @@ process_stream(tcp::stream& s, const command_syntax<Args...> (&commands)[N],
         {
             if (cmd.cmd_token == ct)
             {
-                parse_and_exec(s,cmd,args...);
+                parse_and_exec(conn,cmd);
                 found = true;
                 break;
             }

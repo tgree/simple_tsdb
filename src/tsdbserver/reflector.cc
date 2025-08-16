@@ -233,7 +233,7 @@ request_handler(std::unique_ptr<tcp::stream> s)
     connection conn{*s,c,0};
     s->enable_keepalive();
     s->nodelay();
-    process_stream(conn.s,commands,conn);
+    process_stream(conn,commands);
 
     printf("Teardown local %s remote %s.\n",
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
