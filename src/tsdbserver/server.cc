@@ -18,6 +18,14 @@
 #include <time.h>
 #include <inttypes.h>
 
+static uint64_t
+time_ns()
+{
+    struct timespec tp;
+    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
+    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
+}
+
 struct connection
 {
     tcp::stream&    s;
@@ -157,14 +165,6 @@ debugf(const char* fmt, ...)
     va_start(ap,fmt);
     root->vdebugf(fmt,ap);
     va_end(ap);
-}
-
-static uint64_t
-time_ns()
-{
-    struct timespec tp;
-    clock_gettime(CLOCK_MONOTONIC_RAW,&tp);
-    return tp.tv_sec*1000000000ULL + tp.tv_nsec;
 }
 
 static void
