@@ -179,7 +179,8 @@ struct connection
         last_write_ns(0),
         username(username),
         command_start_ns(0),
-        ct((command_token)0)
+        ct((command_token)0),
+        lt(LT_NONE)
     {
         char time_str[128];
         struct tm t_tm;
