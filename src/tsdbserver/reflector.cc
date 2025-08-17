@@ -651,6 +651,9 @@ main(int argc, const char* argv[])
         return -1;
     }
 
+    printf("Reflecting to %s:%u.\n",reflector_cfg.remote_host.c_str(),
+           reflector_cfg.remote_port);
+
     std::thread t(flush_workloop);
     t.detach();
 
