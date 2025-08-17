@@ -27,6 +27,14 @@
 
 struct connection;
 
+struct server_config
+{
+    std::string     cert_file;
+    std::string     key_file;
+    uint16_t        port = 4000;
+    uint16_t        info_port = 4001;
+};
+
 static std::mutex connection_lock;
 static kernel::kdlist<connection> connection_list;
 
@@ -1080,7 +1088,8 @@ socket4_workloop(uint16_t port)
 }
 
 static void
-ssl_workloop(const char* cert_file, const char* key_file, uint16_t port)
+ssl_workloop(const std::string& cert_file, const std::string& key_file,
+    uint16_t port)
 {
     tcp::ssl::server_context sslctx(cert_file,key_file);
     tcp::server_socket ss(net::ipv4::any_addr(port));
@@ -1167,20 +1176,76 @@ info_workloop(uint16_t port)
     }
 }
 
+static const std::string&
+get_part(const std::vector<std::string>& parts, size_t i, size_t line_num,
+    const char* err_msg)
+{
+    if (i >= parts.size())
+    {
+        throw std::invalid_argument(
+                str::printf("Line %zu: %s",line_num,err_msg));
+    }
+    return parts[i];
+}
+
+static void
+parse_server_config(const futil::path& path, server_config* sc) try
+{
+    futil::file server_fd(path,O_RDONLY);
+    futil::file::line line;
+    size_t line_num = 0;
+    for (const std::string& line : server_fd.lines())
+    {
+        ++line_num;
+
+        if (line.empty())
+            continue;
+        if (line[0] == '#')
+            continue;
+
+        auto parts = str::split(line);
+        if (parts[0] == "cert_file")
+        {
+            sc->cert_file = get_part(parts,1,line_num,
+                "expected 'cert_file <fullchain.pem>'");
+        }
+        else if (parts[0] == "key_file")
+        {
+            sc->key_file = get_part(parts,1,line_num,
+                "expected 'key_file <privkey.pem>'");
+        }
+        else if (parts[0] == "port")
+        {
+            sc->port = std::stoul(get_part(parts,1,line_num,
+                "expected 'port <port_number>'"));
+        }
+        else if (parts[0] == "info_port")
+        {
+            sc->info_port = std::stoul(get_part(parts,1,line_num,
+                "expected 'info_port <port_number>'"));
+        }
+    }
+
+    if (sc->cert_file.empty() && sc->key_file.empty())
+        return;
+    if (!sc->cert_file.empty() && !sc->key_file.empty())
+        return;
+    throw std::invalid_argument("Expected both cert_file and key_file");
+}
+catch (const futil::errno_exception& e)
+{
+    if (e.errnov == ENOENT)
+        return;
+    throw;
+}
+
 static void
 usage(const char* err)
 {
     printf("Usage: tsdbserver [options]\n"
-           "  [--ssl-files cert_file key_file]\n"
-           "    cert_file - path to fullchain.pem file\n"
-           "    key_file  - path to privkey.pem file\n"
            "  [--root root_dir]\n"
            "    root_dir  - path to root directory of database\n"
            "                (defaults to current working directory\n"
-           "  [--port port]\n"
-           "    port      - TCP listening port number (defaults to 4000)\n"
-           "  [--info-port port]\n"
-           "    port      - localhost TCP listening port (defaults to 4001)\n"
            "  [--no-debug]\n"
            "              - disable debug output\n"
            "  [--unbuffered]\n"
@@ -1194,10 +1259,6 @@ int
 main(int argc, const char* argv[])
 {
     const char* root_path = ".";
-    const char* cert_file = NULL;
-    const char* key_file = NULL;
-    uint16_t port = 4000;
-    uint16_t info_port = 4001;
     bool no_debug = false;
     bool unbuffered = false;
 
@@ -1205,18 +1266,7 @@ main(int argc, const char* argv[])
     {
         auto* arg  = argv[i];
         size_t rem = (size_t)argc - i - 1;
-        if (!strcmp(arg,"--ssl-files"))
-        {
-            if (rem < 2)
-            {
-                usage("Expected --ssl-files fullchain.pem privkey.pem");
-                return -1;
-            }
-            cert_file = argv[i + 1];
-            key_file  = argv[i + 2];
-            i += 3;
-        }
-        else if (!strcmp(arg,"--root"))
+        if (!strcmp(arg,"--root"))
         {
             if (!rem)
             {
@@ -1230,42 +1280,6 @@ main(int argc, const char* argv[])
         {
             usage(NULL);
             return 0;
-        }
-        else if (!strcmp(arg,"--port"))
-        {
-            if (!rem)
-            {
-                usage("Expected --port port");
-                return -1;
-            }
-            char* endptr;
-            port = strtoul(argv[i + 1],&endptr,10);
-            if (*endptr)
-            {
-                std::string err("Not a number: ");
-                err += argv[i + 1];
-                usage(err.c_str());
-                return -1;
-            }
-            i += 2;
-        }
-        else if (!strcmp(arg,"--info-port"))
-        {
-            if (!rem)
-            {
-                usage("Expected --info-port port");
-                return -1;
-            }
-            char* endptr;
-            info_port = strtoul(argv[i + 1],&endptr,10);
-            if (*endptr)
-            {
-                std::string err("Not a number: ");
-                err += argv[i + 1];
-                usage(err.c_str());
-                return -1;
-            }
-            i += 2;
         }
         else if (!strcmp(arg,"--no-debug"))
         {
@@ -1289,8 +1303,18 @@ main(int argc, const char* argv[])
     if (unbuffered)
         setlinebuf(stdout);
 
-
     printf("simple_tsdb " SIMPLE_TSDB_VERSION_STR " " GIT_VERSION "\n");
+
+    server_config server_cfg;
+    try
+    {
+        parse_server_config(futil::path(root_path,"server.cfg"),&server_cfg);
+    }
+    catch (const std::exception& e)
+    {
+        printf("Failed to parse server.cfg file: %s\n",e.what());
+        return -1;
+    }
 
     signal(SIGPIPE,SIG_IGN);
 
@@ -1299,11 +1323,11 @@ main(int argc, const char* argv[])
     printf("      WAL size: %zu points\n",root->config.wal_max_entries);
     printf("Write throttle: %zu ns\n",root->config.write_throttle_ns);
 
-    std::thread info_thread(info_workloop,info_port);
+    std::thread info_thread(info_workloop,server_cfg.info_port);
     info_thread.detach();
 
-    if (cert_file && key_file)
-        ssl_workloop(cert_file,key_file,port);
+    if (!server_cfg.cert_file.empty())
+        ssl_workloop(server_cfg.cert_file,server_cfg.key_file,server_cfg.port);
     else
-        socket4_workloop(port);
+        socket4_workloop(server_cfg.port);
 }
