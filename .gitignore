@@ -19,3 +19,6 @@ tags
 .DS_Store
 /python/*/dist/
 /python/*/*.egg-info/
+
+!/etc/fail2ban/filter.d
+!/etc/fail2ban/jail.d
