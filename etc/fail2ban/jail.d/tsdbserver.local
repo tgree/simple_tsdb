@@ -1,0 +1,5 @@
+[tsdbserver]
+enabled = true
+port = 4000
+filter = tsdbserver
+logpath = /var/log/syslog
