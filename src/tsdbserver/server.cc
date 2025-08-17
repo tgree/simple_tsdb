@@ -1111,7 +1111,6 @@ info_handler(std::unique_ptr<tcp::socket> sock)
                          "==================  ========================  "
                          "=====================  =====================  "
                          "============  =  =======\n";
-    uint64_t now = time_ns();
     with_lock_guard (connection_lock)
     {
         for (auto& conn : klist_elems(connection_list,link))
@@ -1120,6 +1119,7 @@ info_handler(std::unique_ptr<tcp::socket> sock)
             {
                 if (conn.ct)
                 {
+                    uint64_t now = time_ns();
                     uint64_t elapsed_ms = (now - conn.command_start_ns) / 1e6;
                     output += str::printf("0x%016" PRIu64 "  %-24s  %-21s  "
                                           "%-21s  %12" PRIu64 "  %s  %s\n",

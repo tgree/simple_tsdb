@@ -1,0 +1,9 @@
+[INCLUDES]
+before = common.conf
+after = tsdbserver.local
+
+[Definition]
+_daemon = tsdbserver
+failregex = ^%(__prefix_line)sZombie detected: <HOST>:\d+$
+            ^%(__prefix_line)sSSL wrap failure: <HOST>:\d+ .*$
+            ^%(__prefix_line)sAuthentication from <HOST>:\d+ .* failed\.$
