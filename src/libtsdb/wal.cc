@@ -8,11 +8,11 @@
 #include <hdr/auto_buf.h>
 #include <hdr/kmath.h>
 
-void
-tsdb::commit_wal(tsdb::series_write_lock& write_lock)
+static void
+commit_wal(tsdb::series_write_lock& write_lock)
 {
     // Figure out what it is we need to write.
-    wal_query wq(write_lock,write_lock.time_first,(uint64_t)-1,O_RDWR);
+    tsdb::wal_query wq(write_lock,write_lock.time_first,(uint64_t)-1,O_RDWR);
     if (!wq.nentries)
         return;
 
@@ -20,14 +20,14 @@ tsdb::commit_wal(tsdb::series_write_lock& write_lock)
     // store.
     size_t data_len = write_lock.m.compute_write_chunk_len(wq.nentries);
     auto_buf data(data_len);
-    write_chunk_index wci(write_lock.m,wq.nentries,0,data_len,data);
+    tsdb::write_chunk_index wci(write_lock.m,wq.nentries,0,data_len,data);
     for (size_t i=0; i<wq.nentries; ++i)
     {
         const auto& we = wq[i];
         wci.timestamps[i] = we.time_ns;
         for (size_t j=0; j<write_lock.m.fields.size(); ++j)
         {
-            auto& fti = ftinfos[write_lock.m.fields[j].type];
+            auto& fti = tsdb::ftinfos[write_lock.m.fields[j].type];
             wci.set_bitmap_bit(j,i,we.get_bitmap_bit(j));
             switch (fti.nbytes)
             {
@@ -251,7 +251,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
     if (wal_nentries + wci.npoints > wal_max_entries)
     {
         // Write the WAL points into the main data store.
-        tsdb::commit_wal(write_lock);
+        commit_wal(write_lock);
         wal_nentries = 0;
 
         // If the client is giving us a large chunk of points then that should
