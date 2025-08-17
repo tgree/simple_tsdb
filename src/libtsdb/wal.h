@@ -211,7 +211,6 @@ namespace tsdb
     {
         const series_read_lock&     read_lock;
         const size_t                entry_size;
-        futil::file                 wal_fd;
         futil::mapping              wal_mm;
         wal_entry_iterator          _begin;
         wal_entry_iterator          _end;
@@ -227,8 +226,8 @@ namespace tsdb
                   int oflag = O_RDONLY):
             read_lock(read_lock),
             entry_size(sizeof(wal_entry) + read_lock.m.fields.size()*8),
-            wal_fd(read_lock.series_dir,"wal",oflag),
-            wal_mm(0,wal_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,wal_fd.fd,0),
+            wal_mm(0,read_lock.wal_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
+                   read_lock.wal_fd.fd,0),
             _begin(std::lower_bound(
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size),
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size) +
@@ -243,9 +242,6 @@ namespace tsdb
         {
         }
     };
-
-    // Commit all points from the WAL to the main data store.
-    void commit_wal(series_write_lock& write_lock);
 
     // Write data points to the write-ahead log.
     //
