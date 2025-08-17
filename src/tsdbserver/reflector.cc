@@ -587,6 +587,8 @@ usage(const char* err)
            "              - disable debug output\n"
            "  --reflector-cfg\n"
            "              - path to reflector configuration file\n"
+           "  [--unbuffered]\n"
+           "              - unbuffered STDOUT output\n"
            );
     if (err)
         printf("\n%s\n",err);
