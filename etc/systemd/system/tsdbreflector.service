@@ -1,6 +1,6 @@
 [Unit]
 Description=Simple TSDB reflector
-After=network-online.target
+After=network.target
 
 [Service]
 User=simple_tsdb
