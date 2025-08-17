@@ -1183,6 +1183,8 @@ usage(const char* err)
            "    port      - localhost TCP listening port (defaults to 4001)\n"
            "  [--no-debug]\n"
            "              - disable debug output\n"
+           "  [--unbuffered]\n"
+           "              - unbuffered STDOUT output\n"
            );
     if (err)
         printf("\n%s\n",err);
