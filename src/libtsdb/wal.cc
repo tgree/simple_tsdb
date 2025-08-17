@@ -4,20 +4,17 @@
 #include "write.h"
 #include "select_op.h"
 #include "database.h"
+#include <futil/xact.h>
 #include <hdr/auto_buf.h>
 #include <hdr/kmath.h>
 
 void
-tsdb::commit_wal(series_write_lock& write_lock)
+tsdb::commit_wal(tsdb::series_write_lock& write_lock)
 {
     // Figure out what it is we need to write.
     wal_query wq(write_lock,write_lock.time_first,(uint64_t)-1,O_RDWR);
     if (!wq.nentries)
-    {
-        write_lock.wal_fd.truncate(0);
-        write_lock.wal_fd.fsync();
         return;
-    }
 
     // Marshal the WAL row entries into the columns needed by the main data
     // store.
@@ -49,15 +46,8 @@ tsdb::commit_wal(series_write_lock& write_lock)
         }
     }
 
-    // Write and then truncate.  We don't need to do a full or barrier sync
-    // here since we don't really care if the truncate happens or not - if we
-    // crash before truncating we are just left with points that are covered
-    // by the main data store's time_last value, so we skip them for all
-    // operations.  We will re-attempt a truncate on the next write to the
-    // series after recovering from the crash.
+    // Write and to the main data store, but leave the WAL untouched for now.
     tsdb::write_series(write_lock,wci);
-    write_lock.wal_fd.truncate(0);
-    write_lock.wal_fd.fsync();
 }
 
 void
@@ -257,18 +247,32 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
 
     // See if we need to commit.
     const size_t wal_max_entries = write_lock.m.db.root.config.wal_max_entries;
+    bool did_commit = false;
     if (wal_nentries + wci.npoints > wal_max_entries)
     {
+        // Write the WAL points into the main data store.
         tsdb::commit_wal(write_lock);
         wal_nentries = 0;
 
-        // The WAL is now empty.  If the client is giving us a large chunk of
-        // points then that should also go directly into the main data store.
+        // If the client is giving us a large chunk of points then that should
+        // also go directly into the main data store.  We need to zap the WAL
+        // first.
         if (wci.npoints > wal_max_entries)
         {
+            // Replace the WAL with a new empty one.
+            futil::xact_mktemp tmp_wal_fd(write_lock.m.db.root.tmp_dir,0660);
+            tmp_wal_fd.fsync_and_barrier();
+            futil::rename(write_lock.m.db.root.tmp_dir,tmp_wal_fd.name,
+                          write_lock.series_dir,"wal");
+            tmp_wal_fd.commit();
+            write_lock.series_dir.fsync_and_flush();
+            write_lock.wal_fd.swap(tmp_wal_fd);
+
             tsdb::write_series(write_lock,wci);
             return;
         }
+
+        did_commit = true;
     }
 
     // Convert the column-based write format into WAL row-based format.
@@ -316,7 +320,26 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
     // cross two 16K blocks so need to write 20K.  Without doing any real math,
     // 12.5K is around the middle of that range and maybe we also need to
     // update metadata from time to time.
-    write_lock.wal_fd.lseek(wal_nentries*entry_size,SEEK_SET);
-    write_lock.wal_fd.write_all(rows_buf.data,entry_size*wci.npoints);
-    write_lock.wal_fd.fsync_and_flush();
+    if (did_commit)
+    {
+        // All WAL points have been committed to the main data store.  We
+        // replace the WAL file with a new one that just has our new points.
+        // We avoid truncating and/or overwriting the existing file because
+        // this could corrupt points that some reader is viewing.
+        futil::xact_mktemp tmp_wal_fd(write_lock.m.db.root.tmp_dir,0660);
+        tmp_wal_fd.write_all(rows_buf.data,entry_size*wci.npoints);
+        tmp_wal_fd.fsync_and_barrier();
+        futil::rename(write_lock.m.db.root.tmp_dir,tmp_wal_fd.name,
+                      write_lock.series_dir,"wal");
+        tmp_wal_fd.commit();
+        write_lock.series_dir.fsync_and_flush();
+        write_lock.wal_fd.swap(tmp_wal_fd);
+    }
+    else
+    {
+        // Append our new points to the existing WAL.
+        write_lock.wal_fd.lseek(wal_nentries*entry_size,SEEK_SET);
+        write_lock.wal_fd.write_all(rows_buf.data,entry_size*wci.npoints);
+        write_lock.wal_fd.fsync_and_flush();
+    }
 }
