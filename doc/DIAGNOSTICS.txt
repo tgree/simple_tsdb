@@ -1,0 +1,10 @@
+simple_tsdb has a simple diagnostics TCP port that can be accessed via
+localhost on port number 4001 (or as specified by --info-port <port> when
+launching tsdbserver).  Connecting to this port causes a dump of all
+connections and what they are doing, and then the socket is immediately
+closed.  You can use the shell "watch" command to periodically dump this to
+your console, much like "top":
+
+    watch -n1 "nc -Nd 127.0.0.1 4001"
+
+That will display an updated dump of the connection table every second.
