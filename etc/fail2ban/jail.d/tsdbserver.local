@@ -1,5 +1,5 @@
 [tsdbserver]
 enabled = true
+backend = systemd[journalflags=1]
 port = 4000
 filter = tsdbserver
-logpath = /var/log/syslog
