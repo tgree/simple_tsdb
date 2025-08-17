@@ -604,7 +604,7 @@ namespace futil
             operator bool() const {return !eof;}
         };
 
-        line read_line(char terminator = '\n')
+        line read_line(char terminator = '\n') const
         {
             // Reads lines, separated by the specified terminator string.
             // Strips the terminator string from the return value.
