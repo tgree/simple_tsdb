@@ -963,7 +963,7 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     printf("Authenticating local %s remote %s.\n",
            local_addr_string.c_str(),remote_addr_string.c_str());
 
-    // Set a 3-second timeout on the socket and then attemp to wrap() it into
+    // Set a 3-second timeout on the socket and then attempt to wrap() it into
     // an SSL stream.  The timeout should handle the case where the remote
     // just doesn't send anything.
     sock->enable_keepalive();
