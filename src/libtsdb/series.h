@@ -81,16 +81,12 @@ namespace tsdb
 
     // Obtains a read lock on a series.
     // This acquires a shared lock on time_first so that no delete operation
-    // can happen while we are reading and a shared lock on time_last so that
-    // no commit/truncate WAL operation can happen while we may be accessing it.
-    // This means that we can have many readers on a series (concurrent queries)
-    // but that any reader will be mutally exclusive with a writer, and a long
-    // write operation will block all readers.
+    // can happen while we are reading.
     //
     // Order of operations:
     //  1. Acquire shared lock on time_first_fd [RD].
     //  2. Open WAL to get a file reference [RD].
-    //  3. Acquire shared lock on time_last_fd [RD].
+    //  3. Open time_last [RD].
     struct series_read_lock : public _series_lock
     {
         futil::file wal_fd;
@@ -101,7 +97,7 @@ namespace tsdb
             _series_lock(m,series,O_RDONLY),
             wal_fd(series_dir,"wal",O_RDONLY),
             time_last_fd(series_dir,"time_last",O_RDONLY),
-            time_last(time_last_fd.flock(LOCK_SH).read_u64())
+            time_last(time_last_fd.read_u64())
         {
             time_last_fd.lseek(0,SEEK_SET);
         }
