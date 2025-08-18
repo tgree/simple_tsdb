@@ -364,8 +364,6 @@ class SumsOP:
         self.client    = client
         self.fields    = fields
         self.window_ns = window_ns
-        self.sums      = []
-        self.npoints   = []
 
         database = database.encode()
         measurement = measurement.encode()
