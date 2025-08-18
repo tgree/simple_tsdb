@@ -3,6 +3,7 @@
 #ifndef __SRC_FUTIL_FUTIL_H
 #define __SRC_FUTIL_FUTIL_H
 
+#include <hdr/kassert.h>
 #include <hdr/compiler.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -604,7 +605,7 @@ namespace futil
             operator bool() const {return !eof;}
         };
 
-        line read_line(char terminator = '\n')
+        line read_line(char terminator = '\n') const
         {
             // Reads lines, separated by the specified terminator string.
             // Strips the terminator string from the return value.
@@ -627,6 +628,57 @@ namespace futil
 
                 line += c;
             }
+        }
+
+        struct lines_range
+        {
+            const file& f;
+            const char terminator;
+
+            struct lines_sentinel {};
+            struct lines_iterator
+            {
+                const lines_range& lr;
+                line l;
+                bool at_eof;
+
+                constexpr const std::string& operator*() const {return l.text;}
+                lines_iterator& operator++()
+                {
+                    kassert(!at_eof);
+                    at_eof = l.eof;
+                    if (!at_eof)
+                        l = lr.f.read_line(lr.terminator);
+                    return *this;
+                }
+
+                constexpr bool operator==(const lines_sentinel&)
+                {
+                    return at_eof;
+                }
+
+                lines_iterator(const lines_range& lr):
+                    lr(lr),
+                    l(lr.f.read_line(lr.terminator)),
+                    at_eof(false)
+                {
+                }
+            };
+
+
+            auto begin() const {return lines_iterator(*this);}
+            constexpr auto end() const {return lines_sentinel{};}
+
+            constexpr lines_range(const file& f, char terminator = '\n'):
+                f(f),
+                terminator(terminator)
+            {
+            }
+        };
+
+        constexpr lines_range lines(char terminator = '\n') const
+        {
+            return lines_range{*this,terminator};
         }
 
         void write_all(const void* _p, size_t n) const

@@ -23,13 +23,12 @@
 
 struct reflector_config
 {
+    uint16_t                            port = 4000;
     std::string                         remote_host;
-    uint16_t                            remote_port;
+    uint16_t                            remote_port = 4000;
     std::string                         remote_user;
     std::string                         remote_password;
     std::map<std::string,std::string>   db_map;
-
-    reflector_config():remote_port(0) {}
 };
 
 struct db_mapping
@@ -484,75 +483,71 @@ flush_workloop()
     }
 }
 
+static const std::string&
+get_part(const std::vector<std::string>& parts, size_t i, size_t line_num,
+    const char* err_msg)
+{
+    if (i >= parts.size())
+    {
+        throw std::invalid_argument(
+                str::printf("Line %zu: %s",line_num,err_msg));
+    }
+    return parts[i];
+}
+
 static void
-parse_reflector_config(const char* path)
+parse_reflector_config(const char* path, reflector_config* rc)
 {
     futil::file reflector_fd(path,O_RDONLY);
     futil::file::line line;
     size_t line_num = 0;
-    do
+    for (const std::string& line : reflector_fd.lines())
     {
         ++line_num;
 
-        line = reflector_fd.read_line();
-        if (line.text.empty())
+        if (line.empty())
             continue;
-        if (line.text[0] == '#')
+        if (line[0] == '#')
             continue;
 
-        std::vector<std::string> parts = str::split(line.text);
-        if (parts[0] == "remote_host")
+        std::vector<std::string> parts = str::split(line);
+        if (parts[0] == "port")
         {
-            if (parts.size() != 2)
-            {
-                throw std::invalid_argument(str::printf(
-                    "Line %zu: expected 'remote_host <host_or_ip>'",line_num));
-            }
-            reflector_cfg.remote_host = parts[1];
+            rc->port = std::stoul(get_part(parts,1,line_num,
+                "expected 'port <port_number>'"));
+        }
+        else if (parts[0] == "remote_host")
+        {
+            rc->remote_host = get_part(parts,1,line_num,
+                "expected 'remote_host <host_or_ip>'");
         }
         else if (parts[0] == "remote_port")
         {
-            if (parts.size() != 2)
-            {
-                throw std::invalid_argument(str::printf(
-                    "Line %zu: expected 'remote_port <port_number>'",line_num));
-            }
-            reflector_cfg.remote_port = std::stoul(parts[1]);
+            rc->remote_port = std::stoul(get_part(parts,1,line_num,
+                "expected 'remote_port <port_number>'"));
         }
         else if (parts[0] == "remote_user")
         {
-            if (parts.size() != 2)
-            {
-                throw std::invalid_argument(str::printf(
-                    "Line %zu: expected 'remote_user <username>'",line_num));
-            }
-            reflector_cfg.remote_user = parts[1];
+            rc->remote_user = get_part(parts,1,line_num,
+                "expected 'remote_user <username>'");
         }
         else if (parts[0] == "remote_password")
         {
-            if (parts.size() != 2)
-            {
-                throw std::invalid_argument(str::printf(
-                    "Line %zu: expected 'remote_password <password>'",
-                    line_num));
-            }
-            reflector_cfg.remote_password = parts[1];
+            rc->remote_password = get_part(parts,1,line_num,
+                "expected 'remote_password <password>'");
         }
         else if (parts[0] == "map")
         {
-            if (parts.size() != 3)
-            {
-                throw std::invalid_argument(str::printf(
-                    "Line %zu: expected 'map <local_db> <remote_db>'",
-                    line_num));
-            }
-            auto [iter, ok] =
-                reflector_cfg.db_map.try_emplace(parts[1],parts[2]);
+            auto local_db = get_part(parts,1,line_num,
+                "expected 'map <local_db> <remote_db>'");
+            auto remote_db = get_part(parts,2,line_num,
+                "expected 'map <local_db> <remote_db>'");
+            auto [iter, ok] = rc->db_map.try_emplace(local_db,remote_db);
             if (!ok)
             {
                 throw std::invalid_argument(str::printf(
                     "Line %zu: local database '%s' already mapped'",
-                    line_num,parts[1].c_str()));
+                    line_num,local_db.c_str()));
             }
         }
         else
@@ -562,15 +557,13 @@ parse_reflector_config(const char* path)
         }
     } while (line);
 
-    if (reflector_cfg.remote_host.empty())
+    if (rc->remote_host.empty())
         throw std::invalid_argument("Missing 'remote_host'");
-    if (reflector_cfg.remote_port == 0)
-        throw std::invalid_argument("Missing 'remote_port'");
-    if (reflector_cfg.remote_user.empty())
+    if (rc->remote_user.empty())
         throw std::invalid_argument("Missing 'remote_user'");
-    if (reflector_cfg.remote_password.empty())
+    if (rc->remote_password.empty())
         throw std::invalid_argument("Missing 'remote_password'");
-    if (reflector_cfg.db_map.empty())
+    if (rc->db_map.empty())
         throw std::invalid_argument("No databases mapped");
 }
 
@@ -581,12 +574,10 @@ usage(const char* err)
            "  [--root root_dir]\n"
            "    root_dir  - path to root directory of database\n"
            "                (defaults to current working directory\n"
-           "  [--port port]\n"
-           "    port      - TCP listening port number (defaults to 4000)\n"
            "  [--no-debug]\n"
            "              - disable debug output\n"
-           "  --reflector-cfg\n"
-           "              - path to reflector configuration file\n"
+           "  [--unbuffered]\n"
+           "              - unbuffered STDOUT output\n"
            );
     if (err)
         printf("\n%s\n",err);
@@ -596,8 +587,6 @@ int
 main(int argc, const char* argv[])
 {
     const char* root_path = ".";
-    const char* reflector_cfg_path = NULL;
-    uint16_t port = 4000;
     bool no_debug = false;
     bool unbuffered = false;
 
@@ -620,24 +609,6 @@ main(int argc, const char* argv[])
             usage(NULL);
             return 0;
         }
-        else if (!strcmp(arg,"--port"))
-        {
-            if (!rem)
-            {
-                usage("Expected --port port");
-                return -1;
-            }
-            char* endptr;
-            port = strtoul(argv[i + 1],&endptr,10);
-            if (*endptr)
-            {
-                std::string err("Not a number: ");
-                err += argv[i + 1];
-                usage(err.c_str());
-                return -1;
-            }
-            i += 2;
-        }
         else if (!strcmp(arg,"--no-debug"))
         {
             no_debug = true;
@@ -648,16 +619,6 @@ main(int argc, const char* argv[])
             unbuffered = true;
             ++i;
         }
-        else if (!strcmp(arg,"--reflector-cfg"))
-        {
-            if (!rem)
-            {
-                usage("Expected --reflector-cfg reflector.cfg");
-                return -1;
-            }
-            reflector_cfg_path = argv[i + 1];
-            i += 2;
-        }
         else
         {
             std::string err("Unrecognized argument: ");
@@ -665,12 +626,6 @@ main(int argc, const char* argv[])
             usage(err.c_str());
             return -1;
         }
-    }
-
-    if (!reflector_cfg_path)
-    {
-        usage("Missing --reflector-cfg argument");
-        return -1;
     }
 
     if (unbuffered)
@@ -687,7 +642,8 @@ main(int argc, const char* argv[])
 
     try
     {
-        parse_reflector_config(reflector_cfg_path);
+        parse_reflector_config(futil::path(root_path,"reflector.cfg"),
+                               &reflector_cfg);
     }
     catch (const std::exception& e)
     {
@@ -695,8 +651,11 @@ main(int argc, const char* argv[])
         return -1;
     }
 
+    printf("Reflecting to %s:%u.\n",reflector_cfg.remote_host.c_str(),
+           reflector_cfg.remote_port);
+
     std::thread t(flush_workloop);
     t.detach();
 
-    socket4_workloop(port);
+    socket4_workloop(reflector_cfg.port);
 }
