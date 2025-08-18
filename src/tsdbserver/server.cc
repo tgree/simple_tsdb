@@ -1105,10 +1105,10 @@ static void
 info_handler(std::unique_ptr<tcp::socket> sock)
 {
     size_t nconnections = 0;
-    std::string output = "TID                 Established               "
+    std::string output = "TID      Established               "
                          "Username               Client IP              "
                          "Elapsed (ms)  L  Command\n"
-                         "==================  ========================  "
+                         "=======  ========================  "
                          "=====================  =====================  "
                          "============  =  =======\n";
     with_lock_guard (connection_lock)
@@ -1121,7 +1121,7 @@ info_handler(std::unique_ptr<tcp::socket> sock)
                 {
                     uint64_t now = time_ns();
                     uint64_t elapsed_ms = (now - conn.command_start_ns) / 1e6;
-                    output += str::printf("0x%016" PRIu64 "  %-24s  %-21s  "
+                    output += str::printf("%-7" PRIu64 "  %-24s  %-21s  "
                                           "%-21s  %12" PRIu64 "  %s  %s\n",
                                           conn.tid,conn.established_str.c_str(),
                                           conn.username.c_str(),
@@ -1131,7 +1131,7 @@ info_handler(std::unique_ptr<tcp::socket> sock)
                 }
                 else
                 {
-                    output += str::printf("0x%016" PRIu64 "  %-24s  %-21s  "
+                    output += str::printf("%-7" PRIu64 "  %-24s  %-21s  "
                                           "%-21s  %12s  %s  %s\n",
                                           conn.tid,conn.established_str.c_str(),
                                           conn.username.c_str(),
