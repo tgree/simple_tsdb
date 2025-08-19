@@ -1102,8 +1102,6 @@ class Client:
                             window_ns):
         t0 = timestamp_to_int(t0)
         t1 = timestamp_to_int(t1)
-        print(t0)
-        print(t1)
         op = self.sum_points(database, measurement, series, fields, t0, t1,
                              window_ns)
         results = GetAllPointsMeanResult(fields)
