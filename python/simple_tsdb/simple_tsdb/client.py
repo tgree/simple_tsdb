@@ -4,6 +4,7 @@ import socket
 import struct
 import math
 import ssl
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -127,6 +128,23 @@ def round_up(v, K):
     Rounds up to the nearest multiple of K.
     '''
     return ceil_div(v, K) * K
+
+
+def timestamp_to_int(t):
+    '''
+    Converts a timestamp to an integer number of nanoseconds since the epoch.
+    If t is already an integer, it is simply returned.  Otherwise, we try to
+    convert it somehow.
+    '''
+    if isinstance(t, int):
+        return t
+    if isinstance(t, str):
+        # Time strings of the form that we get from Grafana:
+        #   2025-08-18T23:28:10.478Z
+        dt = datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%fZ')
+        dt = dt.replace(tzinfo=timezone.utc)
+        return round(dt.timestamp() * 1e9)
+    raise TypeError('Cannot convert type %s to time_ns.' % type(t))
 
 
 class Field:
@@ -364,8 +382,6 @@ class SumsOP:
         self.client    = client
         self.fields    = fields
         self.window_ns = window_ns
-        self.sums      = []
-        self.npoints   = []
 
         database = database.encode()
         measurement = measurement.encode()
@@ -876,6 +892,13 @@ class Connection:
         return IntegralResult(time_first, time_last, bitmap, integrals)
 
 
+class GetAllPointsMeanResult:
+    def __init__(self, fields):
+        self.fields  = fields[:]
+        self.time_ns = np.array([], dtype=np.uint64)
+        self.columns = {name : [] for name in fields}
+
+
 class Client:
     def __init__(self, host='127.0.0.1', port=4000, credentials=None):
         self.host        = host
@@ -1074,3 +1097,24 @@ class Client:
         except:  # noqa: E722
             self.close()
             raise
+
+    def get_all_points_mean(self, database, measurement, series, fields, t0, t1,
+                            window_ns):
+        t0 = timestamp_to_int(t0)
+        t1 = timestamp_to_int(t1)
+        print(t0)
+        print(t1)
+        op = self.sum_points(database, measurement, series, fields, t0, t1,
+                             window_ns)
+        results = GetAllPointsMeanResult(fields)
+        while True:
+            chunk = op.read_chunk()
+            if chunk is None:
+                return results
+
+            results.time_ns = np.concatenate((results.time_ns,
+                                              chunk.timestamps))
+            with np.errstate(divide='ignore', invalid='ignore'):
+                for i, f in enumerate(op.fields):
+                    results.columns[f] = np.concatenate(
+                        (results.columns[f], chunk.sums[i] / chunk.npoints[i]))
