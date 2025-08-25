@@ -257,24 +257,38 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     --t0_index_slot;
     --t1_index_slot;
 
-    // Now, we need to map both slots and find the beginning and ending of the
-    // target range.
     futil::directory time_ns_dir(read_lock.series_dir,"time_ns");
-    futil::file t0_file(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
+
+    // Map the t0 slot and find the beginning of the target range.  If we hit
+    // in the gap at the end of the slot, advance by one.
+    const uint64_t* t0_data_begin;
+    const uint64_t* t0_data_end;
+    const uint64_t* t0_lower;
+    for (size_t i=0; i<2; ++i)
+    {
+        futil::file t0_file(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
+        auto t0_mmap = t0_file.mmap(NULL,t0_file.lseek(0,SEEK_END),PROT_READ,
+                                    MAP_SHARED,0);
+        t0_data_begin = (const uint64_t*)t0_mmap.addr;
+        t0_data_end = t0_data_begin + t0_mmap.len/8;
+        t0_lower = std::lower_bound(t0_data_begin,t0_data_end,t0);
+
+        if (t0_lower < t0_data_end)
+            break;
+
+        ++t0_index_slot;
+        if (t0_index_slot == index_end || t1_index_slot < t0_index_slot)
+            return;
+    }
+    size_t t0_index = t0_lower - t0_data_begin;
+
+    // Map the t1 slot and find the end of the target range.
     futil::file t1_file(time_ns_dir,t1_index_slot->timestamp_file,O_RDONLY);
-    auto t0_mmap = t0_file.mmap(NULL,t0_file.lseek(0,SEEK_END),PROT_READ,
-                                MAP_SHARED,0);
     auto t1_mmap = t1_file.mmap(NULL,t1_file.lseek(0,SEEK_END),PROT_READ,
                                 MAP_SHARED,0);
-
-    // Search for the beginning and end timestamps.
-    auto* t0_data_begin = (const uint64_t*)t0_mmap.addr;
     auto* t1_data_begin = (const uint64_t*)t1_mmap.addr;
-    auto* t0_data_end = t0_data_begin + t0_mmap.len/8;
     auto* t1_data_end = t1_data_begin + t1_mmap.len/8;
-    auto* t0_lower = std::lower_bound(t0_data_begin,t0_data_end,t0);
     auto* t1_upper = std::upper_bound(t1_data_begin,t1_data_end,t1);
-    size_t t0_index = t0_lower - t0_data_begin;
     size_t t1_index = t1_upper - t1_data_begin;
 
     // Figure out how many full middle slots there are.
@@ -323,7 +337,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         // Extract the timestamp from the right index.
         size_t t1_index = t1_upper - t1_data_begin;
         t0_index = (t1_index - rem_limit) & (chunk_npoints - 1);
-        t0_file.open(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
+        futil::file t0_file(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
         t0_file.lseek(t0_index*8,SEEK_SET);
         t0 = t0_file.read_u64();
     }
