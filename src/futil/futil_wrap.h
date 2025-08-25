@@ -353,6 +353,7 @@ namespace futil
 
     inline void mkdirat(int at_fd, const char* path, mode_t mode)
     {
+        // mkdirat() doesn't seem to return EINTR.
         if (::mkdirat(at_fd,path,mode) == -1)
             throw errno_exception(errno);
     }
@@ -366,6 +367,7 @@ namespace futil
 
     inline void mkdirat_if_not_exists(int at_fd, const char* path, mode_t mode)
     {
+        // mkdirat() doesn't seem to return EINTR.
         if (::mkdirat(at_fd,path,mode) == -1 && errno != EEXIST)
             throw errno_exception(errno);
     }
@@ -386,18 +388,21 @@ namespace futil
 
     inline void unlinkat(int at_fd, const char* path, int flag)
     {
+        // unlinkat() doesn't seem to return EINTR.
         if (::unlinkat(at_fd,path,flag) == -1)
             throw errno_exception(errno);
     }
 
     inline void unlink_if_exists(const char* path)
     {
+        // unlink() doesn't seem to return EINTR.
         if (::unlink(path) == -1 && errno != ENOENT)
             throw errno_exception(errno);
     }
 
     inline void unlinkat_if_exists(int at_fd, const char* path, int flag)
     {
+        // unlinkat() doesn't seem to return EINTR.
         if (::unlinkat(at_fd,path,flag) == -1 && errno != ENOENT)
             throw errno_exception(errno);
     }
@@ -411,6 +416,7 @@ namespace futil
 
     inline void renameat(int fromfd, const char* from, int tofd, const char* to)
     {
+        // renameat() doesn't seem to return EINTR.
         if (::renameat(fromfd,from,tofd,to) == -1)
             throw errno_exception(errno);
     }
