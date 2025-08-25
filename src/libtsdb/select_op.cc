@@ -52,6 +52,11 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
                       index_fd.fd,0),
     index_begin = (const index_entry*)index_mapping.addr;
     index_end = index_begin + index_mapping.len / sizeof(index_entry);
+    while (index_end > index_begin &&
+           (index_end-1)->time_ns > read_lock.time_last)
+    {
+        --index_end;
+    }
 }
 
 void
