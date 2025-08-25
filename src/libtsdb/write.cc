@@ -66,17 +66,22 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     // overwrites - that is a programmer error.
     kassert(wci.timestamps[0] > write_lock.time_last);
 
-    // ************ Index search and crash recovery truncation  **************
-    // Open the index file and the most recent timestamp file if it exists, and
-    // perform validation checking on it if found.
+    // Find all the directories of interest and open the index file.
     futil::file index_fd(write_lock.series_dir,"index",O_RDWR);
     futil::directory time_ns_dir(write_lock.series_dir,"time_ns");
     futil::directory fields_dir(write_lock.series_dir,"fields");
     futil::directory bitmaps_dir(write_lock.series_dir,"bitmaps");
     field_vector<futil::directory> field_dirs;
+    field_vector<futil::directory> bitmap_dirs;
     for (const auto& field : write_lock.m.fields)
+    {
         field_dirs.emplace_back(fields_dir,field.name);
+        bitmap_dirs.emplace_back(bitmaps_dir,field.name);
+    }
 
+    // ************ Index search and crash recovery truncation  **************
+    // Open the index file and the most recent timestamp file if it exists, and
+    // perform validation checking on it if found.
     futil::file tail_fd;
     field_vector<futil::path> field_file_paths;
     field_vector<futil::file> field_fds;
@@ -333,20 +338,16 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             bitmap_fds.clear();
             for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
-                futil::directory field_dir(fields_dir,
-                                           write_lock.m.fields[i].name);
-                field_fds.emplace_back(field_dir,time_data_str,
+                field_fds.emplace_back(field_dirs[i],time_data_str,
                                        O_CREAT | O_TRUNC | O_RDWR,0660);
                 field_fds[i].fsync();
-                field_dir.fsync();
+                field_dirs[i].fsync();
 
-                futil::directory bitmap_dir(bitmaps_dir,
-                                            write_lock.m.fields[i].name);
-                bitmap_fds.emplace_back(bitmap_dir,time_data_str,
+                bitmap_fds.emplace_back(bitmap_dirs[i],time_data_str,
                                         O_CREAT | O_TRUNC | O_RDWR,0660);
                 bitmap_fds[i].truncate(chunk_npoints/8);
                 bitmap_fds[i].fsync();
-                bitmap_dir.fsync();
+                bitmap_dirs[i].fsync();
             }
             fields_dir.fsync();
             bitmaps_dir.fsync();
