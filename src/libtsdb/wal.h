@@ -211,6 +211,8 @@ namespace tsdb
     {
         const series_read_lock&     read_lock;
         const size_t                entry_size;
+        const uint64_t              t0;
+        const uint64_t              t1;
         futil::mapping              wal_mm;
         wal_entry_iterator          _begin;
         wal_entry_iterator          _end;
@@ -222,23 +224,63 @@ namespace tsdb
         wal_entry_iterator back() const {return _end - 1;}
         const wal_entry& operator[](size_t i) const {return begin()[i];}
 
-        wal_query(const series_read_lock& read_lock, uint64_t t0, uint64_t t1,
+        // Return all WAL points in the range [t0, t1] that have not been
+        // comitted to the chunk store.
+        //
+        // A WAL query is a bit complicated, because it has to skip points that
+        // exist in the chunk store.  This means we need to increment t0 and t1
+        // past the chunk store before doing the query.  time_last is the last
+        // timestamp in the chunk store and time_first is the first valid
+        // series timestamp. If time_first is past time_last, the chunk store
+        // is empty and we may have deleted into the future and the first valid
+        // point in the WAL would be time_first.  Otherwise, there is a live
+        // range in the chunk store and the first valid point in the WAL would
+        // be just past time_last.  So:
+        //
+        //  1. If time_first <= time_last, we should only return points in
+        //     [time_last + 1, ...].
+        //  2. If time_first > time_last, we should only return points in
+        //     [time_first, ...].
+        //
+        // This reduces to:
+        //
+        //      [MAX(time_last + 1, time_first), ...]
+        //
+        // Now, t0 could already be past that minimum value, so we set it as
+        // follows:
+        //
+        //      t0' = MAX(t0, time_last + 1, time_first)
+        //
+        // We also need to increment t1 past any points in the chunk store.  If
+        // an increment is necessary, then that means that the entire query
+        // range was in the chunk store already and we should return an empty
+        // result.  If the query range was also backwards (t0 > t1) then we
+        // want to return an empty result.  The easiest way to ensure all of
+        // this is to set t1 as follows:
+        //
+        //      t1' = MAX(t1,t0' - 1)
+        // 
+        // If an increment is necessary, (t0' - 1) is the furthest we should
+        // go.  If no increment is necessary then t1 is fine as-is.
+        wal_query(const series_read_lock& read_lock, uint64_t _t0, uint64_t _t1,
                   int oflag = O_RDONLY):
             read_lock(read_lock),
             entry_size(sizeof(wal_entry) + read_lock.m.fields.size()*8),
+            t0(MAX(_t0,read_lock.time_first,read_lock.time_last + 1)),
+            t1(MAX(_t1,t0 - 1)),
             wal_mm(0,read_lock.wal_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                    read_lock.wal_fd.fd,0),
             _begin(std::lower_bound(
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size),
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size) +
                                    wal_mm.len/entry_size,
-                MAX(t0,read_lock.time_first,read_lock.time_last + 1))),
+                t0)),
             _end(std::upper_bound(
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size),
                 wal_entry_iterator((wal_entry*)wal_mm.addr,entry_size) +
                                    wal_mm.len/entry_size,
                 t1)),
-            nentries(_end >= _begin ? _end - _begin : 0)
+            nentries(_end - _begin)
         {
         }
     };

@@ -11,7 +11,7 @@ namespace tsdb
     struct measurement;
 
     // Deletes points from the series, up to and including timestamp t.
-    void delete_points(const tsdb::series_total_lock& stl, uint64_t t);
+    void delete_points(tsdb::series_total_lock& stl, uint64_t t);
 }
 
 #endif /* __SRC_LIBTSDB_DELETE_H */

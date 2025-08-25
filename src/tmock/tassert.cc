@@ -27,6 +27,13 @@ tmock::abort(const char* s, const char* f, unsigned int l)
 }
 
 void
+tmock::_tassert(bool expr, const char* s, const char* f, unsigned int l)
+{
+    if (!expr)
+        tmock::abort(s,f,l);
+}
+
+void
 tmock::abort_mem_dump(const void* v, const void* expected, size_t len,
     const char* file, size_t line)
 {
@@ -46,7 +53,7 @@ tmock::abort_mem_dump(const void* v, const void* expected, size_t len,
         }
         printf("\n");
     }
-    exit(-1);
+    ::abort();
 }
 
 void
@@ -61,7 +68,7 @@ tmock::assert_equiv(const char* s, const char* expected, const char* file,
             printf(" Expected: '%s'\n",expected);
             printf("      Got: '%s'\n",s);
         }
-        exit(-1);
+        ::abort();
     }
 }
 
@@ -77,7 +84,7 @@ tmock::assert_equiv(uint16_t v, uint16_t expected, const char* file,
             printf(" Expected: 0x%04X\n",expected);
             printf("      Got: 0x%04X\n",v);
         }
-        exit(-1);
+        ::abort();
     }
 }
 
@@ -93,7 +100,7 @@ tmock::assert_equiv(uint32_t v, uint32_t expected, const char* file,
             printf(" Expected: 0x%08X\n",expected);
             printf("      Got: 0x%08X\n",v);
         }
-        exit(-1);
+        ::abort();
     }
 }
 
@@ -109,7 +116,7 @@ tmock::assert_equiv(uint64_t v, uint64_t expected, const char* file,
             printf(" Expected: 0x%016lX\n",expected);
             printf("      Got: 0x%016lX\n",v);
         }
-        exit(-1);
+        ::abort();
     }
 }
 
@@ -125,7 +132,7 @@ tmock::assert_equiv(int16_t v, int16_t expected, const char* file,
             printf(" Expected: %d\n",expected);
             printf("      Got: %d\n",v);
         }
-        exit(-1);
+        ::abort();
     }
 }
 
@@ -141,7 +148,7 @@ tmock::assert_equiv(int32_t v, int32_t expected, const char* file,
             printf(" Expected: %d\n",expected);
             printf("      Got: %d\n",v);
         }
-        exit(-1);
+        ::abort();
     }
 }
 
@@ -157,7 +164,7 @@ tmock::assert_equiv(int64_t v, int64_t expected, const char* file,
             printf(" Expected: %ld\n",expected);
             printf("      Got: %ld\n",v);
         }
-        exit(-1);
+        ::abort();
     }
 }
 
@@ -173,7 +180,7 @@ tmock::assert_float_similar(float v, float expected, float tolerance,
             printf("Float value %.10f not within %.10f of expected value "
                    "%.10f\n",v,tolerance,expected);
         }
-        exit(-1);
+        ::abort();
     }
 }
 
@@ -189,7 +196,7 @@ tmock::assert_double_similar(double v, double expected, double tolerance,
             printf("Double value %.10f not within %.10f of expected value "
                    "%.10f\n",v,tolerance,expected);
         }
-        exit(-1);
+        ::abort();
     }
 }
 

@@ -3,45 +3,16 @@
 #ifndef __SRC_FUTIL_FUTIL_H
 #define __SRC_FUTIL_FUTIL_H
 
+#include "futil_wrap.h"
 #include <hdr/kassert.h>
-#include <hdr/compiler.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdint.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <sys/file.h>
-#include <dirent.h>
-#include <string.h>
-#include <stdarg.h>
 #include <string>
 #include <vector>
 
 namespace futil
 {
-    struct exception : public std::exception
-    {
-        exception() {}
-    };
-
-    struct errno_exception : public exception
-    {
-        int errnov;
-
-        virtual const char* what() const noexcept override
-        {
-            return strerror(errnov);
-        }
-
-        errno_exception(int errnov):
-            errnov(errnov)
-        {
-        }
-    };
-
     // Exception thrown when two paths cannot be joined.  This could be the
     // case if the second path is an absolute path, for instance.
-    struct invalid_join_exception : public exception
+    struct invalid_join_exception : public futil::exception
     {
         virtual const char* what() const noexcept override
         {
@@ -49,21 +20,6 @@ namespace futil
         }
 
         invalid_join_exception():
-            exception()
-        {
-        }
-    };
-
-    // Exception thrown if passing inconsistent parameters to file constructor
-    // (i.e. O_CREAT without a mode or a mode without O_CREAT).
-    struct inconsistent_file_params : public exception
-    {
-        virtual const char* what() const noexcept override
-        {
-            return "Inconsistent arguments passed to file::file().";
-        }
-
-        inconsistent_file_params():
             exception()
         {
         }
@@ -185,15 +141,6 @@ namespace futil
         }
     };
 
-    inline void* mmap(void* addr, size_t len, int prot, int flags, int fd,
-                      off_t offset)
-    {
-        addr = ::mmap(addr,len,prot,flags,fd,offset);
-        if (addr == MAP_FAILED)
-            throw futil::errno_exception(errno);
-        return addr;
-    }
-
     struct mapping
     {
         void* addr;
@@ -201,8 +148,7 @@ namespace futil
 
         void msync()
         {
-            if (::msync(addr,len,MS_SYNC) == -1)
-                throw futil::errno_exception(errno);
+            futil::msync(addr,len,MS_SYNC);
         }
 
         inline void map(void* _addr, size_t _len, int prot, int flags, int fd,
@@ -220,7 +166,7 @@ namespace futil
         {
             if (len)
             {
-                munmap(addr,len);
+                futil::munmap(addr,len);
                 addr = MAP_FAILED;
                 len = 0;
             }
@@ -249,22 +195,6 @@ namespace futil
         }
     };
 
-    inline void fsync(int fd)
-    {
-        for (;;)
-        {
-#if IS_MACOS
-            if (::fsync(fd) != -1)
-                return;
-#elif IS_LINUX
-            if (::fdatasync(fd) != -1)
-                return;
-#endif
-            if (errno != EINTR)
-                throw futil::errno_exception(errno);
-        }
-    }
-
     struct file_descriptor
     {
         int fd;
@@ -281,52 +211,33 @@ namespace futil
             if (fd == -1)
                 return;
 
-            for (;;)
+            try
             {
-                // Attempt the close.
-                int err = ::close(fd);
-
-                // If we closed successfully, or we failed to close with
-                // anything other than EINTR, return.  close() can fail with
-                // EIO if a preceding write() later failed due to an IO error.
-                // The file descriptor is left in an unspecified state so you
-                // cannot do ANYTHING with it.
+                futil::close(fd);
+                fd = -1;
+            }
+            catch (...)
+            {
+                // If we failed to close with anything other than EINTR, just
+                // exit.  close() can fail with EIO if a preceding write()
+                // later failed due to an IO error.  The file descriptor is
+                // left in an unspecified state so you cannot do ANYTHING with
+                // it.
                 //
-                // It may be desirable to throw an exception or something, but
-                // this is a really nasty case.
-                if (err != -1)
-                {
-                    fd = -1;
-                    return;
-                }
-                if (errno != EINTR)
-                    return;
+                // TODO: Shouldn't we be setting fd = -1 here so that we don't
+                // try any future operations on the fd?
             }
         }
 
         int fcntl(int cmd) const
         {
-            for (;;)
-            {
-                int val = ::fcntl(fd,cmd);
-                if (val != -1)
-                    return val;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
+            return futil::fcntl(fd,cmd);
         }
 
         template<typename T>
         int fcntl(int cmd, T arg) const
         {
-            for (;;)
-            {
-                int val = ::fcntl(fd,cmd,arg);
-                if (val != -1)
-                    return val;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
+            return futil::fcntl<T>(fd,cmd,arg);
         }
 
         void fsync() const
@@ -339,49 +250,17 @@ namespace futil
 
         void fsync_and_barrier() const
         {
-#if IS_MACOS
-            // Performs an fsync() and then inserts an IO barrier, preventing
-            // IO reordering across the barrier.  This is available only on
-            // macOS and only on some combinations of file system and specific
-            // hard drives/SSDs.  Like fsync(), this doesn't guarantee that
-            // data is flushed to the disk itself, just that if a flush happens
-            // the data will be ordered correctly.
-            // 
-            // If the barrier operation is not supported, fall back to a full
-            // flush.
-            for (;;)
-            {
-                int val = ::fcntl(fd,F_BARRIERFSYNC);
-                if (val != -1)
-                    return;
-                if (errno != EINTR)
-                    break;
-            }
-
-            fsync_and_flush();
-#elif IS_LINUX
-            fsync();
-#else
-#error Unknown platform.
-#endif
+            futil::fsync_and_barrier(fd);
         }
 
         void fsync_and_flush() const
         {
-#if IS_MACOS
-            // Performs an fasync() and then flushes the disk controller's
-            // buffers to the physical drive medium.
-            fcntl(F_FULLFSYNC);
-#elif IS_LINUX
-            fsync();
-#else
-#error Unknown platform.
-#endif
+            futil::fsync_and_flush(fd);
         }
 
         int vprintf(const char* fmt, va_list ap)
         {
-            return ::vdprintf(fd,fmt,ap);
+            return futil::vdprintf(fd,fmt,ap);
         }
 
         int printf(const char* fmt, ...) __PRINTF__(2,3)
@@ -416,25 +295,12 @@ namespace futil
     {
         std::vector<std::string> _listdir(uint32_t mask) const
         {
-            int search_fd;
-            for (;;)
-            {
-                search_fd = ::openat(fd,".",O_DIRECTORY);
-                if (search_fd != -1)
-                    break;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
+            int search_fd = futil::openat(fd,".",O_DIRECTORY);
 
             std::vector<std::string> dirs;
-            auto* dirp = ::fdopendir(search_fd);
-            if (dirp == NULL)
-            {
-                ::printf("fdopendir returned NULL.\n");
-                throw errno_exception(EBADF);
-            }
+            auto* dirp = futil::fdopendir(search_fd);
             struct dirent* dp;
-            while ((dp = ::readdir(dirp)) != NULL)
+            while ((dp = futil::readdir(dirp)) != NULL)
             {
                 if (!(mask & (1ULL << dp->d_type)))
                     continue;
@@ -449,7 +315,7 @@ namespace futil
                 dirs.push_back(dp->d_name);
             }
 
-            ::closedir(dirp);
+            futil::closedir(dirp);
 
             return dirs;
         }
@@ -464,28 +330,14 @@ namespace futil
             return _listdir(-1);
         }
 
-        directory(const path& p)
+        directory(const path& p):
+            file_descriptor(futil::open(p,O_DIRECTORY | O_RDONLY))
         {
-            for (;;)
-            {
-                fd = ::open(p,O_DIRECTORY | O_RDONLY);
-                if (fd != -1)
-                    return;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
         }
 
-        directory(int at_fd, const path& p)
+        directory(int at_fd, const path& p):
+            file_descriptor(futil::openat(at_fd,p,O_DIRECTORY | O_RDONLY))
         {
-            for (;;)
-            {
-                fd = ::openat(at_fd,p,O_DIRECTORY | O_RDONLY);
-                if (fd != -1)
-                    return;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
         };
 
         directory(const directory& d, const path& p):
@@ -501,14 +353,7 @@ namespace futil
             close();
             if (oflag & O_CREAT)
                 throw inconsistent_file_params();
-            for (;;)
-            {
-                fd = ::openat(dir_fd,p,oflag);
-                if (fd != -1)
-                    return;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
+            fd = futil::openat(dir_fd,p,oflag);
         }
 
         void openat(int dir_fd, const path& p, int oflag, mode_t mode)
@@ -516,14 +361,7 @@ namespace futil
             close();
             if (!(oflag & O_CREAT))
                 throw inconsistent_file_params();
-            for (;;)
-            {
-                fd = ::openat(dir_fd,p,oflag,mode);
-                if (fd != -1)
-                    return;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
+            fd = futil::openat(dir_fd,p,oflag,mode);
         }
 
         void open(const path& p, int oflag)
@@ -551,14 +389,7 @@ namespace futil
             close();
             if (oflag & O_CREAT)
                 throw inconsistent_file_params();
-            for (;;)
-            {
-                fd = ::openat(dir_fd,p,oflag);
-                if (fd != -1 || errno == ENOENT)
-                    return;
-                if (errno != EINTR)
-                    throw errno_exception(errno);
-            }
+            fd = futil::openat_if_exists(dir_fd,p,oflag);
         }
 
         void open_if_exists(const path& p, int oflag)
@@ -571,23 +402,24 @@ namespace futil
             openat_if_exists(d.fd,p,oflag);
         }
 
-        void read_all(void* _p, size_t n)
+        size_t read_all_or_eof(void* _p, size_t n)
         {
             auto* p = (char*)_p;
             while (n)
             {
-                ssize_t v = ::read(fd,p,n);
-                if (v < -1 || v == 0)
-                    throw futil::errno_exception(EIO);
-                if (v == -1)
-                {
-                    if (errno == EINTR)
-                        continue;
-                    throw futil::errno_exception(errno);
-                }
+                ssize_t v = futil::read(fd,p,n);
+                if (v == 0)
+                    break;
                 p += v;
                 n -= v;
             }
+            return p - (char*)_p;
+        }
+
+        void read_all(void* p, size_t n)
+        {
+            if (read_all_or_eof(p,n) != n)
+                throw futil::errno_exception(EIO);
         }
 
         uint64_t read_u64()
@@ -613,7 +445,7 @@ namespace futil
             for (;;)
             {
                 char c;
-                ssize_t v = ::read(fd,&c,1);
+                ssize_t v = futil::read(fd,&c,1);
                 if (v == 0)
                     return {line,true};
                 if (v == -1)
@@ -665,7 +497,6 @@ namespace futil
                 }
             };
 
-
             auto begin() const {return lines_iterator(*this);}
             constexpr auto end() const {return lines_sentinel{};}
 
@@ -686,15 +517,7 @@ namespace futil
             auto* p = (const char*)_p;
             while (n)
             {
-                ssize_t v = ::write(fd,p,n);
-                if (v < -1)
-                    throw futil::errno_exception(EIO);
-                if (v == -1)
-                {
-                    if (errno == EINTR)
-                        continue;
-                    throw futil::errno_exception(errno);
-                }
+                ssize_t v = futil::write(fd,p,n);
                 p += v;
                 n -= v;
             }
@@ -702,20 +525,12 @@ namespace futil
 
         off_t lseek(off_t offset, int whence) const
         {
-            for (;;)
-            {
-                off_t pos = ::lseek(fd,offset,whence);
-                if (pos != -1)
-                    return pos;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
+            return futil::lseek(fd,offset,whence);
         }
 
         file& flock(int operation)
         {
-            if (::flock(fd,operation) == -1)
-                throw futil::errno_exception(errno);
+            futil::flock(fd,operation);
             return *this;
         }
 
@@ -726,13 +541,7 @@ namespace futil
 
         void truncate(off_t length)
         {
-            for (;;)
-            {
-                if (::ftruncate(fd,length) != -1)
-                    return;
-                if (errno != EINTR)
-                    throw futil::errno_exception(errno);
-            }
+            futil::ftruncate(fd,length);
         }
 
         constexpr file() {}
@@ -773,75 +582,25 @@ namespace futil
         ~file_write_watcher();
     };
 
-    inline void mkdir(const char* path, mode_t mode)
-    {
-        // mkdir() doesn't seem to return EINTR.
-        if (::mkdir(path,mode) == -1)
-            throw errno_exception(errno);
-    }
-
-    inline void mkdir(int at_fd, const char* path, mode_t mode)
-    {
-        if (::mkdirat(at_fd,path,mode) == -1)
-            throw errno_exception(errno);
-    }
-
     inline void mkdir(const directory& dir, const char* path, mode_t mode)
     {
-        futil::mkdir(dir.fd,path,mode);
-    }
-
-    inline void mkdir_if_not_exists(const char* path, mode_t mode)
-    {
-        // mkdir() doesn't seem to return EINTR.
-        if (::mkdir(path,mode) == -1 && errno != EEXIST)
-            throw errno_exception(errno);
+        futil::mkdirat(dir.fd,path,mode);
     }
 
     inline void mkdir_if_not_exists(const directory& dir, const char* path,
                                     mode_t mode)
     {
-        if (::mkdirat(dir.fd,path,mode) == -1 && errno != EEXIST)
-            throw errno_exception(errno);
-    }
-
-    inline void symlink(const char* path1, const char* path2)
-    {
-        // symlink() doesn't seem to return EINTR.
-        if (::symlink(path1,path2) == -1)
-            throw errno_exception(errno);
-    }
-
-    inline void unlink(const char* path)
-    {
-        // unlink() doesn't seem to return EINTR.
-        if (::unlink(path) == -1)
-            throw errno_exception(errno);
+        futil::mkdirat_if_not_exists(dir.fd,path,mode);
     }
 
     inline void unlink(const directory& dir, const char* path)
     {
-        if (::unlinkat(dir.fd,path,0) == -1)
-            throw errno_exception(errno);
-    }
-
-    inline void unlink_if_exists(const char* path)
-    {
-        if (::unlink(path) == -1 && errno != ENOENT)
-            throw errno_exception(errno);
+        futil::unlinkat(dir.fd,path,0);
     }
 
     inline void unlink_if_exists(const directory& dir, const char* path)
     {
-        if (::unlinkat(dir.fd,path,0) == -1 && errno != ENOENT)
-            throw errno_exception(errno);
-    }
-
-    inline void rename(const char* old, const char* _new)
-    {
-        // rename() doesn't seem to return EINTR.
-        if (::rename(old,_new) == -1)
-            throw errno_exception(errno);
+        futil::unlinkat_if_exists(dir.fd,path,0);
     }
 
     inline void rename(const directory& old_dir, const char* old,
@@ -849,8 +608,7 @@ namespace futil
     {
         // Renames to the target location, atomically overwriting whatever was
         // there to begin with.
-        if (::renameat(old_dir.fd,old,new_dir.fd,_new) == -1)
-            throw errno_exception(errno);
+        futil::renameat(old_dir.fd,old,new_dir.fd,_new);
     }
 
     inline bool rename_if_not_exists(const directory& old_dir, const char* old,
@@ -859,81 +617,23 @@ namespace futil
         // Renames to the target location, as long as the target doesn't exist.
         // Returns true if the rename was successful, false if the target
         // already existed, otherwise throws an exception upon error.
-#if IS_MACOS
-        if (!::renameatx_np(old_dir.fd,old,new_dir.fd,_new,RENAME_EXCL))
-            return true;
-#elif IS_LINUX
-        if (!::renameat2(old_dir.fd,old,new_dir.fd,_new,RENAME_NOREPLACE))
-            return true;
-#else
-#error Unknown platform.
-#endif
-        if (errno == EEXIST)
-            return false;
-        throw errno_exception(errno);
-    }
-
-    inline void mkdtemp(char* tmp)
-    {
-        if (::mkdtemp(tmp) == NULL)
-            throw errno_exception(errno);
-    }
-
-    inline void chdir(const char* path)
-    {
-        if (::chdir(path) == -1)
-            throw errno_exception(errno);
-    }
-
-    inline void fchmod(int fd, mode_t mode)
-    {
-        for (;;)
-        {
-            if (!::fchmod(fd,mode))
-                return;
-            if (errno != EINTR)
-                throw errno_exception(errno);
-        }
+        return futil::renameat_if_not_exists(old_dir.fd,old,new_dir.fd,_new);
     }
 
     inline void fchmod(const directory& d, const path& p, mode_t mode)
     {
-        for (;;)
-        {
-            if (!::fchmodat(d.fd,p,mode,0))
-                return;
-            if (errno != EINTR)
-                throw errno_exception(errno);
-        }
+        futil::fchmodat(d.fd,p,mode,0);
     }
 
     inline int openat(const directory& d, const path& p, int oflag)
     {
-        if (oflag & O_CREAT)
-            throw inconsistent_file_params();
-        for (;;)
-        {
-            int fd = ::openat(d.fd,p,oflag);
-            if (fd != -1)
-                return fd;
-            if (errno != EINTR)
-                throw errno_exception(errno);
-        }
+        return futil::openat(d.fd,p,oflag);
     }
 
     inline int openat(const directory& d, const path& p, int oflag,
                        mode_t mode)
     {
-        if (!(oflag & O_CREAT))
-            throw inconsistent_file_params();
-        for (;;)
-        {
-            int fd = ::openat(d.fd,p,oflag,mode);
-            if (fd != -1)
-                return fd;
-            if (errno != EINTR)
-                throw errno_exception(errno);
-        }
+        return futil::openat(d.fd,p,oflag,mode);
     }
 
     inline futil::path

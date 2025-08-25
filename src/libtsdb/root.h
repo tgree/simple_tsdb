@@ -4,6 +4,7 @@
 #define __SRC_LIBROOT_ROOT_H
 
 #include <futil/futil.h>
+#include <strutil/strutil.h>
 #include <hdr/kassert.h>
 
 namespace tsdb
@@ -17,11 +18,9 @@ namespace tsdb
     };
     static inline std::string to_string(const configuration& c)
     {
-        kassert(c.chunk_size % (1024*1024) == 0);
-
         std::string s;
         s += "chunk_size        ";
-        s += std::to_string(c.chunk_size/(1024*1024)) + "M\n";
+        s += str::encode_number_units_pow2(c.chunk_size) + "\n";
         s += "wal_max_entries   ";
         s += std::to_string(c.wal_max_entries) + "\n";
         s += "write_throttle_ns ";
@@ -47,6 +46,7 @@ namespace tsdb
 
         // Configuration.
         configuration       config;
+        const size_t        max_gzipped_size;
 
         // Adds a new user to the passwd file.
         void add_user(const std::string& username,
@@ -64,6 +64,17 @@ namespace tsdb
 
         // Returns true if a given databases exists.
         bool database_exists(const futil::path& path);
+
+        // Atomically replaces some file with a truncated version of a source
+        // file (possibly the same file).  This allows the source file to
+        // remain open in other processes without losing data.  The source file
+        // descriptor is swapped with the new one, so on exit src_fd refers to
+        // the replacement file.  The file position will be at the end of the
+        // truncated file.  All files and directories are fsync'd.
+        void replace_with_truncated(futil::file& src_fd,
+                                    const futil::directory& dst_dir,
+                                    const futil::path& dst_path,
+                                    size_t new_len) const;
 
         // Prints a debug message.
         int debugf(const char* fmt, ...) const __PRINTF__(2,3);

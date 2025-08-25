@@ -266,6 +266,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
                           write_lock.series_dir,"wal");
             tmp_wal_fd.commit();
             write_lock.series_dir.fsync_and_flush();
+            write_lock.m.db.root.tmp_dir.fsync_and_flush();
             write_lock.wal_fd.swap(tmp_wal_fd);
 
             tsdb::write_series(write_lock,wci);
@@ -333,6 +334,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
                       write_lock.series_dir,"wal");
         tmp_wal_fd.commit();
         write_lock.series_dir.fsync_and_flush();
+        write_lock.m.db.root.tmp_dir.fsync_and_flush();
         write_lock.wal_fd.swap(tmp_wal_fd);
     }
     else

@@ -39,6 +39,8 @@ namespace tsdb
         TOO_MANY_FIELDS                 = -25,
         INVALID_CONFIG_FILE             = -26,
         INVALID_CHUNK_SIZE              = -27,
+        CORRUPT_MEASUREMENT             = -28,
+        INVALID_TIME_FIRST              = -29,
     };
 
     struct exception : public std::exception
@@ -180,6 +182,28 @@ namespace tsdb
         {
         }
     };
+
+    struct tail_file_invalid_time_first_exception :
+        public corrupt_series_exception
+    {
+        const uint64_t tail_time_ns;
+        const uint64_t index_time_ns;
+
+        // The index entry's timestamp should always match the very first file
+        // of that entry's timestamp file.
+        virtual const char* what() const noexcept override
+        {
+            return "Tail file first timestamp does not match index entry.";
+        }
+
+        tail_file_invalid_time_first_exception(uint64_t tail_time_ns,
+                                               uint64_t index_time_ns):
+            corrupt_series_exception(INVALID_TIME_FIRST),
+            tail_time_ns(tail_time_ns),
+            index_time_ns(index_time_ns)
+        {
+        }
+    };
     
 #define DEFINE_TSDB_EXCEPTION(ename,eval,estr)\
     struct ename : public exception \
@@ -229,6 +253,8 @@ DEFINE_TSDB_EXCEPTION(invalid_config_file_exception,INVALID_CONFIG_FILE,
                       "Invalid configuration file.");
 DEFINE_TSDB_EXCEPTION(invalid_chunk_size_exception,INVALID_CHUNK_SIZE,
                       "Invalid chunk size.");
+DEFINE_TSDB_EXCEPTION(corrupt_measurement_exception,CORRUPT_MEASUREMENT,
+                      "Corrupt measurement.");
 }
 
 #endif /* __SRC_LIBTSDB_EXCEPTION_H */

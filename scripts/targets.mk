@@ -11,6 +11,7 @@ $$(BIN_DIR)/$(1).map $$(BIN_DIR)/$(1): $$($(1).LIB:%.a=$$(LIB_DIR)/%.a) $$($(1).
 	@mkdir -p $$(BIN_DIR)
 	@$$(GCC_CXX) \
 		-g \
+		$$(COMMON_LDFLAGS) \
 		-o $$@ \
 		$$($(1).OBJ) \
 		$$($(1).LIB:%.a=$$(LIB_DIR)/%.a)

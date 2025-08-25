@@ -101,7 +101,9 @@ namespace tsdb
 
         size_t max_points_for_data_len(size_t data_len) const
         {
-            // See the Python client.py for an explanation.
+            // See the Python client.py for an explanation.  The number of
+            // points returned will be an integer multiple of 64; the smallest
+            // data_len we support will hold 64 points.
             size_t M = fields.size();
             size_t S = 0;
             for (const auto& se : fields)

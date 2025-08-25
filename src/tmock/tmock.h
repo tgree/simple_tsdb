@@ -23,7 +23,9 @@ namespace tmock
     // Abort with an error message.
     void abort(const char* s, const char* f = __builtin_FILE(),
                unsigned int l = __builtin_LINE()) __attribute__((noreturn));
-#define TASSERT(expr) do {if (!(expr)) tmock::abort(#expr);} while(0)
+    void _tassert(bool expr, const char* s, const char* f = __builtin_FILE(),
+                  unsigned int l = __builtin_LINE());
+#define TASSERT(expr) tmock::_tassert((expr),#expr)
 
     void abort_mem_dump(const void* v, const void* expected, size_t len,
                         const char* file, size_t line);
