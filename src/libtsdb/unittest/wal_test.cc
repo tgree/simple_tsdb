@@ -11,7 +11,7 @@
 
 class tmock_test
 {
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_wal_empty_queries)
+    TMOCK_TEST(test_wal_empty_queries)
     {
         init_db(512);
 
