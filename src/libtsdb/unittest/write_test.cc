@@ -482,7 +482,6 @@ class tmock_test
         }
 
         tsdb::count_result prev_cr = {};
-        bool found_dangling = false;
         for (size_t i = 0; i < snapshots.size(); ++i)
         {
             auto* dn = snapshots[i];
@@ -508,34 +507,18 @@ class tmock_test
                 tsdb::measurement m1(db1,"measurement1");
                 auto swl = tsdb::open_or_create_and_lock_series(m1,"series1");
                 auto sdn = fd_table[swl.series_dir.fd].directory;
-                bool dangling = !get_dangling_chunk_files(sdn).empty();
+                TASSERT(get_dangling_chunk_files(sdn).empty());
                 size_t total = cr.npoints;
                 if (total < 73)
                     write_points(swl,73-total,1000 + 100*total,100,total);
-                else
-                    TASSERT(!dangling);
-                if (dangling)
-                    TASSERT(get_dangling_chunk_files(sdn).empty());
-                found_dangling |= dangling;
             }
 
             // Validate it all again to make sure it is sane.
             tmock::assert_equiv(validate_points().npoints,73UL);
         }
-        TASSERT(found_dangling);
     }
 
-    // We would prefer for there not to be any dangling files if we crash while
-    // doing a write operation.  For now, we want point reading to be easy,
-    // which means that the index file entries always point at valid chunk
-    // files.  That means the index file is the last thing to get updated and
-    // that means that we can create chunk files for a write operation before
-    // the index file knows about them.  A crash at that point leaves them
-    // empty but completely dangling, and if no subsequent write operation
-    // tries to use the same starting timestamp (maybe an entire system hard-
-    // crashed and that epoch timestamp is now in the past) then the empty
-    // files never get recycled.
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_no_dangling_files)
+    TMOCK_TEST(test_no_dangling_files)
     {
         tsdb::configuration c = {
             .chunk_size = 128,
@@ -569,64 +552,6 @@ class tmock_test
         }
     }
 
-    // If we have dangling files (see previous unit test), they should all be
-    // for time stamps that come after time_last (and thus are not live yet).
-    //
-    // This presents a possible solution: we could insert the new chunk
-    // timestamp into the index file before we create the chunk files.  Then,
-    // we create the files and populate them with the new data points, and
-    // finally we update time_last.  We would no longer have any dangling chunk
-    // files since the timestamp is allocated to the index file first.  The
-    // read/select operation would have to ignore index entries that come after
-    // time_last.  Future write operations would clean up the dangling entry
-    // automatically which they already do.
-    TMOCK_TEST(test_dangling_files_come_after_time_last)
-    {
-        tsdb::configuration c = {
-            .chunk_size = 128,
-            .wal_max_entries = 64,
-            .write_throttle_ns = 1000000000,
-        };
-        tsdb::create_root(".",c);
-
-        {
-            tsdb::root root(".",false);
-            root.create_database("db1");
-            tsdb::database db1(root,"db1");
-            tsdb::create_measurement(db1,"measurement1",test_fields);
-            tsdb::measurement m1(db1,"measurement1");
-            auto swl = tsdb::open_or_create_and_lock_series(m1,"series1");
-
-            // We are going to write a total of 300 points, all at once.
-            snapshot_auto_begin();
-            write_points(swl,300,1000,100,0);
-            snapshot_auto_end();
-        }
-
-        bool found_danglers = false;
-        for (auto* dn : snapshots)
-        {
-            auto* sdn = dn
-                ->get_dir("databases")
-                ->get_dir("db1")
-                ->get_dir("measurement1")
-                ->get_dir("series1");
-            uint64_t time_last =
-                sdn->get_file("time_last")->get_data<uint64_t>();
-            for (auto* fn : get_dangling_chunk_files(sdn))
-            {
-                found_danglers = true;
-
-                auto name = fn->name;
-                if (name.ends_with(".gz"))
-                    name.resize(name.size() - 3);
-                uint64_t chunk_time_ns = std::stoull(name);
-                TASSERT(chunk_time_ns > time_last);
-            }
-        }
-        TASSERT(found_danglers);
-    }
-
     TMOCK_TEST(test_no_empty_index_entries)
     {
         tsdb::configuration c = {
@@ -658,12 +583,17 @@ class tmock_test
                 ->get_dir("measurement1")
                 ->get_dir("series1");
             auto* index_fn = sdn->get_file("index");
+            auto* time_last_fn = sdn->get_file("time_last");
+            auto time_last = time_last_fn->get_data<uint64_t>();
 
             size_t nindices = index_fn->data.size() / sizeof(tsdb::index_entry);
             auto* ies = index_fn->as_array<tsdb::index_entry>();
             auto* time_ns_dn = sdn->get_dir("time_ns");
             for (size_t i=0; i<nindices; ++i)
-                TASSERT(time_ns_dn->files.contains(ies[i].timestamp_file));
+            {
+                if (ies[i].time_ns <= time_last)
+                    TASSERT(time_ns_dn->files.contains(ies[i].timestamp_file));
+            }
         }
     }
 

@@ -318,6 +318,18 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             // Figure out what to name the new files.
             std::string time_data_str = std::to_string(wci.timestamps[0]);
 
+            // Add the timestamp file to the index.  The index's tail file now
+            // points to nonexistent timestamp and field/bitmap files, which is
+            // normally forbidden.  However, this index entry isn't covered by
+            // time_last yet, so we are okay to have it here while we populate
+            // it and a crash will automatically be handled by time_last
+            // validation.
+            memset(&ie,0,sizeof(ie));
+            ie.time_ns = wci.timestamps[0];
+            strcpy(ie.timestamp_file,time_data_str.c_str());
+            index_fd.write_all(&ie,sizeof(ie));
+            index_fd.fsync_and_barrier();
+
             // Create and open all new field and bitmap files.  We fully-
             // populate the bitmap files with zeroes even though they don't
             // have any data yet.  This barely wastes any space and makes
@@ -327,35 +339,25 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
                 field_fds.emplace_back(field_dirs[i],time_data_str,
-                                       O_CREAT | O_TRUNC | O_RDWR,0660);
+                                       O_CREAT | O_EXCL | O_RDWR,0660);
                 field_fds[i].fsync();
                 field_dirs[i].fsync();
 
                 bitmap_fds.emplace_back(bitmap_dirs[i],time_data_str,
-                                        O_CREAT | O_TRUNC | O_RDWR,0660);
+                                        O_CREAT | O_EXCL | O_RDWR,0660);
                 bitmap_fds[i].truncate(chunk_npoints/8);
                 bitmap_fds[i].fsync();
                 bitmap_dirs[i].fsync();
             }
 
-            // Create the new timestamp file.  As when first creating the
-            // series, it is possible that someone got this far when growing
-            // the series but crashed before updating the index file.  Truncate
-            // the file if it exists.
-            tail_fd.open(time_ns_dir,time_data_str,O_CREAT | O_TRUNC | O_WRONLY,
+            // Create the new timestamp file.  Since we just added the timestamp
+            // to the index, this file should not exist.
+            tail_fd.open(time_ns_dir,time_data_str,O_CREAT | O_EXCL | O_WRONLY,
                          0660);
             time_ns_dir.fsync();
+            tail_fd.fsync();
             avail_points = chunk_npoints;
             pos = 0;
-
-            // TODO: If we crash here, there are now dangling, empty timestamp
-            // and field/bitmap files.  Their timestamp isn't in the index, so
-            // will never be accessed, but they will still exist.  If someone
-            // tries to rewrite the timestamp that created this file in the
-            // future then we will truncate/reuse them.  However, if the client
-            // doesn't try to rewrite this (maybe the client goes away before
-            // our database can recover) then it will sit here forever.  We may
-            // wish to periodically scan for orphaned files and delete them.
 
             // If the series is empty (time_first > lime_last), then we also
             // need to make time_first point at the start of this chunk.
@@ -370,20 +372,6 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                 write_lock.time_first_fd.write_all(&write_lock.time_first,8);
                 write_lock.time_first_fd.fsync();
             }
-
-            // Barrier before we update the index file.
-            tail_fd.fsync_and_barrier();
-
-            // Add the timestamp file to the index.  The index's tail file now
-            // points to an empty timestamp file, which is normally forbidden.
-            // However, this index entry isn't covered by time_last yet, so we
-            // are okay to have it here while we populate it and a crash will
-            // automatically be handled by time_last validation.
-            memset(&ie,0,sizeof(ie));
-            ie.time_ns = wci.timestamps[0];
-            strcpy(ie.timestamp_file,time_data_str.c_str());
-            index_fd.write_all(&ie,sizeof(ie));
-            index_fd.fsync();
         }
 
         // Compute how many points we can write.
