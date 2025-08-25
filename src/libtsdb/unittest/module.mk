@@ -3,6 +3,7 @@
 TESTS := \
 	 bitmap_test \
 	 database_test \
+	 delete_test \
 	 measurement_test \
 	 root_test \
 	 series_test \
@@ -13,6 +14,20 @@ bitmap_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/bitmap_test.o
 database_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/database_test.o \
+	$(PARENT_TBUILD_DIR)/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+delete_test.LIB := libz-ng.a
+delete_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/delete_test.o \
+	$(MODULE_TBUILD_DIR)/fake_db.o \
+	$(PARENT_TBUILD_DIR)/delete.o \
+	$(PARENT_TBUILD_DIR)/wal.o \
+	$(PARENT_TBUILD_DIR)/write.o \
+	$(PARENT_TBUILD_DIR)/count.o \
+	$(PARENT_TBUILD_DIR)/select_op.o \
+	$(PARENT_TBUILD_DIR)/series.o \
+	$(PARENT_TBUILD_DIR)/measurement.o \
 	$(PARENT_TBUILD_DIR)/root.o \
 	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
 	$(BUILD_O_DIR)/floor/kassert.o
