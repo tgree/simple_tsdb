@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "select_op.h"
 #include "database.h"
+#include <zutil/zutil.h>
 #include <inttypes.h>
 #include <algorithm>
 
@@ -139,17 +140,24 @@ tsdb::select_op::map_data()
         //       from that memory buffer which should be faster than
         //       zng_gzread() file IO.
 
-        // Now, try and open the file and unzip it into the backing region.
+        // TODO: We are now reading the entire file into memory and then
+        //       decompressing it.  Before, the gzFile code was chunking it
+        //       so it didn't need to read it all at once, so now we consume
+        //       more memory.
+
         char gz_name[TIMESTAMP_FILE_NAME_LEN + 3];
         auto* p = stpcpy(gz_name,index_slot->timestamp_file);
         strcpy(p,".gz");
-        int field_fd = futil::openat(fields_dir,futil::path(f->name,gz_name),
-                                     O_RDONLY);
-        gzFile gzf = zng_gzdopen(field_fd,"rb");
-        zng_gzbuffer(gzf,128*1024);
-        int32_t zlen = zng_gzread(gzf,field_bufs[i].data,len);
-        kassert((size_t)zlen == len);
-        zng_gzclose_r(gzf);
+
+        // Read the compressed file into a backing buffer.
+        size_t max_gzipped_size = read_lock.m.db.root.max_gzipped_size;
+        auto_buf gz_buf(max_gzipped_size);
+        size_t gz_len =
+            futil::file(fields_dir,futil::path(f->name,gz_name),O_RDONLY)
+                .read_all_or_eof(gz_buf.data,max_gzipped_size);
+
+        // Decompress it.
+        zutil::gzip_decompress(field_bufs[i].data,len,gz_buf.data,gz_len);
     }
 
     // Map the bitmap points.  Bitmap files are always fixed size.
