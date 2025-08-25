@@ -201,6 +201,83 @@ class tmock_test
             }
         }
     }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_no_empty_index_entries)
+    {
+        // This will write 18 full 16-entry chunks and leave a 12-entry chunk
+        // at the end.  The WAL will be empty.
+        init_db(16,128);
+        populate_db(100,10,{300});
+
+        {
+            tsdb::root root(".",false);
+            tsdb::database db1(root,"db1");
+            tsdb::measurement m1(db1,"measurement1");
+            tsdb::series_total_lock stl(m1,"series1");
+
+            // Delete everything.
+            snapshot_auto_begin();
+            tsdb::delete_points(stl,10000);
+            snapshot_auto_end();
+        }
+
+        size_t n_bad_indices = 0;
+        for (auto* dn : snapshots)
+        {
+            auto* sdn = dn
+                ->get_dir("databases")
+                ->get_dir("db1")
+                ->get_dir("measurement1")
+                ->get_dir("series1");
+            auto* index_fn = sdn->get_file("index");
+
+            size_t nindices = index_fn->data.size() / sizeof(tsdb::index_entry);
+            if (!nindices)
+                continue;
+
+            auto* ies = index_fn->as_array<tsdb::index_entry>();
+            auto* time_ns_dn = sdn->get_dir("time_ns");
+            bool bad_index = false;
+            for (size_t i=0; i<nindices; ++i)
+            {
+                if (!time_ns_dn->files.contains(ies[i].timestamp_file))
+                {
+                    bad_index = true;
+                    break;
+                }
+            }
+
+            if (!bad_index)
+                continue;
+
+            // We have found a snapshot where the index file has entries that
+            // point to timestamp files that don't exist.  If we attempt a
+            // write to this series now, the empty entries should be discarded
+            // and a new tail file created with the correct timestamp for the
+            // new points.
+            ++n_bad_indices;
+            activate_and_fsync_snapshot(dn);
+
+            // Write 17 points to trigger the empty WAL to perform a commit.
+            tsdb::root root(".",false);
+            tsdb::database db1(root,"db1");
+            tsdb::measurement m1(db1,"measurement1");
+            auto swl = tsdb::open_or_create_and_lock_series(m1,"series1");
+            write_points(swl,17,100000,100,0);
+
+            // There should be two entries in the index file since the chunk
+            // size is set to 128 bytes which only holds 16 entries.
+            index_fn = sdn->get_file("index");
+            tmock::assert_equiv((uint64_t)index_fn->data.size(),
+                                (uint64_t)2*sizeof(tsdb::index_entry));
+            ies = index_fn->as_array<tsdb::index_entry>();
+            TASSERT(time_ns_dn->files.contains(ies[0].timestamp_file));
+            TASSERT(time_ns_dn->files.contains(ies[1].timestamp_file));
+            tmock::assert_equiv(ies[0].time_ns,100000UL);
+            tmock::assert_equiv(ies[1].time_ns,101600UL);
+        }
+        TASSERT(n_bad_indices > 0);
+    }
 };
 
 TMOCK_MAIN();
