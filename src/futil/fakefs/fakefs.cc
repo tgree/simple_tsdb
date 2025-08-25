@@ -410,6 +410,19 @@ futil::openat(int at_fd, const char* path, int oflag, mode_t mode)
     return fd;
 }
 
+int
+futil::createat_if_not_exists(int at_fd, const char* path, int oflag,
+    mode_t mode) try
+{
+    return futil::openat(at_fd,path,oflag | O_CREAT | O_EXCL,mode);
+}
+catch (const futil::errno_exception& e)
+{
+    if (e.errnov == EEXIST)
+        return -1;
+    throw;
+}
+
 DIR*
 futil::fdopendir(int at_fd)
 {
