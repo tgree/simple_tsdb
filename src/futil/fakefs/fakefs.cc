@@ -593,6 +593,20 @@ futil::flock(int fd, int operation)
 }
 
 void
+futil::ftruncate(int fd, off_t length)
+{
+    file_node* fn = find_fd_file_node(fd);
+
+    if (length < 0)
+        throw futil::errno_exception(EINVAL);
+
+    kassert(fn->mmap_count == 0);
+    fn->data.resize(length);
+    fn->data_fsynced = false;
+    auto_snapshot_fs();
+}
+
+void
 futil::mkdirat(int at_fd, const char* path, mode_t mode)
 {
     dir_node* at_dir = find_at_fd_dir_node(at_fd);
@@ -690,6 +704,17 @@ futil::unlinkat(int at_fd, const char* path, int flag)
             delete rem_file;
         }
     }
+}
+
+void
+futil::unlinkat_if_exists(int at_fd, const char* path, int flag) try
+{
+    futil::unlinkat(at_fd,path,flag);
+}
+catch (const futil::errno_exception& e)
+{
+    if (e.errnov != ENOENT)
+        throw;
 }
 
 void
