@@ -53,8 +53,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
-        test_wal_consistency_stride_100_randpop)
+    TMOCK_TEST(test_wal_consistency_stride_100_randpop)
     {
         init_db(512);
 
@@ -91,7 +90,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_wal_consistency_stride_1_slowpop)
+    TMOCK_TEST(test_wal_consistency_stride_1_slowpop)
     {
         std::vector<size_t> nvec;
         for (size_t i=0; i<64; ++i)
