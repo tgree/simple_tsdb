@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "../root.h"
 #include "../exception.h"
+#include "../constants.h"
 #include <futil/fakefs/fakefs.h>
 #include <tmock/tmock.h>
 
@@ -69,6 +70,51 @@ class tmock_test
                 fs_root->subdirs["tmp"]);
         TASSERT(fd_table[root.databases_dir.fd].directory ==
                 fs_root->subdirs["databases"]);
+    }
+
+    TMOCK_TEST(test_chunk_sizes)
+    {
+        tsdb::configuration c = {
+            .chunk_size = 8,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+
+        try
+        {
+            tsdb::create_root(".",c);
+            tmock::abort("Expected invalid chunk size exception!");
+        }
+        catch (const tsdb::invalid_chunk_size_exception&)
+        {
+        }
+
+        try
+        {
+            c.chunk_size = 1023;
+            tsdb::create_root(".",c);
+            tmock::abort("Expected invalid chunk size exception!");
+        }
+        catch (const tsdb::invalid_chunk_size_exception&)
+        {
+        }
+
+        uint64_t chunk_sizes[] = {
+            MIN_CHUNK_SIZE,
+            (1ULL <<  9), (1ULL << 10), (1ULL << 11),
+            (1ULL << 19), (1ULL << 20), (1ULL << 21),
+            (1ULL << 29), (1ULL << 30), (1ULL << 31),
+        };
+
+        for (uint64_t cs : chunk_sizes)
+        {
+            nuke_fs_root();
+
+            c.chunk_size = cs;
+            tsdb::create_root(".",c);
+            tsdb::root root(".",true);
+            tmock::assert_equiv(root.config.chunk_size,cs);
+        }
     }
 
     TMOCK_TEST(test_users)

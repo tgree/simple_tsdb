@@ -9,6 +9,16 @@
 #define DEFAULT_CHUNK_SIZE_M        2
 KASSERT(is_pow2(DEFAULT_CHUNK_SIZE_M));
 
+// Smallest possible chunk size.  This is more useful for unittesting than it
+// is for a live databases.  We have the following requirements:
+//
+//  - Should be a power of 2.
+//  - Should hold at least one of the largest data type, so at least 8 bytes.
+//  - Bitmap operations assume it is a multiple of 64.
+//
+// From this it seems a reasonable minimum might be 128 bytes.
+#define MIN_CHUNK_SIZE              128
+
 // Maximum number of entries in the WAL.
 #define DEFAULT_WAL_MAX_ENTRIES     128
 

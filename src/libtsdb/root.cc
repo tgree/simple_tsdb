@@ -37,8 +37,11 @@ load_configuration(const tsdb::root* r) try
         if (parts[0] == "chunk_size")
         {
             config.chunk_size = str::decode_number_units_pow2(parts[1]);
-            if (!is_pow2(config.chunk_size))
+            if (!is_pow2(config.chunk_size) ||
+                config.chunk_size < MIN_CHUNK_SIZE)
+            {
                 throw tsdb::invalid_chunk_size_exception();
+            }
         }
         else if (parts[0] == "wal_max_entries")
             config.wal_max_entries = str::decode_number_units_pow2(parts[1]);
@@ -194,7 +197,7 @@ void
 tsdb::create_root(const futil::path& path, const configuration& config) try
 {
     auto config_str = to_string(config);
-    if (!is_pow2(config.chunk_size))
+    if (!is_pow2(config.chunk_size) || config.chunk_size < MIN_CHUNK_SIZE)
         throw invalid_chunk_size_exception();
 
     futil::directory root_dir(path);
