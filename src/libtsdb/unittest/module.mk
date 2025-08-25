@@ -3,12 +3,19 @@
 TESTS := \
 	 bitmap_test \
 	 database_test \
+	 measurement_test \
 	 root_test
 
 bitmap_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/bitmap_test.o
 database_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/database_test.o \
+	$(PARENT_TBUILD_DIR)/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+measurement_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/measurement_test.o \
+	$(PARENT_TBUILD_DIR)/measurement.o \
 	$(PARENT_TBUILD_DIR)/root.o \
 	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
 	$(BUILD_O_DIR)/floor/kassert.o
