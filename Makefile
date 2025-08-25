@@ -69,6 +69,7 @@ COMMON_CXXFLAGS := \
 	-I$(SRC_DIR) \
 	-I$(INCLUDE_DIR) \
 	-I$(THIRD_PARTY)
+COMMON_LDFLAGS :=
 
 # Unittest C++ flags.
 TEST_CXXFLAGS := \
@@ -85,6 +86,7 @@ TEST_CXXFLAGS := \
 	-I$(SRC_DIR) \
 	-I$(INCLUDE_DIR) \
 	-I$(THIRD_PARTY)
+TEST_LDFLAGS :=
 
 # Integration test C++ flags.
 ITEST_CXXFLAGS := \
@@ -101,6 +103,7 @@ ITEST_CXXFLAGS := \
 	-I$(SRC_DIR) \
 	-I$(INCLUDE_DIR) \
 	-I$(THIRD_PARTY)
+ITEST_LDFLAGS :=
 
 # OS-specific include directories.
 UNAME_S := $(shell uname -s)
@@ -108,6 +111,13 @@ ifeq ($(UNAME_S), Darwin)
 	COMMON_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	TEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	ITEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
+	COMMON_LDFLAGS += -Wl,-dead_strip
+	TEST_LDFLAGS += -Wl,-dead_strip
+	ITEST_LDFLAGS += -Wl,-dead_strip
+else
+	COMMON_LDFLAGS += -Wl,--gc-sections
+	TEST_LDFLAGS += -Wl,--gc-sections
+	ITEST_LDFLAGS += -Wl,--gc-sections
 endif
 
 # Flags for archive tool

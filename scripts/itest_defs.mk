@@ -25,7 +25,7 @@ $(ITEST_RES_DIR)/%.tpass: $(ITESTS_DIR)/%
 # Each test, T, should provide the following fields in their module.mk file:
 # 	T.LIB - list of .a dependencies
 # 	T.OBJ - list of .o dependencies
-BUILD_ITEST = mkdir -p $(ITESTS_DIR) && $(ITEST_CXX) $(ITEST_CXXFLAGS) -o $@
+BUILD_ITEST = mkdir -p $(ITESTS_DIR) && $(ITEST_CXX) $(ITEST_CXXFLAGS) $(ITEST_LDFLAGS) -o $@
 define define_itest
 -include $$($(1).OBJ:.o=.d)
 $$(ITESTS_DIR)/$(1): $$($(1).OBJ) $$($(1).LIB:%.a=$$(LIB_DIR)/%.a) $$($(1).MK)
