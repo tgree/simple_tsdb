@@ -7,6 +7,7 @@
 #include <futil/xact.h>
 #include <futil/ssl.h>
 #include <strutil/strutil.h>
+#include <zutil/zutil.h>
 #include <algorithm>
 
 const tsdb::configuration tsdb::default_configuration =
@@ -63,7 +64,8 @@ tsdb::root::root(const futil::path& root_path, bool debug_enabled) try :
     tmp_dir(root_dir,"tmp"),
     databases_dir(root_dir,"databases"),
     debug_enabled(debug_enabled),
-    config(load_configuration(this))
+    config(load_configuration(this)),
+    max_gzipped_size(zutil::max_gzipped_size(config.chunk_size))
 {
 }
 catch (const futil::errno_exception& e)
@@ -78,7 +80,8 @@ tsdb::root::root(bool debug_enabled) try :
     tmp_dir(root_dir,"tmp"),
     databases_dir(root_dir,"databases"),
     debug_enabled(debug_enabled),
-    config(load_configuration(this))
+    config(load_configuration(this)),
+    max_gzipped_size(zutil::max_gzipped_size(config.chunk_size))
 {
 }
 catch (const futil::errno_exception& e)
