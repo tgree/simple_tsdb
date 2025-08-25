@@ -109,8 +109,14 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
 
         // If the index entry comes after time_last, nuke the entry and nuke
         // any partial chunk files.  This could be due to a write operation
-        // that was interrupted.
-        if (ie.time_ns > write_lock.time_last)
+        // that was interrupted.  In this case, the tail timestamp file and
+        // all the bitmap/field files exist but may be empty.  If the series
+        // time_first comes after the series time_last, then the entire series
+        // has been deleted already and anything in the index is dangling due
+        // to an interrupted delete.  In this case, some files may or may not
+        // exist, so proceed with caution when deleting.
+        if (ie.time_ns > write_lock.time_last ||
+            write_lock.time_first > write_lock.time_last)
         {
             for (size_t j=0; j<write_lock.m.fields.size(); ++j)
             {
@@ -119,43 +125,16 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                 field_dirs[j].fsync();
                 bitmap_dirs[j].fsync();
             }
-            futil::unlink(time_ns_dir,ie.timestamp_file);
+            futil::unlink_if_exists(time_ns_dir,ie.timestamp_file);
             time_ns_dir.fsync_and_barrier();
             index_fd.truncate(index*sizeof(index_entry));
             index_fd.lseek(0,SEEK_END);
             continue;
         }
 
-        // Open the tail file.  The tail file may not exist if a delete
-        // operation was interrupted before the index file was shifted.  This
-        // would typically happen when we deleted all of the points from a
-        // series, since we can only delete from the front and we are working
-        // here from the back.
-        try
-        {
-            tail_fd.open(time_ns_dir,ie.timestamp_file,O_RDWR);
-        }
-        catch (const futil::errno_exception& e)
-        {
-            if (e.errnov != ENOENT)
-                throw;
-
-            kassert(write_lock.time_first > write_lock.time_last);
-
-            for (size_t j=0; j<write_lock.m.fields.size(); ++j)
-            {
-                futil::unlink_if_exists(field_dirs[j],ie.timestamp_file);
-                futil::unlink_if_exists(bitmap_dirs[j],ie.timestamp_file);
-                field_dirs[j].fsync();
-                bitmap_dirs[j].fsync();
-            }
-            index_fd.truncate(index*sizeof(index_entry));
-            index_fd.lseek(0,SEEK_END);
-            continue;
-        }
-
-        // We found the tail file pointed to by the index.  This means the tail
-        // file must be a valid timestamp file and must be non-empty.
+        // Open the tail file, which is in the live range of the series so
+        // must exist and be non-empty.
+        tail_fd.open(time_ns_dir,ie.timestamp_file,O_RDWR);
         pos = tail_fd.lseek(0,SEEK_END);
         if (pos < 8)
             throw tsdb::tail_file_invalid_size_exception(pos);
@@ -176,27 +155,6 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
         {
             throw tsdb::tail_file_invalid_time_first_exception(
                     tail_fd_first_entry,ie.time_ns);
-        }
-
-        // A delete operation that crashed early could have attempted to delete
-        // this chunk but failed.  A delete operation begins by incrementing
-        // time_first, then deletes all the chunk files (possibly for multiple
-        // index entries) and then does an atomic shift of the index file.
-        if (tail_fd_last_entry < write_lock.time_first)
-        {
-            tail_fd.close();
-            for (size_t j=0; j<write_lock.m.fields.size(); ++j)
-            {
-                futil::unlink_if_exists(field_dirs[j],ie.timestamp_file);
-                futil::unlink_if_exists(bitmap_dirs[j],ie.timestamp_file);
-                field_dirs[j].fsync();
-                bitmap_dirs[j].fsync();
-            }
-            futil::unlink(time_ns_dir,ie.timestamp_file);
-            time_ns_dir.fsync_and_barrier();
-            index_fd.truncate(index*sizeof(index_entry));
-            index_fd.lseek(0,SEEK_END);
-            continue;
         }
 
         // Slow path check.  If the time_last file differs from the last index
