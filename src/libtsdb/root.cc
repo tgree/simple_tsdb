@@ -176,6 +176,23 @@ catch (const futil::errno_exception& e)
     throw;
 }
 
+void
+tsdb::root::replace_with_truncated(futil::file& src_fd,
+    const futil::directory& dir, const futil::path& path, size_t new_len) const
+{
+    futil::xact_mktemp tmp_fd(tmp_dir,0660);
+    auto_buf truncated_data(new_len);
+    src_fd.lseek(0,SEEK_SET);
+    src_fd.read_all(truncated_data.data,new_len);
+    tmp_fd.write_all(truncated_data.data,new_len);
+    tmp_fd.fsync();
+    futil::rename(tmp_dir,tmp_fd.name,dir,path);
+    tmp_fd.commit();
+    dir.fsync_and_flush();
+    tmp_dir.fsync_and_flush();
+    src_fd.swap(tmp_fd);
+}
+
 int
 tsdb::root::debugf(const char* fmt, ...) const
 {
