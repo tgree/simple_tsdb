@@ -18,7 +18,6 @@ namespace tsdb
         // someone adds points later, we only return the points from our
         // current snapshot of the live range.
         const series_read_lock& read_lock;
-        const uint64_t          time_last;
         futil::file             index_fd;
         futil::mapping          index_mapping;
         const index_entry*      index_begin;
