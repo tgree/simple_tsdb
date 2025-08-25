@@ -33,7 +33,7 @@ validate_series_inodes(dir_node* dn)
 
 class tmock_test
 {
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_create_series_bad_name)
+    TMOCK_TEST(test_create_series_bad_name)
     {
         tsdb::configuration c = {
             .chunk_size = 2*1024*1024,

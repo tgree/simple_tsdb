@@ -21,6 +21,9 @@ tsdb::series_write_lock
 tsdb::open_or_create_and_lock_series(const measurement& m,
     const futil::path& series)
 {
+    if (series._path.find_first_of("/ \\") != std::string::npos)
+        throw tsdb::invalid_series_exception();
+
     // Try to acquire a write lock on the series.
     try
     {
