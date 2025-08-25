@@ -4,6 +4,7 @@
 #define __SRC_LIBROOT_ROOT_H
 
 #include <futil/futil.h>
+#include <strutil/strutil.h>
 #include <hdr/kassert.h>
 
 namespace tsdb
@@ -17,11 +18,9 @@ namespace tsdb
     };
     static inline std::string to_string(const configuration& c)
     {
-        kassert(c.chunk_size % (1024*1024) == 0);
-
         std::string s;
         s += "chunk_size        ";
-        s += std::to_string(c.chunk_size/(1024*1024)) + "M\n";
+        s += str::encode_number_units_pow2(c.chunk_size) + "\n";
         s += "wal_max_entries   ";
         s += std::to_string(c.wal_max_entries) + "\n";
         s += "write_throttle_ns ";
