@@ -119,18 +119,14 @@ tsdb::select_op::map_data()
         //  Try opening an uncompressed file first.  If one exists, we must use
         //  it; any compressed file that exists could be the result of a
         //  partial compression operation that then crashed before completing.
-        try
+        futil::file field_fd;
+        field_fd.open_if_exists(
+            fields_dir,futil::path(f->name,index_slot->timestamp_file),
+            O_RDONLY);
+        if (field_fd.fd != -1)
         {
-            futil::file field_fd(
-                fields_dir,futil::path(f->name,index_slot->timestamp_file),
-                O_RDONLY);
             field_fd.read_all(field_bufs[i].data,len);
             continue;
-        }
-        catch (const futil::errno_exception& e)
-        {
-            if (e.errnov != ENOENT)
-                throw;
         }
 
         // No uncompressed file exists.  Try with a compressed file.
