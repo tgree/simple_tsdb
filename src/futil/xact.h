@@ -28,7 +28,7 @@ namespace futil
             at_fd(at_fd),
             path(path)
         {
-            futil::mkdir(at_fd,path,mode);
+            futil::mkdirat(at_fd,path,mode);
         }
 
         ~_xact_mkdir()
