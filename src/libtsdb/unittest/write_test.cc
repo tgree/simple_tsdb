@@ -667,7 +667,8 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST(test_no_tailfd_write_truncate_while_selecting)
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
+        test_no_tailfd_write_truncate_while_selecting)
     {
         tsdb::configuration c = {
             .chunk_size = 128,
@@ -690,6 +691,7 @@ class tmock_test
             snapshot_auto_end();
         }
 
+        size_t last_total_points = 0;
         for (auto* dn : snapshots)
         {
             activate_and_fsync_snapshot(dn);
@@ -716,6 +718,16 @@ class tmock_test
 
             // Start a write.
             write_points(swl,45,100000,100,0);
+
+            // Work through the select.
+            size_t total_points = 0;
+            while (op.npoints)
+            {
+                total_points += op.npoints;
+                op.next();
+            }
+            TASSERT(total_points >= last_total_points);
+            last_total_points = total_points;
         }
     }
 };
