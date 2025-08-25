@@ -29,11 +29,7 @@ tsdb::write_chunk_index::write_chunk_index(const measurement& m,
     }
     size_t expected_len = data_ptr - (char*)data;
     if (data_len != expected_len)
-    {
-        printf("Expected %zu bytes of data, got %zu bytes.\n",
-               expected_len,data_len);
         throw tsdb::incorrect_write_chunk_len_exception(expected_len,data_len);
-    }
 }
 
 void
