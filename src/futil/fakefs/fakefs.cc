@@ -521,7 +521,9 @@ futil::write(int fd, const void* buf, size_t nbyte)
     size_t limit = fd_table[fd].pos + nbyte;
     if (fn->data.size() < limit)
     {
-        kassert(fn->mmap_count == 0);
+        // We don't handle growing the file while it is mmap'd.
+        if (fn->data.capacity() < limit)
+            kassert(fn->mmap_count == 0);
         fn->data.resize(limit);
     }
     memcpy(&fn->data[fd_table[fd].pos],buf,nbyte);
