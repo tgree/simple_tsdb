@@ -46,6 +46,7 @@ namespace tsdb
 
         // Configuration.
         configuration       config;
+        const size_t        max_gzipped_size;
 
         // Adds a new user to the passwd file.
         void add_user(const std::string& username,
