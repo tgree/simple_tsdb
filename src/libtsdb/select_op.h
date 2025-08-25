@@ -31,7 +31,6 @@ namespace tsdb
 
         // Mapping objects to track mmap()-ed files.
         const index_entry*      index_slot;
-        futil::mapping          timestamp_mapping;
         auto_buf                timestamp_buf;
 
         // State of the current set of results.
