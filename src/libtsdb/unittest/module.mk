@@ -9,6 +9,7 @@ TESTS := \
 	 root_test \
 	 select_op_test \
 	 series_test \
+	 sum_op_test \
 	 wal_test \
 	 write_test
 
@@ -75,6 +76,19 @@ select_op_test.OBJ := \
 	$(BUILD_O_DIR)/floor/kassert.o
 series_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/series_test.o \
+	$(PARENT_TBUILD_DIR)/series.o \
+	$(PARENT_TBUILD_DIR)/measurement.o \
+	$(PARENT_TBUILD_DIR)/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+sum_op_test.LIB := libz-ng.a
+sum_op_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/sum_op_test.o \
+	$(MODULE_TBUILD_DIR)/fake_db.o \
+	$(PARENT_TBUILD_DIR)/sum_op.o \
+	$(PARENT_TBUILD_DIR)/wal.o \
+	$(PARENT_TBUILD_DIR)/write.o \
+	$(PARENT_TBUILD_DIR)/select_op.o \
 	$(PARENT_TBUILD_DIR)/series.o \
 	$(PARENT_TBUILD_DIR)/measurement.o \
 	$(PARENT_TBUILD_DIR)/root.o \
