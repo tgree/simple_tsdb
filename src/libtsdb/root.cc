@@ -142,6 +142,7 @@ void
 tsdb::root::create_database(const char* name) try
 {
     futil::mkdir(databases_dir,name,0770);
+    databases_dir.fsync();
 }
 catch (const futil::errno_exception& e)
 {

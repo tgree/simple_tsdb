@@ -137,7 +137,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_create_databases)
+    TMOCK_TEST(test_create_databases)
     {
         tsdb::configuration c = {
             .chunk_size = 2*1024*1024,
