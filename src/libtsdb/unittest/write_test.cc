@@ -393,7 +393,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_write_consistency)
+    TMOCK_TEST(test_write_consistency)
     {
         tsdb::configuration c = {
             .chunk_size = 1024,
