@@ -73,6 +73,10 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     futil::directory time_ns_dir(write_lock.series_dir,"time_ns");
     futil::directory fields_dir(write_lock.series_dir,"fields");
     futil::directory bitmaps_dir(write_lock.series_dir,"bitmaps");
+    field_vector<futil::directory> field_dirs;
+    for (const auto& field : write_lock.m.fields)
+        field_dirs.emplace_back(fields_dir,field.name);
+
     futil::file tail_fd;
     field_vector<futil::path> field_file_paths;
     field_vector<futil::file> field_fds;
@@ -279,12 +283,13 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                         zutil::gzip_compress(gzip_buf.data,max_gzipped_size,
                                              file_buf.data,chunk_len,
                                              Z_BEST_COMPRESSION);
-                    futil::file(
+                    futil::file gz_file(
                         fields_dir,
                         futil::path(write_lock.m.fields[i].name,
                                     src_name + ".gz"),
-                        O_CREAT | O_TRUNC | O_RDWR,0660)
-                            .write_all(gzip_buf.data,compressed_len);
+                        O_CREAT | O_TRUNC | O_RDWR,0660);
+                    gz_file.write_all(gzip_buf.data,compressed_len);
+                    gz_file.fsync();
                     write_lock.m.db.root.debugf("Done.\n");
 
                     // TODO: If destination file was larger than the chunk size,
@@ -417,6 +422,8 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             write_lock.time_last_fd.fsync_and_barrier();
             for (const auto& ufp : unlink_field_paths)
                 futil::unlink_if_exists(fields_dir,ufp);
+            for (auto& field_dir : field_dirs)
+                field_dir.fsync();
             fields_dir.fsync();
 
             unlink_field_paths.clear();
