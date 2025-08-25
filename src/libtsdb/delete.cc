@@ -140,6 +140,7 @@ tsdb::delete_points(series_total_lock& stl, uint64_t t)
                   "index");
     tmp_index_fd.commit();
     stl.series_dir.fsync_and_flush();
+    stl.m.db.root.tmp_dir.fsync_and_flush();
     stl.m.db.root.debugf("Deleted %zu slots from the start of the index "
                          "file.\n",index_slot - index_begin);
 }
