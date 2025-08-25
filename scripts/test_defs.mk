@@ -28,9 +28,12 @@ $(TEST_RES_DIR)/%.tpass: $(TESTS_DIR)/%
 BUILD_TEST = mkdir -p $(TESTS_DIR) && $(TEST_CXX) $(TEST_CXXFLAGS) -o $@
 define define_test
 -include $$($(1).OBJ:.o=.d)
-$$(TESTS_DIR)/$(1): $$($(1).OBJ) $$($(1).LIBS) $$(LTMOCK) $$($(1).MK)
+$$(TESTS_DIR)/$(1): $$($(1).OBJ) $$($(1).LIB:%.a=$$(LIB_DIR)/%.a) $$(LTMOCK) $$($(1).MK)
 	@echo Building $$@
-	@$$(BUILD_TEST) $$($(1).OBJ) $$(LTMOCK)
+	@$$(BUILD_TEST) \
+		$$($(1).OBJ) \
+		$$($(1).LIB:%.a=$$(LIB_DIR)/%.a) \
+		$$(LTMOCK)
 endef
 
 define define_all_tests
