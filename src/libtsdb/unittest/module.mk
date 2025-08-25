@@ -4,7 +4,8 @@ TESTS := \
 	 bitmap_test \
 	 database_test \
 	 measurement_test \
-	 root_test
+	 root_test \
+	 series_test
 
 bitmap_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/bitmap_test.o
@@ -22,6 +23,13 @@ measurement_test.OBJ := \
 root_test.LIB := libcrypto.a
 root_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/root_test.o \
+	$(PARENT_TBUILD_DIR)/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+series_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/series_test.o \
+	$(PARENT_TBUILD_DIR)/series.o \
+	$(PARENT_TBUILD_DIR)/measurement.o \
 	$(PARENT_TBUILD_DIR)/root.o \
 	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
 	$(BUILD_O_DIR)/floor/kassert.o
