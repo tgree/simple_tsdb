@@ -257,13 +257,6 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     --t0_index_slot;
     --t1_index_slot;
 
-    // Figure out how many full middle slots there are.
-    size_t n_middle_slots;
-    if (t0_index_slot + 1 < t1_index_slot)
-        n_middle_slots = t1_index_slot - t0_index_slot - 1;
-    else
-        n_middle_slots = 0;
-
     // Now, we need to map both slots and find the beginning and ending of the
     // target range.
     futil::directory time_ns_dir(read_lock.series_dir,"time_ns");
@@ -283,6 +276,13 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     auto* t1_upper = std::upper_bound(t1_data_begin,t1_data_end,t1);
     size_t t0_index = t0_lower - t0_data_begin;
     size_t t1_index = t1_upper - t1_data_begin;
+
+    // Figure out how many full middle slots there are.
+    size_t n_middle_slots;
+    if (t0_index_slot + 1 < t1_index_slot)
+        n_middle_slots = t1_index_slot - t0_index_slot - 1;
+    else
+        n_middle_slots = 0;
 
     // Figure out how many points are actually available.
     size_t t0_avail_points;
