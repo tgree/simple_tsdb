@@ -134,7 +134,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_delete_consistency)
+    TMOCK_TEST(test_delete_consistency)
     {
         init_db(16);
         std::vector<size_t> nvec;
