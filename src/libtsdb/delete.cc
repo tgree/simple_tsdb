@@ -111,6 +111,7 @@ tsdb::delete_points(series_total_lock& stl, uint64_t t)
     for (auto* slot = index_begin; slot < index_slot; ++slot)
     {
         futil::unlink_if_exists(time_ns_dir,slot->timestamp_file);
+        time_ns_dir.fsync_and_flush();
         std::string gz_file = std::string(slot->timestamp_file) + ".gz";
         for (const auto& f : stl.m.fields)
         {
@@ -119,6 +120,8 @@ tsdb::delete_points(series_total_lock& stl, uint64_t t)
             futil::unlink_if_exists(fields_dir,sub_path);
             futil::unlink_if_exists(fields_dir,gz_sub_path);
             futil::unlink_if_exists(bitmaps_dir,sub_path);
+            futil::directory(fields_dir,f.name).fsync_and_flush();
+            futil::directory(bitmaps_dir,f.name).fsync_and_flush();
         }
     }
 
