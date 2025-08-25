@@ -37,11 +37,13 @@ MODULES := $(MODULES:$(SRC_DIR)/%=%)
 CLEAN_DIRS := $(BIN_DIR) $(BUILD_DIR)
 
 # Build directories.
-BUILD_O_DIR  := $(BUILD_DIR)/obj
-BUILD_TO_DIR := $(BUILD_DIR)/objt
-LIB_DIR      := $(BUILD_DIR)/lib
-INCLUDE_DIR  := $(BUILD_DIR)/include
-TESTS_DIR    := $(BUILD_DIR)/unittests
+BUILD_O_DIR   := $(BUILD_DIR)/obj
+BUILD_TO_DIR  := $(BUILD_DIR)/objt
+BUILD_ITO_DIR := $(BUILD_DIR)/objit
+LIB_DIR       := $(BUILD_DIR)/lib
+INCLUDE_DIR   := $(BUILD_DIR)/include
+TESTS_DIR     := $(BUILD_DIR)/unittests
+ITESTS_DIR    := $(BUILD_DIR)/integration_tests
 
 # Architecture flags.
 ARCH_FLAGS :=
@@ -84,11 +86,28 @@ TEST_CXXFLAGS := \
 	-I$(INCLUDE_DIR) \
 	-I$(THIRD_PARTY)
 
+# Integration test C++ flags.
+ITEST_CXXFLAGS := \
+	$(OPT_LEVEL) \
+	-std=gnu++20 \
+	-Wall \
+	-Werror \
+	-Wno-invalid-offsetof \
+	-Wno-multichar \
+	-ggdb \
+	-ffunction-sections \
+	-fdata-sections \
+	-DINTEGRATION_TEST \
+	-I$(SRC_DIR) \
+	-I$(INCLUDE_DIR) \
+	-I$(THIRD_PARTY)
+
 # OS-specific include directories.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
 	COMMON_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	TEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
+	ITEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 endif
 
 # Flags for archive tool
@@ -103,19 +122,22 @@ GCC_AS     := $(GCC_PREFIX)as
 GCC_LD     := $(GCC_PREFIX)ld
 GCC_AR     := $(GCC_PREFIX)ar
 
-# Native build tools for unittests.
+# Native build tools for unittests and integration tests.
 TEST_CXX   := /usr/bin/g++
+ITEST_CXX  := /usr/bin/g++
 
 # Test directories and expected outputs.
-TEST_RES_DIR := $(TESTS_DIR)/.results
-ALL_TESTS    :=
+TEST_RES_DIR  := $(TESTS_DIR)/.results
+ALL_TESTS     :=
+ITEST_RES_DIR := $(ITESTS_DIR)/.results
+ALL_ITESTS    :=
 
 # Create the GIT commit version header.
 $(shell scripts/make_version.sh $(INCLUDE_DIR))
 
 # Rule to build everything.
 .PHONY: all
-all: $(TARGETS:%=$(BIN_DIR)/%) test
+all: $(TARGETS:%=$(BIN_DIR)/%) test itest
 	@:
 
 # Rule to clean everything.
@@ -158,6 +180,8 @@ $(call include_modules,$(MODULES),)
 # Rules for making unittests using tmock.
 -include scripts/test_defs.mk
 $(call define_all_tests)
+-include scripts/itest_defs.mk
+$(call define_all_integration_tests)
 
 # Define a build rule for each target.
 -include scripts/targets.mk
@@ -168,4 +192,5 @@ $(call define_target_rules,$(TARGETS))
 
 # Rule to execute all tests.
 -include scripts/tests.mk
+-include scripts/itests.mk
 endif
