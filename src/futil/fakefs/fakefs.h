@@ -73,6 +73,11 @@ struct file_node
         kassert(offset + sizeof(T) <= data.size());
         return *(T*)&data[offset];
     }
+    template<typename T>
+    T* as_array(size_t offset = 0)
+    {
+        return (T*)&data[offset];
+    }
 
     std::string path() const
     {
