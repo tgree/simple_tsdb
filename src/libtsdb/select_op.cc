@@ -131,8 +131,7 @@ tsdb::select_op::map_data()
                 throw;
         }
 
-        // No uncompressed file exists.  Try with a compressed file.  First,
-        // make an anonymous backing region to hold the uncompressed data.
+        // No uncompressed file exists.  Try with a compressed file.
         // TODO: Only unzip the part of the file we care about?
         // TODO: Instead, in write_series() we will no longer keep .gz files if
         //       they are larger than the raw data.  So a buffer of chunk_size
