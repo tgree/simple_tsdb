@@ -89,7 +89,6 @@ namespace futil
     void unlinkat(int at_fd, const char* path, int flag);
     void unlink_if_exists(const char* path);
     void unlinkat_if_exists(int at_fd, const char* path, int flag);
-    void rename(const char* old, const char* _new);
     void renameat(int fromfd, const char* from, int tofd, const char* to);
     bool renameat_if_not_exists(int fromfd, const char* from, int tofd,
                                 const char* to);
@@ -404,13 +403,6 @@ namespace futil
     {
         // unlinkat() doesn't seem to return EINTR.
         if (::unlinkat(at_fd,path,flag) == -1 && errno != ENOENT)
-            throw errno_exception(errno);
-    }
-
-    inline void rename(const char* old, const char* _new)
-    {
-        // rename() doesn't seem to return EINTR.
-        if (::rename(old,_new) == -1)
             throw errno_exception(errno);
     }
 
