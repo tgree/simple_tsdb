@@ -83,7 +83,7 @@ namespace futil
     void mkdir(const char* path, mode_t mode);
     void mkdirat(int at_fd, const char* path, mode_t mode);
     void mkdir_if_not_exists(const char* path, mode_t mode);
-    void mkdirat_if_not_exists(int at_fd, const char* path, mode_t mode);
+    bool mkdirat_if_not_exists(int at_fd, const char* path, mode_t mode);
     void symlink(const char* path1, const char* path2);
     void unlink(const char* path);
     void unlinkat(int at_fd, const char* path, int flag);
@@ -357,18 +357,22 @@ namespace futil
             throw errno_exception(errno);
     }
 
-    inline void mkdir_if_not_exists(const char* path, mode_t mode)
+    inline bool mkdir_if_not_exists(const char* path, mode_t mode)
     {
         // mkdir() doesn't seem to return EINTR.
-        if (::mkdir(path,mode) == -1 && errno != EEXIST)
+        int v = ::mkdir(path,mode);
+        if (v == -1 && errno != EEXIST)
             throw errno_exception(errno);
+        return v == 0;
     }
 
-    inline void mkdirat_if_not_exists(int at_fd, const char* path, mode_t mode)
+    inline bool mkdirat_if_not_exists(int at_fd, const char* path, mode_t mode)
     {
         // mkdirat() doesn't seem to return EINTR.
-        if (::mkdirat(at_fd,path,mode) == -1 && errno != EEXIST)
+        int v = ::mkdirat(at_fd,path,mode);
+        if (v == -1 && errno != EEXIST)
             throw errno_exception(errno);
+        return v == 0;
     }
 
     inline void symlink(const char* path1, const char* path2)
