@@ -82,6 +82,7 @@ class StatusCode:
     INVALID_CONFIG_FILE          = -26
     INVALID_CHUNK_SIZE           = -27
     CORRUPT_MEASUREMENT          = -28
+    INVALID_TIME_FIRST           = -29
 
 
 class StatusException(Exception):

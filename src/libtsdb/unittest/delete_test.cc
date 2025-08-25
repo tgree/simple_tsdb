@@ -202,7 +202,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_no_empty_index_entries)
+    TMOCK_TEST(test_no_empty_index_entries)
     {
         // This will write 18 full 16-entry chunks and leave a 12-entry chunk
         // at the end.  The WAL will be empty.
