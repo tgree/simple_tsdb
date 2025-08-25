@@ -107,8 +107,19 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             bitmap_file_paths.emplace_back(field.name,ie.timestamp_file);
         }
 
-        // Open the tail file.
-        tail_fd.open(time_ns_dir,ie.timestamp_file,O_RDWR);
+        // Open the tail file.  If there was only a single entry in the index
+        // file, and we crashed while deleting that chunk, the entry can still
+        // exist in the index file but not exist on disk.  
+        try
+        {
+            tail_fd.open(time_ns_dir,ie.timestamp_file,O_RDWR);
+        }
+        catch (const futil::errno_exception& e)
+        {
+            if (e.errnov == ENOENT)
+                break;
+            throw;
+        }
 
         // Validate the file size.
         pos = tail_fd.lseek(0,SEEK_END);
