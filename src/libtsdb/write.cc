@@ -79,6 +79,11 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
         bitmap_dirs.emplace_back(bitmaps_dir,field.name);
     }
 
+    // Compute some useful constants.
+    const size_t nindices = index_fd.lseek(0,SEEK_END) / sizeof(index_entry);
+    const size_t chunk_size = write_lock.m.db.root.config.chunk_size;
+    const size_t chunk_npoints = chunk_size/8;
+
     // ************ Index search and crash recovery truncation  **************
     // Open the index file and the most recent timestamp file if it exists, and
     // perform validation checking on it if found.
@@ -87,11 +92,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     field_vector<futil::file> field_fds;
     field_vector<futil::path> bitmap_file_paths;
     field_vector<futil::file> bitmap_fds;
-    const off_t index_len = index_fd.lseek(0,SEEK_END);
-    const size_t nindices = index_len / sizeof(index_entry);
     size_t avail_points = 0;
-    const size_t chunk_size = write_lock.m.db.root.config.chunk_size;
-    const size_t chunk_npoints = chunk_size/8;
     index_entry ie;
     off_t pos;
     for (size_t i=0; i<nindices; ++i)
