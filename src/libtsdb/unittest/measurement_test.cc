@@ -30,7 +30,7 @@ const std::vector<tsdb::schema_entry> duped_fields =
 
 class tmock_test
 {
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_create_measurement)
+    TMOCK_TEST(test_create_measurement)
     {
         tsdb::configuration c = {
             .chunk_size = 2*1024*1024,
