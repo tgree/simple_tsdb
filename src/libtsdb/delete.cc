@@ -26,8 +26,8 @@ tsdb::delete_points(series_total_lock& stl, uint64_t t)
     futil::file index_fd(stl.series_dir,"index",O_RDWR);
     auto index_m = index_fd.mmap(NULL,index_fd.lseek(0,SEEK_END),
                                  PROT_READ | PROT_WRITE,MAP_SHARED,0);
-    auto* index_begin = (index_entry*)index_m.addr;
-    auto* index_end = index_begin + index_m.len / sizeof(index_entry);
+    const auto* index_begin = (const index_entry*)index_m.addr;
+    const auto* index_end = index_begin + index_m.len / sizeof(index_entry);
 
     // Find the target slot.  std::upper_bound returns the first slot greater
     // than the requested value, meaning that t must appear in the slot
