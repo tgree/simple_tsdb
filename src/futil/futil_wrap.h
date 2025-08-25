@@ -71,6 +71,8 @@ namespace futil
     int openat(int at_fd, const char* path, int oflag);
     int openat(int at_fd, const char* path, int oflag, mode_t mode);
     int openat_if_exists(int at_fd, const char* path, int oflag);
+    int createat_if_not_exists(int at_fd, const char* path, int oflag,
+                               mode_t mode);
     DIR* fdopendir(int fd);
     struct dirent* readdir(DIR* dirp);
     void closedir(DIR* dirp);
@@ -256,6 +258,21 @@ namespace futil
                 return fd;
             if (errno != EINTR)
                 throw errno_exception(errno);
+        }
+    }
+
+    inline int createat_if_not_exists(int at_fd, const char* path, int oflag,
+                                      mode_t mode)
+    {
+        for (;;)
+        {
+            int fd = ::openat(at_fd,path,oflag | O_CREAT | O_EXCL,mode);
+            if (fd != -1)
+                return fd;
+            if (errno == EEXIST)
+                return -1;
+            if (errno != EINTR)
+                throw futil::errno_exception(errno);
         }
     }
 
