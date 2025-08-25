@@ -136,7 +136,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_select_last_overlap)
+    TMOCK_TEST(test_select_last_overlap)
     {
         generate_db();
 
@@ -365,7 +365,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_select_last_sliding)
+    TMOCK_TEST(test_select_last_sliding)
     {
         generate_db();
 
