@@ -626,6 +626,46 @@ class tmock_test
         }
         TASSERT(found_danglers);
     }
+
+    TMOCK_TEST(test_no_empty_index_entries)
+    {
+        tsdb::configuration c = {
+            .chunk_size = 128,
+            .wal_max_entries = 64,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+
+        {
+            tsdb::root root(".",false);
+            root.create_database("db1");
+            tsdb::database db1(root,"db1");
+            tsdb::create_measurement(db1,"measurement1",test_fields);
+            tsdb::measurement m1(db1,"measurement1");
+            auto swl = tsdb::open_or_create_and_lock_series(m1,"series1");
+
+            // We are going to write a total of 300 points, all at once.
+            snapshot_auto_begin();
+            write_points(swl,300,1000,100,0);
+            snapshot_auto_end();
+        }
+
+        for (auto* dn : snapshots)
+        {
+            auto* sdn = dn
+                ->get_dir("databases")
+                ->get_dir("db1")
+                ->get_dir("measurement1")
+                ->get_dir("series1");
+            auto* index_fn = sdn->get_file("index");
+
+            size_t nindices = index_fn->data.size() / sizeof(tsdb::index_entry);
+            auto* ies = index_fn->as_array<tsdb::index_entry>();
+            auto* time_ns_dn = sdn->get_dir("time_ns");
+            for (size_t i=0; i<nindices; ++i)
+                TASSERT(time_ns_dn->files.contains(ies[i].timestamp_file));
+        }
+    }
 };
 
 TMOCK_MAIN();
