@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "write.h"
 #include "database.h"
+#include <futil/xact.h>
 #include <hdr/auto_buf.h>
 #include <algorithm>
 
@@ -127,8 +128,23 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             }
             futil::unlink_if_exists(time_ns_dir,ie.timestamp_file);
             time_ns_dir.fsync_and_barrier();
-            index_fd.truncate(index*sizeof(index_entry));
-            index_fd.lseek(0,SEEK_END);
+
+            // Make a temporary file, copy the index_fd contents into it and
+            // then do an atomic rename to replace index_fd.  select_op may
+            // have index_fd mmap'd so we are not allowed to just truncate it.
+            futil::xact_mktemp tmp_index_fd(write_lock.m.db.root.tmp_dir,0660);
+            size_t new_index_len = index*sizeof(index_entry);
+            auto_buf new_index_data(new_index_len);
+            index_fd.lseek(0,SEEK_SET);
+            index_fd.read_all(new_index_data.data,new_index_len);
+            tmp_index_fd.write_all(new_index_data.data,new_index_len);
+            tmp_index_fd.fsync();
+            futil::rename(write_lock.m.db.root.tmp_dir,tmp_index_fd.name,
+                          write_lock.series_dir,"index");
+            tmp_index_fd.commit();
+            write_lock.series_dir.fsync_and_flush();
+            write_lock.m.db.root.tmp_dir.fsync_and_flush();
+            index_fd.swap(tmp_index_fd);
             continue;
         }
 

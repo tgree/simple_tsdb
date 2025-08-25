@@ -667,8 +667,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
-        test_no_tailfd_write_truncate_while_selecting)
+    TMOCK_TEST(test_no_tailfd_write_truncate_while_selecting)
     {
         tsdb::configuration c = {
             .chunk_size = 128,
