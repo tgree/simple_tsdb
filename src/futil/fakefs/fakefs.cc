@@ -403,6 +403,18 @@ futil::openat(int at_fd, const char* path, int oflag, mode_t mode)
 }
 
 int
+futil::openat_if_exists(int at_fd, const char* path, int oflag) try
+{
+    return futil::openat(at_fd,path,oflag);
+}
+catch (const futil::errno_exception& e)
+{
+    if (e.errnov == ENOENT)
+        return -1;
+    throw;
+}
+
+int
 futil::createat_if_not_exists(int at_fd, const char* path, int oflag,
     mode_t mode) try
 {
