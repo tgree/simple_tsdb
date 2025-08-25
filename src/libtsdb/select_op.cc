@@ -111,6 +111,8 @@ tsdb::select_op::map_data()
         const auto& f = fields[i];
         const auto* fti = &ftinfos[f->type];
         size_t len = end_index*fti->nbytes;
+        field_data[i] = (const char*)field_bufs[i].data +
+                        start_index*fti->nbytes;
 
         //  Try opening an uncompressed file first.  If one exists, we must use
         //  it; any compressed file that exists could be the result of a
@@ -121,8 +123,6 @@ tsdb::select_op::map_data()
                 fields_dir,futil::path(f->name,index_slot->timestamp_file),
                 O_RDONLY);
             field_fd.read_all(field_bufs[i].data,len);
-            field_data[i] = (const char*)field_bufs[i].data +
-                            start_index*fti->nbytes;
             continue;
         }
         catch (const futil::errno_exception& e)
@@ -140,8 +140,6 @@ tsdb::select_op::map_data()
         //       (avoiding making new mappings all the time) and just ungzip
         //       from that memory buffer which should be faster than
         //       zng_gzread() file IO.
-        field_data[i] = (const char*)field_bufs[i].data +
-                        start_index*fti->nbytes;
 
         // Now, try and open the file and unzip it into the backing region.
         char gz_name[TIMESTAMP_FILE_NAME_LEN + 3];
