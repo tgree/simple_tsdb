@@ -72,7 +72,7 @@ class tmock_test
         tmock::assert_equiv(time_first_fn->get_data<uint64_t>(),1501UL);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_delete_chunks_inodes)
+    TMOCK_TEST(test_delete_chunks_inodes)
     {
         init_db(128);
         std::vector<size_t> nvec;
