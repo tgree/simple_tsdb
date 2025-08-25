@@ -176,7 +176,7 @@ namespace futil
     inline void fsync_and_flush(int fd)
     {
 #if IS_MACOS
-        // Performs an fasync() and then flushes the disk controller's
+        // Performs an fsync() and then flushes the disk controller's
         // buffers to the physical drive medium.
         futil::fcntl(fd,F_FULLFSYNC);
 #elif IS_LINUX
