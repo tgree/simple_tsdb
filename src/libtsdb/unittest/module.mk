@@ -6,6 +6,7 @@ TESTS := \
 	 measurement_test \
 	 root_test \
 	 series_test \
+	 wal_test \
 	 write_test
 
 bitmap_test.OBJ := \
@@ -29,6 +30,19 @@ root_test.OBJ := \
 	$(BUILD_O_DIR)/floor/kassert.o
 series_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/series_test.o \
+	$(PARENT_TBUILD_DIR)/series.o \
+	$(PARENT_TBUILD_DIR)/measurement.o \
+	$(PARENT_TBUILD_DIR)/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+wal_test.LIB := libz-ng.a
+wal_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/wal_test.o \
+	$(MODULE_TBUILD_DIR)/fake_db.o \
+	$(PARENT_TBUILD_DIR)/wal.o \
+	$(PARENT_TBUILD_DIR)/write.o \
+	$(PARENT_TBUILD_DIR)/count.o \
+	$(PARENT_TBUILD_DIR)/select_op.o \
 	$(PARENT_TBUILD_DIR)/series.o \
 	$(PARENT_TBUILD_DIR)/measurement.o \
 	$(PARENT_TBUILD_DIR)/root.o \
