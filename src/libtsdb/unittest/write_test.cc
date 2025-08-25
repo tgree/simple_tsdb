@@ -666,6 +666,59 @@ class tmock_test
                 TASSERT(time_ns_dn->files.contains(ies[i].timestamp_file));
         }
     }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
+        test_no_tailfd_write_truncate_while_selecting)
+    {
+        tsdb::configuration c = {
+            .chunk_size = 128,
+            .wal_max_entries = 16,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+
+        {
+            tsdb::root root(".",false);
+            root.create_database("db1");
+            tsdb::database db1(root,"db1");
+            tsdb::create_measurement(db1,"measurement1",test_fields);
+            tsdb::measurement m1(db1,"measurement1");
+            auto swl = tsdb::open_or_create_and_lock_series(m1,"series1");
+
+            // We are going to write a total of 45 points, all at once.
+            snapshot_auto_begin();
+            write_points(swl,45,1000,100,0);
+            snapshot_auto_end();
+        }
+
+        for (auto* dn : snapshots)
+        {
+            activate_and_fsync_snapshot(dn);
+
+            tsdb::root root(".",false);
+            tsdb::database db1(root,"db1");
+            tsdb::measurement m1(db1,"measurement1");
+            auto swl = tsdb::open_or_create_and_lock_series(m1,"series1");
+            if (swl.time_last == 0)
+                continue;
+
+            // Give space to the index file backing so that it can be grown
+            // while under fakefs mmap.
+            auto index_fn = fd_table[swl.series_dir.fd].directory
+                                ->get_file("index");
+            index_fn->data.reserve(index_fn->data.size() + 1024);
+
+            // Start a select op.
+            auto srl = tsdb::series_read_lock(m1,"series1");
+            tsdb::select_op_first op(srl,"series1",{"field1"},0,-1,-1);
+            tmock::assert_equiv(op.npoints,16UL);
+            tmock::assert_equiv(op.timestamps_begin[0],1000UL);
+            tmock::assert_equiv(op.timestamps_end[-1],2500UL);
+
+            // Start a write.
+            write_points(swl,45,100000,100,0);
+        }
+    }
 };
 
 TMOCK_MAIN();
