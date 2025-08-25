@@ -9,7 +9,33 @@
 #include <map>
 #include <set>
 
-struct dir_node;
+struct file_node;
+
+struct dir_node
+{
+    dir_node*                           parent;
+    std::string                         name;
+    mode_t                              mode;
+    size_t                              refcount;
+    bool                                meta_fsynced;
+    std::set<std::string>               dirty_unlinks;
+    std::map<std::string,file_node*>    files;
+    std::map<std::string,dir_node*>     subdirs;
+
+    file_node* get_file(const std::string& name) const
+    {
+        auto iter = files.find(name);
+        kassert(iter != files.end());
+        return iter->second;
+    }
+
+    dir_node* get_dir(const std::string& name) const
+    {
+        auto iter = subdirs.find(name);
+        kassert(iter != subdirs.end());
+        return iter->second;
+    }
+};
 
 struct file_node
 {
@@ -39,32 +65,6 @@ struct file_node
     {
         kassert(offset + sizeof(T) <= data.size());
         return *(T*)&data[offset];
-    }
-};
-
-struct dir_node
-{
-    dir_node*                           parent;
-    std::string                         name;
-    mode_t                              mode;
-    size_t                              refcount;
-    bool                                meta_fsynced;
-    std::set<std::string>               dirty_unlinks;
-    std::map<std::string,file_node*>    files;
-    std::map<std::string,dir_node*>     subdirs;
-
-    file_node* get_file(const std::string& name) const
-    {
-        auto iter = files.find(name);
-        kassert(iter != files.end());
-        return iter->second;
-    }
-
-    dir_node* get_dir(const std::string& name) const
-    {
-        auto iter = subdirs.find(name);
-        kassert(iter != subdirs.end());
-        return iter->second;
     }
 };
 
