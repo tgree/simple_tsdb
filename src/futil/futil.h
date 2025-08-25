@@ -584,7 +584,7 @@ namespace futil
 
     inline void mkdir(const directory& dir, const char* path, mode_t mode)
     {
-        futil::mkdir(dir.fd,path,mode);
+        futil::mkdirat(dir.fd,path,mode);
     }
 
     inline void mkdir_if_not_exists(const directory& dir, const char* path,

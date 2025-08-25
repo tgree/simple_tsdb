@@ -81,7 +81,7 @@ namespace futil
     void flock(int fd, int operation);
     void ftruncate(int fd, off_t length);
     void mkdir(const char* path, mode_t mode);
-    void mkdir(int at_fd, const char* path, mode_t mode);
+    void mkdirat(int at_fd, const char* path, mode_t mode);
     void mkdir_if_not_exists(const char* path, mode_t mode);
     void mkdirat_if_not_exists(int at_fd, const char* path, mode_t mode);
     void symlink(const char* path1, const char* path2);
@@ -351,7 +351,7 @@ namespace futil
             throw errno_exception(errno);
     }
 
-    inline void mkdir(int at_fd, const char* path, mode_t mode)
+    inline void mkdirat(int at_fd, const char* path, mode_t mode)
     {
         if (::mkdirat(at_fd,path,mode) == -1)
             throw errno_exception(errno);
