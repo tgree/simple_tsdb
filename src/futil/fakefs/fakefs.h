@@ -35,6 +35,13 @@ struct dir_node
         kassert(iter != subdirs.end());
         return iter->second;
     }
+
+    std::string path() const
+    {
+        if (!parent)
+            return "/";
+        return parent->path() + name + "/";
+    }
 };
 
 struct file_node
@@ -65,6 +72,11 @@ struct file_node
     {
         kassert(offset + sizeof(T) <= data.size());
         return *(T*)&data[offset];
+    }
+
+    std::string path() const
+    {
+        return parent->path() + name;
     }
 };
 

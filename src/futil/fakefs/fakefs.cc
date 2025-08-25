@@ -81,14 +81,6 @@ find_fd_file_node(int fd)
     return fd_table[fd].file;
 }
 
-static std::string __UNUSED__
-dirpath(dir_node* d)
-{
-    if (!d->parent)
-        return "/";
-    return dirpath(d->parent) + d->name + "/";
-}
-
 static resolved_path
 resolve_path(dir_node* base_dir, const std::string& path)
 {
@@ -950,7 +942,7 @@ is_tree_fsynced(dir_node* dn, bool check_root)
 static void
 print_not_fsynced(dir_node* dn, bool print_root)
 {
-    auto dirname = dirpath(dn);
+    auto dirname = dn->path();
     if (print_root)
     {
         if (!dn->meta_fsynced)
