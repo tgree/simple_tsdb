@@ -120,6 +120,8 @@ tsdb::create_measurement(const database& db, const futil::path& name,
                                         db.dir,name))
         {
             m_dir.fsync_and_flush();
+            db.dir.fsync_and_flush();
+            db.root.tmp_dir.fsync_and_flush();
             schema_fd.commit();
             m_dir.commit();
             return;
