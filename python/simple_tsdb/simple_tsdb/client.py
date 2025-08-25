@@ -81,6 +81,7 @@ class StatusCode:
     TOO_MANY_FIELDS              = -25
     INVALID_CONFIG_FILE          = -26
     INVALID_CHUNK_SIZE           = -27
+    CORRUPT_MEASUREMENT          = -28
 
 
 class StatusException(Exception):

@@ -65,6 +65,8 @@ check_status(tsdb::status_code sc)
             throw tsdb::invalid_config_file_exception();
         case tsdb::INVALID_CHUNK_SIZE:
             throw tsdb::invalid_chunk_size_exception();
+        case tsdb::CORRUPT_MEASUREMENT:
+            throw tsdb::corrupt_measurement_exception();
     }
 
     throw protocol_exception("Unknown status code");
