@@ -82,8 +82,8 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     field_vector<futil::file> field_fds;
     field_vector<futil::path> bitmap_file_paths;
     field_vector<futil::file> bitmap_fds;
-    off_t index_len = index_fd.lseek(0,SEEK_END);
-    size_t nindices = index_len / sizeof(index_entry);
+    const off_t index_len = index_fd.lseek(0,SEEK_END);
+    const size_t nindices = index_len / sizeof(index_entry);
     size_t avail_points = 0;
     const size_t chunk_size = write_lock.m.db.root.config.chunk_size;
     const size_t chunk_npoints = chunk_size/8;
