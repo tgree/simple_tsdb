@@ -204,6 +204,8 @@ tsdb::create_root(const futil::path& path, const configuration& config) try
     futil::xact_mkdir databases_dir(root_dir,"databases",0770);
     futil::xact_creat config_fd(root_dir,"config.txt",O_RDWR | O_CREAT,0440);
     config_fd.write_all(&config_str[0],config_str.size());
+    config_fd.fsync();
+    root_dir.fsync();
     config_fd.commit();
     databases_dir.commit();
     tmp_dir.commit();
