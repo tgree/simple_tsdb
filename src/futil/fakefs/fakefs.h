@@ -20,6 +20,8 @@ struct file_node
     size_t                  shared_locks;
     size_t                  exclusive_locks;
     size_t                  mmap_count;
+    bool                    data_fsynced;
+    bool                    meta_fsynced;
     std::vector<uint8_t>    data;
 
     std::string data_as_string() const
@@ -46,6 +48,8 @@ struct dir_node
     std::string                         name;
     mode_t                              mode;
     size_t                              refcount;
+    bool                                meta_fsynced;
+    std::set<std::string>               dirty_unlinks;
     std::map<std::string,file_node*>    files;
     std::map<std::string,dir_node*>     subdirs;
 };
@@ -72,11 +76,15 @@ struct file_descriptor
 
 extern void delete_tree(dir_node* dn);
 extern dir_node* clone_tree(dir_node* dn);
+extern void fsync_tree(dir_node* dn);
+extern bool is_tree_fsynced(dir_node* dn);
+extern void assert_tree_fsynced(dir_node* dn);
+extern void assert_children_fsynced(dir_node* dn);
 extern void snapshot_fs();
 extern void snapshot_reset();
 extern void snapshot_auto_begin();
 extern void snapshot_auto_end();
-extern void activate_snapshot(dir_node* dn);
+extern void activate_and_fsync_snapshot(dir_node* dn);
 extern void nuke_fs_root();
 
 extern dir_node* fs_root;

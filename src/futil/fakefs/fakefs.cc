@@ -33,7 +33,7 @@ struct resolved_path
     std::string name;
 };
 
-dir_node* fs_root = new dir_node{NULL,"",0,1};
+dir_node* fs_root = new dir_node{NULL,"",0,1,true};
 std::vector<dir_node*> snapshots;
 std::set<dir_node*> live_dirs{fs_root};
 std::set<file_node*> live_files;
@@ -127,6 +127,8 @@ futil::mmap(void* addr, size_t len, int prot, int flags, int fd, off_t offset)
     kassert(flags == MAP_SHARED);
     kassert(offset == 0);
 
+    // TODO: How to keep track of fsync state?
+
     // This works, but it is not great.  If someone else grows the file, the
     // std::vector<> may need to reallocate and this would move the underlying
     // storage around, leaving the mmap() client with a dangling pointer.
@@ -160,8 +162,25 @@ futil::munmap(void* addr, size_t len)
 void
 futil::fsync(int fd)
 {
-    if (fd >= (int)NELEMS(fd_table) || fd <= 0 || fd_table[fd].type == FDT_FREE)
+    if (fd >= (int)NELEMS(fd_table) || fd <= 0)
         throw futil::errno_exception(EBADF);
+    switch (fd_table[fd].type)
+    {
+        case FDT_DIRECTORY:
+            for (auto &[name, fn] : fd_table[fd].directory->files)
+                fn->meta_fsynced = true;
+            for (auto &[name, dn] : fd_table[fd].directory->subdirs)
+                dn->meta_fsynced = true;
+            fd_table[fd].directory->dirty_unlinks.clear();
+        break;
+
+        case FDT_FILE:
+            fd_table[fd].file->data_fsynced = true;
+        break;
+
+        case FDT_FREE:
+            throw futil::errno_exception(EBADF);
+    }
 }
 
 void
@@ -201,15 +220,13 @@ futil::close(int fd)
 void
 futil::fsync_and_flush(int fd)
 {
-    if (fd >= (int)NELEMS(fd_table) || fd_table[fd].type == FDT_FREE)
-        throw futil::errno_exception(EBADF);
+    futil::fsync(fd);
 }
 
 void
 futil::fsync_and_barrier(int fd)
 {
-    if (fd >= (int)NELEMS(fd_table) || fd_table[fd].type == FDT_FREE)
-        throw futil::errno_exception(EBADF);
+    futil::fsync(fd);
 }
 
 int
@@ -279,8 +296,12 @@ futil::openat(int at_fd, const char* path, int oflag)
             throw futil::errno_exception(ENOTDIR);
         if (oflag & O_TRUNC)
         {
-            fiter->second->data.clear();
-            auto_snapshot_fs();
+            if (!fiter->second->data.empty())
+            {
+                fiter->second->data.clear();
+                fiter->second->data_fsynced = false;
+                auto_snapshot_fs();
+            }
         }
         fd_table[fd].type = FDT_FILE;
         fd_table[fd].pos  = 0;
@@ -338,7 +359,7 @@ futil::openat(int at_fd, const char* path, int oflag, mode_t mode)
     auto iter = rp.directory->files.find(rp.name);
     if (iter == rp.directory->files.end())
     {
-        fn = new file_node{rp.directory,rp.name,mode,1,0,0,0};
+        fn = new file_node{rp.directory,rp.name,mode,1,0,0,0,true,false};
         rp.directory->files.emplace(std::make_pair(rp.name,fn));
         ++rp.directory->refcount;
         live_files.insert(fn);
@@ -352,7 +373,11 @@ futil::openat(int at_fd, const char* path, int oflag, mode_t mode)
     // Truncate if necessary.
     if (oflag & O_TRUNC)
     {
-        fn->data.clear();
+        if (!fn->data.empty())
+        {
+            fn->data_fsynced = false;
+            fn->data.clear();
+        }
         auto_snapshot_fs();
     }
 
@@ -462,6 +487,12 @@ ssize_t
 futil::write(int fd, const void* buf, size_t nbyte)
 {
     file_node* fn = find_fd_file_node(fd);
+
+    // Zero-length writes do not extend the file length, even if the position
+    // is past the end of the file.
+    if (!nbyte)
+        return 0;
+
     size_t limit = fd_table[fd].pos + nbyte;
     if (fn->data.size() < limit)
     {
@@ -469,6 +500,7 @@ futil::write(int fd, const void* buf, size_t nbyte)
         fn->data.resize(limit);
     }
     memcpy(&fn->data[fd_table[fd].pos],buf,nbyte);
+    fn->data_fsynced = false;
     auto_snapshot_fs();
     fd_table[fd].pos += nbyte;
     return nbyte;
@@ -554,7 +586,7 @@ futil::mkdirat(int at_fd, const char* path, mode_t mode)
         throw futil::errno_exception(EEXIST);
     }
 
-    auto dn = new dir_node{rp.directory,rp.name,mode,1};
+    auto dn = new dir_node{rp.directory,rp.name,mode,1,false};
     dn->parent->subdirs.emplace(std::make_pair(dn->name,dn));
     ++dn->parent->refcount;
     live_dirs.insert(dn);
@@ -605,6 +637,8 @@ futil::unlinkat(int at_fd, const char* path, int flag)
         kassert(rem_dir->parent);
         kassert(--rem_dir->parent->refcount);
         rem_dir->parent->subdirs.erase(rem_dir->name);
+        rem_dir->parent->dirty_unlinks.insert(rem_dir->name);
+        rem_dir->meta_fsynced = false;
         auto_snapshot_fs();
         if (!--rem_dir->refcount)
         {
@@ -626,6 +660,8 @@ futil::unlinkat(int at_fd, const char* path, int flag)
         kassert(rem_file->parent);
         kassert(--rem_file->parent->refcount);
         rem_file->parent->files.erase(rem_file->name);
+        rem_file->parent->dirty_unlinks.insert(rem_file->name);
+        rem_file->meta_fsynced = false;
         auto_snapshot_fs();
         if (!--rem_file->refcount && !rem_file->mmap_count)
         {
@@ -674,6 +710,8 @@ futil::renameat(int fromfd, const char* from, int tofd, const char* to)
                 throw futil::errno_exception(ENOTEMPTY);
             kassert(--torp.directory->refcount);
             torp.directory->subdirs.erase(rem_dir->name);
+            torp.directory->dirty_unlinks.insert(rem_dir->name);
+            rem_dir->meta_fsynced = false;
             if (!--rem_dir->refcount)
             {
                 kassert(live_dirs.contains(rem_dir));
@@ -685,8 +723,10 @@ futil::renameat(int fromfd, const char* from, int tofd, const char* to)
         // Move the source directory to the target.
         kassert(--fromrp.directory->refcount);
         fromrp.directory->subdirs.erase(fromrp.name);
+        fromrp.directory->dirty_unlinks.insert(fromrp.name);
         dn->name = torp.name;
         dn->parent = torp.directory;
+        dn->meta_fsynced = false;
         torp.directory->subdirs.insert(std::make_pair(dn->name,dn));
         ++torp.directory->refcount;
     }
@@ -707,6 +747,8 @@ futil::renameat(int fromfd, const char* from, int tofd, const char* to)
                 return;
             kassert(--torp.directory->refcount);
             torp.directory->files.erase(rem_file->name);
+            torp.directory->dirty_unlinks.insert(rem_file->name);
+            rem_file->meta_fsynced = false;
             if (!--rem_file->refcount && !rem_file->mmap_count)
             {
                 kassert(live_files.contains(rem_file));
@@ -718,8 +760,10 @@ futil::renameat(int fromfd, const char* from, int tofd, const char* to)
         // Move the source file to the target.
         kassert(--fromrp.directory->refcount);
         fromrp.directory->files.erase(fromrp.name);
+        fromrp.directory->dirty_unlinks.insert(fromrp.name);
         fn->name = torp.name;
         fn->parent = torp.directory;
+        fn->meta_fsynced = false;
         torp.directory->files.insert(std::make_pair(fn->name,fn));
         ++torp.directory->refcount;
     }
@@ -783,12 +827,14 @@ delete_tree(dir_node* dn)
 dir_node*
 clone_tree(dir_node* dn)
 {
-    dir_node* new_dn = new dir_node{NULL,dn->name,dn->mode,1};
+    dir_node* new_dn = new dir_node{NULL,dn->name,dn->mode,1,dn->meta_fsynced,
+                                    dn->dirty_unlinks};
     live_dirs.insert(new_dn);
 
     for (auto const &[name, fn] : dn->files)
     {
         file_node* new_fn = new file_node{new_dn,fn->name,fn->mode,1,0,0,0,
+                                          fn->data_fsynced,fn->meta_fsynced,
                                           fn->data};
         new_dn->files.emplace(std::make_pair(new_fn->name,new_fn));
         ++new_dn->refcount;
@@ -804,6 +850,85 @@ clone_tree(dir_node* dn)
     }
 
     return new_dn;
+}
+
+void
+fsync_tree(dir_node* dn)
+{
+    dn->meta_fsynced = true;
+    dn->dirty_unlinks.clear();
+
+    for (auto iter : dn->subdirs)
+        fsync_tree(iter.second);
+    for (auto iter : dn->files)
+    {
+        iter.second->data_fsynced = true;
+        iter.second->meta_fsynced = true;
+    }
+}
+
+bool
+is_tree_fsynced(dir_node* dn, bool check_root)
+{
+    if (check_root && (!dn->meta_fsynced || !dn->dirty_unlinks.empty()))
+        return false;
+
+    for (auto iter : dn->subdirs)
+    {
+        if (!is_tree_fsynced(iter.second,true))
+            return false;
+    }
+    for (auto iter : dn->files)
+    {
+        if (!iter.second->data_fsynced)
+            return false;
+        if (!iter.second->meta_fsynced)
+            return false;
+    }
+
+    return true;
+}
+
+static void
+print_not_fsynced(dir_node* dn, bool print_root)
+{
+    auto dirname = dirpath(dn);
+    if (print_root)
+    {
+        if (!dn->meta_fsynced)
+            printf("%s not meta-fsynced.\n",dirname.c_str());
+        for (const auto& s : dn->dirty_unlinks)
+            printf("%s dirty unlink \"%s\".\n",dirname.c_str(),s.c_str());
+    }
+
+    for (auto iter : dn->files)
+    {
+        auto fname = dirname + "/" + iter.first;
+        if (!iter.second->data_fsynced)
+            printf("%s not data-fsynced.\n",fname.c_str());
+        if (!iter.second->meta_fsynced)
+            printf("%s not meta-fsynced.\n",fname.c_str());
+    }
+    for (auto iter : dn->subdirs)
+        print_not_fsynced(iter.second,true);
+}
+
+void
+assert_tree_fsynced(dir_node* dn)
+{
+    if (is_tree_fsynced(dn,true))
+        return;
+    print_not_fsynced(dn,true);
+    kabort();
+}
+
+void
+assert_children_fsynced(dir_node* dn)
+{
+    if (is_tree_fsynced(dn,false))
+        return;
+    print_not_fsynced(dn,false);
+    kabort();
 }
 
 void
@@ -833,11 +958,12 @@ snapshot_auto_end()
 }
 
 void
-activate_snapshot(dir_node* dn)
+activate_and_fsync_snapshot(dir_node* dn)
 {
     for (size_t i=0; i<NELEMS(fd_table); ++i)
         kassert(fd_table[i].type == FDT_FREE);
     current_wd = fs_root = dn;
+    fsync_tree(fs_root);
 }
 
 void
