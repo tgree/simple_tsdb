@@ -294,6 +294,10 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                     // TODO: If destination file was larger than the chunk size,
                     // delete it and just keep the uncompressed version around.
                     // TODO: Make whatever file is left behind read-only.
+                    //       The issue is that a crash could leave a file
+                    //       behind that we will later try to reopen with
+                    //       O_CREAT | O_TRUNC | O_RDWR when we recover.  That
+                    //       will fail if the file is marked read-only.
                 }
             }
 
