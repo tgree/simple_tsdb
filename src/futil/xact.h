@@ -34,7 +34,7 @@ namespace futil
         ~_xact_mkdir()
         {
             if (!committed)
-                ::unlinkat(at_fd,path,AT_REMOVEDIR);
+                futil::unlinkat(at_fd,path,AT_REMOVEDIR);
         }
     };
 
@@ -67,17 +67,15 @@ namespace futil
             {
                 uint32_t v = rand();
                 snprintf(name,sizeof(name),"%08X",v);
-                if (!::mkdirat(at_fd,name,mode))
+                if (futil::mkdirat_if_not_exists(at_fd,name,mode))
                     return;
-                if (errno != EEXIST)
-                    throw futil::errno_exception(errno);
             }
         }
 
         ~_xact_mkdtemp()
         {
             if (!committed)
-                ::unlinkat(at_fd,name,AT_REMOVEDIR);
+                futil::unlinkat(at_fd,name,AT_REMOVEDIR);
         }
     };
 
@@ -107,18 +105,16 @@ namespace futil
             {
                 uint32_t v = rand();
                 snprintf(name,sizeof(name),"%08X",v);
-                mk_fd = ::openat(at_fd,name,O_RDWR | O_CREAT | O_EXCL,mode);
+                mk_fd = futil::createat_if_not_exists(at_fd,name,O_RDWR,mode);
                 if (mk_fd != -1)
                     return;
-                if (errno != EEXIST)
-                    throw futil::errno_exception(errno);
             }
         }
 
         ~_xact_mktemp()
         {
             if (!committed)
-                ::unlinkat(at_fd,name,0);
+                futil::unlinkat(at_fd,name,0);
         }
     };
 
@@ -157,7 +153,7 @@ namespace futil
         ~xact_creat()
         {
             if (!committed)
-                ::unlinkat(at_fd,path,0);
+                futil::unlinkat(at_fd,path,0);
         }
     };
 }
