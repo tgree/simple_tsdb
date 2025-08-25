@@ -23,9 +23,9 @@ tsdb::delete_points(series_total_lock& stl, uint64_t t)
     futil::directory time_ns_dir(stl.series_dir,"time_ns");
 
     // Map the index file and find the beginning and end.
-    futil::file index_fd(stl.series_dir,"index",O_RDWR);
+    futil::file index_fd(stl.series_dir,"index",O_RDONLY);
     auto index_m = index_fd.mmap(NULL,index_fd.lseek(0,SEEK_END),
-                                 PROT_READ | PROT_WRITE,MAP_SHARED,0);
+                                 PROT_READ,MAP_SHARED,0);
     const auto* index_begin = (const index_entry*)index_m.addr;
     const auto* index_end = index_begin + index_m.len / sizeof(index_entry);
 
