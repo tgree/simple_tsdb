@@ -261,8 +261,8 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     // ************************** Write Points *******************************
 
     // Write points.  The variable pos is the absolute position in the
-    // timestamp file; this should be used to calculate the index for other
-    // field sizes.
+    // tail_fd timestamp file (if we found one); this should be used to
+    // calculate the index for other field sizes.
     field_vector<futil::path> unlink_field_paths;
     while (wci.npoints)
     {
@@ -361,14 +361,14 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             avail_points = chunk_npoints;
             pos = 0;
 
-            // TODO: If we crash here, there is now a dangling, empty timestamp
-            // file.  It isn't in the index, so will never be accessed, but it
-            // will still exist.  If someone tries to rewrite the timestamp
-            // that created this file in the future then we will truncate/reuse
-            // it.  However, if the client doesn't try to rewrite this (maybe
-            // the client goes away before our database can recover) then it
-            // will sit here forever.  We may wish to periodically scan for
-            // orphaned files and delete them.
+            // TODO: If we crash here, there are now dangling, empty timestamp
+            // and field/bitmap files.  Their timestamp isn't in the index, so
+            // will never be accessed, but they will still exist.  If someone
+            // tries to rewrite the timestamp that created this file in the
+            // future then we will truncate/reuse them.  However, if the client
+            // doesn't try to rewrite this (maybe the client goes away before
+            // our database can recover) then it will sit here forever.  We may
+            // wish to periodically scan for orphaned files and delete them.
 
             // If the series is empty (time_first > lime_last), then we also
             // need to make time_first point at the start of this chunk.
@@ -387,7 +387,11 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             // Barrier before we update the index file.
             tail_fd.fsync_and_barrier();
 
-            // Add the timestamp file to the index.
+            // Add the timestamp file to the index.  The index's tail file now
+            // points to an empty timestamp file, which is normally forbidden.
+            // However, this index entry isn't covered by time_last yet, so we
+            // are okay to have it here while we populate it and a crash will
+            // automatically be handled by time_last validation.
             memset(&ie,0,sizeof(ie));
             ie.time_ns = wci.timestamps[0];
             strcpy(ie.timestamp_file,time_data_str.c_str());
