@@ -202,8 +202,8 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             // and at least the first timestamp is a live value.  We need to
             // search the file for the index of the timestamp that has the
             // time_last value.  When found, we should set pos to immediately
-            // after that entry, lseek() there, ftruncate() and exit with
-            // success.
+            // after that entry, lseek() there, atomic-truncate and continue
+            // on the fast path.
             {
                 auto m = tail_fd.mmap(0,pos,PROT_READ,MAP_SHARED,0);
                 const auto* iter_first = &((const uint64_t*)m.addr)[0];
@@ -227,10 +227,11 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                 pos = (const char*)iter - (const char*)iter_first + 8;
             }
 
-            // Truncate the file as a convenience for future self.  We close
-            // the mmap() above before truncate() for unittest sanity.
-            tail_fd.lseek(pos,SEEK_SET);
-            tail_fd.truncate(pos);
+            // Replace the file with a truncated version, atomically so that
+            // it doesn't invalidate any readers that may already have it
+            // open.
+            write_lock.m.db.root.replace_with_truncated(
+                tail_fd,time_ns_dir,ie.timestamp_file,pos);
         }
 
         // Fast path and slow path converge here.
