@@ -7,7 +7,7 @@
 
 class tmock_test
 {
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_create_root)
+    TMOCK_TEST(test_create_root)
     {
         try
         {
@@ -71,7 +71,7 @@ class tmock_test
                 fs_root->subdirs["databases"]);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_users)
+    TMOCK_TEST(test_users)
     {
         tsdb::configuration c = {
             .chunk_size = 2*1024*1024,
