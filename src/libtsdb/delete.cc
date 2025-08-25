@@ -8,7 +8,7 @@
 #include <algorithm>
 
 void
-tsdb::delete_points(const series_total_lock& stl, uint64_t t)
+tsdb::delete_points(series_total_lock& stl, uint64_t t)
 {
     // We need to get time_first.  We lock time_first so that nobody else tries
     // to access the series while we are adjusting things.
@@ -89,6 +89,7 @@ tsdb::delete_points(const series_total_lock& stl, uint64_t t)
     // Update time_first.
     stl.time_first_fd.lseek(0,SEEK_SET);
     stl.time_first_fd.write_all(&time_first,8);
+    stl.time_first = time_first;
 
     // If we are keeping all the index slots or we have an empty index, then we
     // are done now.

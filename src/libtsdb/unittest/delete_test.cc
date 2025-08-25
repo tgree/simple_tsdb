@@ -49,7 +49,7 @@ validate_timestamp_inodes(dir_node* series_dn, uint64_t* timestamps, size_t N)
 
 class tmock_test
 {
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_reuse_stl)
+    TMOCK_TEST(test_reuse_stl)
     {
         init_db(512);
 
