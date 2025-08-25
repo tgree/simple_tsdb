@@ -202,6 +202,32 @@ class tmock_test
         TASSERT(found_measurement);
     }
 
+    TMOCK_TEST(test_missing_schema_file)
+    {
+        tsdb::configuration c = {
+            .chunk_size = 2*1024*1024,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+        tsdb::root root(".",true);
+        root.create_database("db1");
+        tsdb::database db1(root,"db1");
+
+        // Just an empty measurement file.  This should never happen, but it
+        // also shouldn't crash us if we try to do a create.
+        futil::mkdir(db1.dir,"measurement1",0777);
+
+        try
+        {
+            tsdb::create_measurement(db1,"measurement1",test_fields);
+            tmock::abort("Expected corrupt measurement exception!");
+        }
+        catch (const tsdb::corrupt_measurement_exception&)
+        {
+        }
+    }
+
     TMOCK_TEST(test_compute_write_chunk_len)
     {
         tsdb::configuration c = {

@@ -39,6 +39,7 @@ namespace tsdb
         TOO_MANY_FIELDS                 = -25,
         INVALID_CONFIG_FILE             = -26,
         INVALID_CHUNK_SIZE              = -27,
+        CORRUPT_MEASUREMENT             = -28,
     };
 
     struct exception : public std::exception
@@ -229,6 +230,8 @@ DEFINE_TSDB_EXCEPTION(invalid_config_file_exception,INVALID_CONFIG_FILE,
                       "Invalid configuration file.");
 DEFINE_TSDB_EXCEPTION(invalid_chunk_size_exception,INVALID_CHUNK_SIZE,
                       "Invalid chunk size.");
+DEFINE_TSDB_EXCEPTION(corrupt_measurement_exception,CORRUPT_MEASUREMENT,
+                      "Corrupt measurement.");
 }
 
 #endif /* __SRC_LIBTSDB_EXCEPTION_H */
