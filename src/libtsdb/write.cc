@@ -185,28 +185,32 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                 // has the time_last value.  When found, we should set pos to
                 // immediately after that entry, lseek() there, ftruncate() and
                 // exit with success.
-                auto m = tail_fd.mmap(0,pos,PROT_READ,MAP_SHARED,0);
-                const auto* iter_first = &((const uint64_t*)m.addr)[0];
-                const auto* iter_last = &((const uint64_t*)m.addr)[pos/8];
-                const auto iter = std::lower_bound(iter_first,iter_last,
-                                                   write_lock.time_last);
-
-                // Sanity check: we already know that some position in this
-                // file should satisfy the lower_bound criteria, so
-                // something is massively broken if this fails.
-                kassert(iter < iter_last);
-
-                // If we don't have a match, the series is corrupt.
-                if (*iter != write_lock.time_last)
                 {
-                    throw tsdb::invalid_time_last_exception(
-                        *iter,write_lock.time_last);
+                    auto m = tail_fd.mmap(0,pos,PROT_READ,MAP_SHARED,0);
+                    const auto* iter_first = &((const uint64_t*)m.addr)[0];
+                    const auto* iter_last = &((const uint64_t*)m.addr)[pos/8];
+                    const auto iter = std::lower_bound(iter_first,iter_last,
+                                                       write_lock.time_last);
+
+                    // Sanity check: we already know that some position in this
+                    // file should satisfy the lower_bound criteria, so
+                    // something is massively broken if this fails.
+                    kassert(iter < iter_last);
+
+                    // If we don't have a match, the series is corrupt.
+                    if (*iter != write_lock.time_last)
+                    {
+                        throw tsdb::invalid_time_last_exception(
+                            *iter,write_lock.time_last);
+                    }
+
+                    // We have found the time_last value in the timestamp file!
+                    pos = (const char*)iter - (const char*)iter_first + 8;
                 }
 
-                // We have found the time_last value in the timestamp file!
                 // Truncate the file as a convenience for future self and exit
-                // with success.
-                pos = (const char*)iter - (const char*)iter_first + 8;
+                // with success.  We close the mmap() above before truncate()
+                // for unittest sanity.
                 tail_fd.lseek(pos,SEEK_SET);
                 tail_fd.truncate(pos);
 
