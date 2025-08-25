@@ -52,6 +52,20 @@ struct dir_node
     std::set<std::string>               dirty_unlinks;
     std::map<std::string,file_node*>    files;
     std::map<std::string,dir_node*>     subdirs;
+
+    file_node* get_file(const std::string& name) const
+    {
+        auto iter = files.find(name);
+        kassert(iter != files.end());
+        return iter->second;
+    }
+
+    dir_node* get_dir(const std::string& name) const
+    {
+        auto iter = subdirs.find(name);
+        kassert(iter != subdirs.end());
+        return iter->second;
+    }
 };
 
 enum fd_type
