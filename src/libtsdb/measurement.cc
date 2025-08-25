@@ -132,7 +132,5 @@ tsdb::create_measurement(const database& db, const futil::path& name,
 }
 catch (const futil::errno_exception& e)
 {
-    if (e.errnov == ENOENT)
-        throw tsdb::no_such_database_exception();
     throw tsdb::create_measurement_io_error_exception(e.errnov);
 }
