@@ -98,7 +98,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     for (size_t i=0; i<nindices; ++i)
     {
         // Work from the back.
-        size_t index = nindices - i - 1;
+        const size_t index = nindices - i - 1;
 
         // Open the file pointed to by the last entry in the index.
         index_fd.lseek(index*sizeof(index_entry),SEEK_SET);
