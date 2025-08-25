@@ -127,14 +127,14 @@ futil::mmap(void* addr, size_t len, int prot, int flags, int fd, off_t offset)
     kassert(flags == MAP_SHARED);
     kassert(offset == 0);
 
-    // TODO: How to keep track of fsync state?
-
     // This works, but it is not great.  If someone else grows the file, the
     // std::vector<> may need to reallocate and this would move the underlying
     // storage around, leaving the mmap() client with a dangling pointer.
     auto fn = find_fd_file_node(fd);
     kassert(len <= fn->data.size());
     ++fn->mmap_count;
+    if (prot & PROT_WRITE)
+        fn->data_fsynced = false;
     return &fn->data[0];
 }
 
@@ -153,10 +153,30 @@ futil::munmap(void* addr, size_t len)
                 throw futil::errno_exception(EINVAL);
 
             kassert(fn->mmap_count--);
+            auto_snapshot_fs();
             return;
         }
     }
     throw futil::errno_exception(EINVAL);
+}
+
+void
+futil::msync(void* addr, size_t len, int flags)
+{
+    kassert(flags == MS_SYNC);
+    for (auto* fn : live_files)
+    {
+        if (&fn->data[0] <= addr && addr < &fn->data[0] + fn->data.size())
+        {
+            if ((uint8_t*)addr + len > &fn->data[0] + fn->data.size())
+                throw futil::errno_exception(ENOMEM);
+
+            auto_snapshot_fs();
+            fn->data_fsynced = true;    // TODO: Yuck!
+            return;
+        }
+    }
+    throw futil::errno_exception(ENOMEM);
 }
 
 void
