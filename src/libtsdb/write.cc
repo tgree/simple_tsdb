@@ -292,6 +292,11 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                     gz_file.fsync();
                     write_lock.m.db.root.debugf("Done.\n");
 
+                    // Note: The fsync() for the field directory containing the
+                    // new .gz file happens below; we only ever compress when
+                    // spilling over into a new uncompressed data file and the
+                    // directory fsync() will happen after creating that file.
+
                     // TODO: If destination file was larger than the chunk size,
                     // delete it and just keep the uncompressed version around.
                     // TODO: Make whatever file is left behind read-only.
