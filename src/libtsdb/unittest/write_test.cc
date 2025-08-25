@@ -222,7 +222,7 @@ class tmock_test
         tmock::assert_equiv(chunk_len,392UL);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_write_few)
+    TMOCK_TEST(test_write_few)
     {
         tsdb::configuration c = {
             .chunk_size = 1024,
@@ -458,7 +458,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_write_consistency_small_chunks)
+    TMOCK_TEST(test_write_consistency_small_chunks)
     {
         tsdb::configuration c = {
             .chunk_size = 128,
@@ -580,8 +580,7 @@ class tmock_test
     // read/select operation would have to ignore index entries that come after
     // time_last.  Future write operations would clean up the dangling entry
     // automatically which they already do.
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
-        test_dangling_files_come_after_time_last)
+    TMOCK_TEST(test_dangling_files_come_after_time_last)
     {
         tsdb::configuration c = {
             .chunk_size = 128,
