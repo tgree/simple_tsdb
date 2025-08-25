@@ -279,8 +279,7 @@ class tmock_test
         TASSERT(n_bad_indices > 0);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
-        test_no_empty_index_entries_delete_half)
+    TMOCK_TEST(test_no_empty_index_entries_delete_half)
     {
         // This will write 18 full 16-entry chunks and leave a 12-entry chunk
         // at the end.  The WAL will be empty.
