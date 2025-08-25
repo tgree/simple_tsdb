@@ -20,6 +20,7 @@
 # execution:
 # 	SUBMODULES := a list of subdirectories with module.mk files.
 # 	TESTS      := a list of test binaries to build.
+# 	ITESTS     := a list of integration test binaries to build.
 # 	HEADERS    += a list of directories to add to the root headers -
 # 	              typically this is simply $(MODULE_SRC_DIR) when used.
 #
@@ -29,6 +30,7 @@
 define include_module
 	$(eval SUBMODULES := )
 	$(eval TESTS := )
+	$(eval ITESTS := )
 	$(eval MODULE := $(1))
 	$(eval PARENT := $(2))
 	$(eval MODULE_SRC_DIR := $(SRC_DIR)/$(MODULE))
@@ -37,10 +39,14 @@ define include_module
 	$(eval PARENT_BUILD_DIR := $(BUILD_O_DIR)/$(PARENT))
 	$(eval MODULE_TBUILD_DIR := $(BUILD_TO_DIR)/$(MODULE))
 	$(eval PARENT_TBUILD_DIR := $(BUILD_TO_DIR)/$(PARENT))
+	$(eval MODULE_ITBUILD_DIR := $(BUILD_ITO_DIR)/$(MODULE))
+	$(eval PARENT_ITBUILD_DIR := $(BUILD_ITO_DIR)/$(PARENT))
 	$(eval MODULE_MK := $(MODULE_SRC_DIR)/module.mk)
 	$(eval include $(MODULE_MK))
 	$(eval $(foreach T,$(TESTS),$(eval $(T).MK := $(MODULE_MK))))
 	$(eval ALL_TESTS += $(TESTS))
+	$(eval $(foreach T,$(ITESTS),$(eval $(T).MK := $(MODULE_MK))))
+	$(eval ALL_ITESTS += $(ITESTS))
 	ifneq ($(strip $(SUBMODULES)),)
 		$(eval $(call include_modules,$(patsubst %,$(1)/%,$(SUBMODULES)),$(1)))
 	endif

@@ -2,7 +2,9 @@
 # All rights reserved.
 TESTS := \
 	 futil_test \
-	 sockaddr_test \
+	 sockaddr_test
+
+ITESTS := \
 	 tcp_test
 
 futil_test.OBJ := \
@@ -10,5 +12,5 @@ futil_test.OBJ := \
 sockaddr_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/sockaddr_test.o
 tcp_test.OBJ := \
-	$(MODULE_TBUILD_DIR)/tcp_test.o \
+	$(MODULE_ITBUILD_DIR)/tcp_test.o \
 	$(BUILD_O_DIR)/floor/kassert.o

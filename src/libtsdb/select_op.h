@@ -18,7 +18,6 @@ namespace tsdb
         // someone adds points later, we only return the points from our
         // current snapshot of the live range.
         const series_read_lock& read_lock;
-        const uint64_t          time_last;
         futil::file             index_fd;
         futil::mapping          index_mapping;
         const index_entry*      index_begin;
@@ -29,9 +28,10 @@ namespace tsdb
         uint64_t                t1;
         uint64_t                rem_limit;
 
-        // Mapping objects to track mmap()-ed files.
+        // Position in the index and buffer to hold timestamps, which we don't
+        // mmap since we typically iterate over a large range of them and mmap
+        // would trigger many page faults.
         const index_entry*      index_slot;
-        futil::mapping          timestamp_mapping;
         auto_buf                timestamp_buf;
 
         // State of the current set of results.

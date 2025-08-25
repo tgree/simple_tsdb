@@ -180,6 +180,23 @@ namespace str
 
         return multiplier*v;
     }
+
+    // Encodes a string that has a suffix in power-of-2 style.
+    inline std::string
+    encode_number_units_pow2(uint64_t v)
+    {
+        if (v == 0)
+            return "0";
+        if ((v << (64 - 40)) == 0)
+            return std::to_string(v >> 40) + "T";
+        if ((v << (64 - 30)) == 0)
+            return std::to_string(v >> 30) + "G";
+        if ((v << (64 - 20)) == 0)
+            return std::to_string(v >> 20) + "M";
+        if ((v << (64 - 10)) == 0)
+            return std::to_string(v >> 10) + "K";
+        return std::to_string(v);
+    }
 }
 
 #endif /* __SRC_STRUTIL_STRUTIL_H */

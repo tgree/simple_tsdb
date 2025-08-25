@@ -7,4 +7,4 @@ $(shell rm -rf $(TEST_RES_DIR))
 endif
 .PHONY: test
 test: $(ALL_TESTS:%=$(TEST_RES_DIR)/%.tpass)
-	$(info All tests passed.)
+	$(info All unittests passed.)

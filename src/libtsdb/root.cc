@@ -7,6 +7,7 @@
 #include <futil/xact.h>
 #include <futil/ssl.h>
 #include <strutil/strutil.h>
+#include <zutil/zutil.h>
 #include <algorithm>
 
 const tsdb::configuration tsdb::default_configuration =
@@ -37,8 +38,11 @@ load_configuration(const tsdb::root* r) try
         if (parts[0] == "chunk_size")
         {
             config.chunk_size = str::decode_number_units_pow2(parts[1]);
-            if (!is_pow2(config.chunk_size))
+            if (!is_pow2(config.chunk_size) ||
+                config.chunk_size < MIN_CHUNK_SIZE)
+            {
                 throw tsdb::invalid_chunk_size_exception();
+            }
         }
         else if (parts[0] == "wal_max_entries")
             config.wal_max_entries = str::decode_number_units_pow2(parts[1]);
@@ -60,7 +64,8 @@ tsdb::root::root(const futil::path& root_path, bool debug_enabled) try :
     tmp_dir(root_dir,"tmp"),
     databases_dir(root_dir,"databases"),
     debug_enabled(debug_enabled),
-    config(load_configuration(this))
+    config(load_configuration(this)),
+    max_gzipped_size(zutil::max_gzipped_size(config.chunk_size))
 {
 }
 catch (const futil::errno_exception& e)
@@ -75,7 +80,8 @@ tsdb::root::root(bool debug_enabled) try :
     tmp_dir(root_dir,"tmp"),
     databases_dir(root_dir,"databases"),
     debug_enabled(debug_enabled),
-    config(load_configuration(this))
+    config(load_configuration(this)),
+    max_gzipped_size(zutil::max_gzipped_size(config.chunk_size))
 {
 }
 catch (const futil::errno_exception& e)
@@ -142,6 +148,7 @@ void
 tsdb::root::create_database(const char* name) try
 {
     futil::mkdir(databases_dir,name,0770);
+    databases_dir.fsync();
 }
 catch (const futil::errno_exception& e)
 {
@@ -169,6 +176,23 @@ catch (const futil::errno_exception& e)
     throw;
 }
 
+void
+tsdb::root::replace_with_truncated(futil::file& src_fd,
+    const futil::directory& dir, const futil::path& path, size_t new_len) const
+{
+    futil::xact_mktemp tmp_fd(tmp_dir,0660);
+    auto_buf truncated_data(new_len);
+    src_fd.lseek(0,SEEK_SET);
+    src_fd.read_all(truncated_data.data,new_len);
+    tmp_fd.write_all(truncated_data.data,new_len);
+    tmp_fd.fsync();
+    futil::rename(tmp_dir,tmp_fd.name,dir,path);
+    tmp_fd.commit();
+    dir.fsync_and_flush();
+    tmp_dir.fsync_and_flush();
+    src_fd.swap(tmp_fd);
+}
+
 int
 tsdb::root::debugf(const char* fmt, ...) const
 {
@@ -193,7 +217,7 @@ void
 tsdb::create_root(const futil::path& path, const configuration& config) try
 {
     auto config_str = to_string(config);
-    if (!is_pow2(config.chunk_size))
+    if (!is_pow2(config.chunk_size) || config.chunk_size < MIN_CHUNK_SIZE)
         throw invalid_chunk_size_exception();
 
     futil::directory root_dir(path);
@@ -204,6 +228,8 @@ tsdb::create_root(const futil::path& path, const configuration& config) try
     futil::xact_mkdir databases_dir(root_dir,"databases",0770);
     futil::xact_creat config_fd(root_dir,"config.txt",O_RDWR | O_CREAT,0440);
     config_fd.write_all(&config_str[0],config_str.size());
+    config_fd.fsync();
+    root_dir.fsync();
     config_fd.commit();
     databases_dir.commit();
     tmp_dir.commit();

@@ -2,11 +2,11 @@
 // All rights reserved.
 #include "write.h"
 #include "database.h"
+#include <futil/xact.h>
 #include <hdr/auto_buf.h>
 #include <algorithm>
 
-#define WITH_GZFILEOP
-#include <zlib-ng/zlib-ng.h>
+#include <zutil/zutil.h>
 
 tsdb::write_chunk_index::write_chunk_index(const measurement& m,
     size_t npoints, size_t bitmap_offset, size_t data_len, void* data):
@@ -30,11 +30,7 @@ tsdb::write_chunk_index::write_chunk_index(const measurement& m,
     }
     size_t expected_len = data_ptr - (char*)data;
     if (data_len != expected_len)
-    {
-        printf("Expected %zu bytes of data, got %zu bytes.\n",
-               expected_len,data_len);
         throw tsdb::incorrect_write_chunk_len_exception(expected_len,data_len);
-    }
 }
 
 void
@@ -71,89 +67,107 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
     // overwrites - that is a programmer error.
     kassert(wci.timestamps[0] > write_lock.time_last);
 
-    // ************ Index search and crash recovery truncation  **************
-    // Open the index file and the most recent timestamp file if it exists, and
-    // perform validation checking on it if found.
+    // Find all the directories of interest and open the index file.
     futil::file index_fd(write_lock.series_dir,"index",O_RDWR);
     futil::directory time_ns_dir(write_lock.series_dir,"time_ns");
     futil::directory fields_dir(write_lock.series_dir,"fields");
     futil::directory bitmaps_dir(write_lock.series_dir,"bitmaps");
-    futil::file tail_fd;
-    field_vector<futil::path> field_file_paths;
-    field_vector<futil::file> field_fds;
-    field_vector<futil::path> bitmap_file_paths;
-    field_vector<futil::file> bitmap_fds;
-    off_t index_len = index_fd.lseek(0,SEEK_END);
-    size_t nindices = index_len / sizeof(index_entry);
-    size_t avail_points = 0;
+    field_vector<futil::directory> field_dirs;
+    field_vector<futil::directory> bitmap_dirs;
+    for (const auto& field : write_lock.m.fields)
+    {
+        field_dirs.emplace_back(fields_dir,field.name);
+        bitmap_dirs.emplace_back(bitmaps_dir,field.name);
+    }
+
+    // Compute some useful constants.
+    const size_t nindices = index_fd.lseek(0,SEEK_END) / sizeof(index_entry);
     const size_t chunk_size = write_lock.m.db.root.config.chunk_size;
     const size_t chunk_npoints = chunk_size/8;
+
+    // ************ Index search and crash recovery truncation  **************
+    // Open the index file and the most recent timestamp file if it exists, and
+    // perform validation checking on it if found.
+    //
+    // This loop will prune all invalid tail indices from the index file, and
+    // will then either open a valid tail file, set pos to the end of the file,
+    // compute avail_points and then exit, or complete without finding a valid
+    // tail file in which case avail_points will be 0 and pos should be ignored.
+    futil::file tail_fd;
+    field_vector<futil::file> field_fds;
+    field_vector<futil::file> bitmap_fds;
+    size_t avail_points = 0;
     index_entry ie;
     off_t pos;
     for (size_t i=0; i<nindices; ++i)
     {
         // Work from the back.
-        size_t index = nindices - i - 1;
+        const size_t index = nindices - i - 1;
 
         // Open the file pointed to by the last entry in the index.
         index_fd.lseek(index*sizeof(index_entry),SEEK_SET);
         index_fd.read_all(&ie,sizeof(ie));
 
-        // Generate all the paths
-        field_file_paths.clear();
-        bitmap_file_paths.clear();
-        for (const auto& field : write_lock.m.fields)
+        // If the index entry comes after time_last, nuke the entry and nuke
+        // any partial chunk files.  This could be due to a write operation
+        // that was interrupted.  In this case, the tail timestamp file and
+        // all the bitmap/field files exist but may be empty.  If the series
+        // time_first comes after the series time_last, then the entire series
+        // has been deleted already and anything in the index is dangling due
+        // to an interrupted delete.  In this case, some files may or may not
+        // exist, so proceed with caution when deleting.
+        if (ie.time_ns > write_lock.time_last ||
+            write_lock.time_first > write_lock.time_last)
         {
-            field_file_paths.emplace_back(field.name,ie.timestamp_file);
-            bitmap_file_paths.emplace_back(field.name,ie.timestamp_file);
+            for (size_t j=0; j<write_lock.m.fields.size(); ++j)
+            {
+                futil::unlink_if_exists(field_dirs[j],ie.timestamp_file);
+                futil::unlink_if_exists(bitmap_dirs[j],ie.timestamp_file);
+                field_dirs[j].fsync();
+                bitmap_dirs[j].fsync();
+            }
+            futil::unlink_if_exists(time_ns_dir,ie.timestamp_file);
+            time_ns_dir.fsync_and_barrier();
+
+            // Make a temporary file, copy the index_fd contents into it and
+            // then do an atomic rename to replace index_fd.  select_op may
+            // have index_fd mmap'd so we are not allowed to just truncate it.
+            write_lock.m.db.root.replace_with_truncated(
+                index_fd,write_lock.series_dir,"index",
+                index*sizeof(index_entry));
+            continue;
         }
 
-        // Open the tail file.
+        // Open the tail file, which is in the live range of the series so
+        // must exist and be non-empty.
         tail_fd.open(time_ns_dir,ie.timestamp_file,O_RDWR);
-
-        // Validate the file size.
         pos = tail_fd.lseek(0,SEEK_END);
+        if (pos < 8)
+            throw tsdb::tail_file_invalid_size_exception(pos);
         if ((size_t)pos > chunk_size)
             throw tsdb::tail_file_too_big_exception(pos);
         if (pos % sizeof(uint64_t))
             throw tsdb::tail_file_invalid_size_exception(pos);
 
-        // For a non-empty timestamp file, try to find the time_last entry so
-        // we can append.
-        if (pos >= 8)
+        // Read the first and last entries, and leave the file position at the
+        // end of the file.
+        tail_fd.lseek(0,SEEK_SET);
+        const uint64_t tail_fd_first_entry = tail_fd.read_u64();
+        tail_fd.lseek((pos & ~7) - 8,SEEK_SET);
+        const uint64_t tail_fd_last_entry = tail_fd.read_u64();
+
+        // Validate that the first entry matches the index entry.
+        if (tail_fd_first_entry != ie.time_ns)
         {
-            // Read the last entry, and leave the file position at the end of
-            // the file.
-            uint64_t tail_fd_first_entry;
-            uint64_t tail_fd_last_entry;
-            tail_fd.lseek(0,SEEK_SET);
-            tail_fd.read_all(&tail_fd_first_entry,sizeof(uint64_t));
-            tail_fd.lseek((pos & ~7) - 8,SEEK_SET);
-            tail_fd.read_all(&tail_fd_last_entry,sizeof(uint64_t));
+            throw tsdb::tail_file_invalid_time_first_exception(
+                    tail_fd_first_entry,ie.time_ns);
+        }
 
-            // Fast path - if the last entry in the last timestamp file matches
-            // the time_last file, then the series is consistent and we can
-            // break out to writing points.
-            if (tail_fd_last_entry == write_lock.time_last)
-            {
-                // Open all of the field and bitmap files with the same name as
-                // the timestamp file.  They are guaranteed to exist and should
-                // not be compressed.
-                for (size_t j=0; j<write_lock.m.fields.size(); ++j)
-                {
-                    field_fds.emplace_back(fields_dir,field_file_paths[j],
-                                           O_RDWR);
-                    bitmap_fds.emplace_back(bitmaps_dir,bitmap_file_paths[j],
-                                            O_RDWR);
-                }
-                avail_points = (chunk_size - pos) / sizeof(uint64_t);
-                break;
-            }
-
-            // Slow path.  The time_last file and the last timestamp stored in
-            // the file pointed to by the last index entry differ.  This
-            // indicates that we are recovering from a previous crash.
-
+        // Slow path check.  If the time_last file differs from the last index
+        // entry file's last stored timestamp then we are recovering from a
+        // previous crash.
+        if (tail_fd_last_entry != write_lock.time_last)
+        {
             // Consistency check - the following predicate should always be
             // held:
             //
@@ -163,7 +177,7 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             // when writing data points.  So, if the value we see stored in
             // the time_last file is larger than the value we found in the
             // index, the series is corrupt.
-            if (tail_fd_last_entry < write_lock.time_last)
+            if (write_lock.time_last > tail_fd_last_entry)
             {
                 throw tsdb::invalid_time_last_exception(tail_fd_last_entry,
                                                         write_lock.time_last);
@@ -172,83 +186,76 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             // There are extra timestamp entries compared to the value stored
             // in the time_last file.  This means a write_points operation was
             // previously interrupted and we need to clean up the series.
-            // First, check if there is any live data at all in this timestamp
-            // file.
-            if (tail_fd_first_entry <= write_lock.time_last)
+            // We have already verified:
+            //
+            //      ie.time_ns <= write_lock.time_last
+            //
+            // And verified:
+            //
+            //      tail_fd_first_entry == ie.time_ns
+            //
+            // So:
+            //      
+            //      tail_fd_first_entry <= write_lock.time_last
+            //
+            // This means that there must be live data in the timestamp file
+            // and at least the first timestamp is a live value.  We need to
+            // search the file for the index of the timestamp that has the
+            // time_last value.  When found, we should set pos to immediately
+            // after that entry, lseek() there, atomic-truncate and continue
+            // on the fast path.
+            auto m = tail_fd.mmap(0,pos,PROT_READ,MAP_SHARED,0);
+            const auto* iter_first = &((const uint64_t*)m.addr)[0];
+            const auto* iter_last = &((const uint64_t*)m.addr)[pos/8];
+            const auto iter = std::lower_bound(iter_first,iter_last,
+                                               write_lock.time_last);
+
+            // Sanity check: we already know that some position in this
+            // file should satisfy the lower_bound criteria, so
+            // something is massively broken if this fails.
+            kassert(iter < iter_last);
+
+            // If we don't have a match, the series is corrupt.
+            if (*iter != write_lock.time_last)
             {
-                // We have:
-                //
-                //  tail_fd_first_entry <= time_last_stored <=
-                //      tail_fd_last_entry
-                //
-                // so, the first timestamp in this file is a live value.  We
-                // need to search the file for the index of the timestamp that
-                // has the time_last value.  When found, we should set pos to
-                // immediately after that entry, lseek() there, ftruncate() and
-                // exit with success.
-                auto m = tail_fd.mmap(0,pos,PROT_READ,MAP_SHARED,0);
-                const auto* iter_first = &((const uint64_t*)m.addr)[0];
-                const auto* iter_last = &((const uint64_t*)m.addr)[pos/8];
-                const auto iter = std::lower_bound(iter_first,iter_last,
-                                                   write_lock.time_last);
-
-                // Sanity check: we already know that some position in this
-                // file should satisfy the lower_bound criteria, so
-                // something is massively broken if this fails.
-                kassert(iter < iter_last);
-
-                // If we don't have a match, the series is corrupt.
-                if (*iter != write_lock.time_last)
-                {
-                    throw tsdb::invalid_time_last_exception(
-                        *iter,write_lock.time_last);
-                }
-
-                // We have found the time_last value in the timestamp file!
-                // Truncate the file as a convenience for future self and exit
-                // with success.
-                pos = (const char*)iter - (const char*)iter_first + 8;
-                tail_fd.lseek(pos,SEEK_SET);
-                tail_fd.truncate(pos);
-
-                // Open all of the field and bitmap files with the same name as
-                // the timestamp file.  They are guaranteed to exist and should
-                // not be compressed.
-                for (size_t j=0; j<write_lock.m.fields.size(); ++j)
-                {
-                    field_fds.emplace_back(fields_dir,field_file_paths[j],
-                                           O_RDWR);
-                    bitmap_fds.emplace_back(bitmaps_dir,bitmap_file_paths[j],
-                                            O_RDWR);
-                }
-                avail_points = (chunk_size - pos) / sizeof(uint64_t);
-                break;
+                throw tsdb::invalid_time_last_exception(
+                    *iter,write_lock.time_last);
             }
 
-            // There are timestamps in the file, but none of them are live
-            // because all of them are after the stored time_last value.  We
-            // just discard this file completely.
+            // We have found the time_last value in the timestamp file!
+            pos = (const char*)iter - (const char*)iter_first + 8;
+
+            // Replace the file with a truncated version, atomically so that
+            // it doesn't invalidate any readers that may already have it
+            // open.
+            write_lock.m.db.root.replace_with_truncated(
+                tail_fd,time_ns_dir,ie.timestamp_file,pos);
         }
 
-        // Slow path - the index entry points to an empty file, or we
-        // determined that it is entirely full of timestamp values that haven't
-        // gone live yet.  Delete the file and remove the index entry.
-        for (const auto& field_file_path : field_file_paths)
-            futil::unlink_if_exists(fields_dir,field_file_path);
-        fields_dir.fsync();
-        for (const auto& bitmap_file_path : bitmap_file_paths)
-            futil::unlink_if_exists(bitmaps_dir,bitmap_file_path);
-        bitmaps_dir.fsync_and_barrier();
-        tail_fd.close();
-        futil::unlink(time_ns_dir,ie.timestamp_file);
-        index_fd.truncate(index*sizeof(index_entry));
+        // Fast path and slow path converge here.
+        // The tail file is the last live entry in the index file, which has
+        // been pruned down to this index entry if necessary.  Since the tail
+        // file is live, all field and bitmap files are guaranteed to exist.
+        // Since the tail file is the last one in the index, the field files
+        // are guaranteed to not be compressed (although dangling compressed
+        // copies may exist if a crash occurred during compression - these can
+        // be safely ignored).
+        for (size_t j=0; j<write_lock.m.fields.size(); ++j)
+        {
+            field_fds.emplace_back(field_dirs[j],ie.timestamp_file,
+                                   O_RDWR);
+            bitmap_fds.emplace_back(bitmap_dirs[j],ie.timestamp_file,
+                                    O_RDWR);
+        }
+        avail_points = (chunk_size - pos) / sizeof(uint64_t);
+        break;
     }
 
     // ************************** Write Points *******************************
 
     // Write points.  The variable pos is the absolute position in the
-    // timestamp file; this should be used to calculate the index for other
-    // field sizes.
+    // tail_fd timestamp file (if we found one); this should be used to
+    // calculate the index for other field sizes.
     field_vector<futil::path> unlink_field_paths;
     while (wci.npoints)
     {
@@ -260,7 +267,10 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             // they are now full.  Compress them.
             if (!field_fds.empty())
             {
+                size_t max_gzipped_size = write_lock.m.db.root.max_gzipped_size;
+
                 auto_buf file_buf(chunk_size);
+                auto_buf gzip_buf(max_gzipped_size);
                 for (size_t i=0; i<write_lock.m.fields.size(); ++i)
                 {
                     const auto* fti = &ftinfos[write_lock.m.fields[i].type];
@@ -277,27 +287,48 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                     // Create the destination file and write it out.
                     write_lock.m.db.root.debugf("Compressing %s...\n",
                                                 unlink_field_paths[i].c_str());
-                    int gz_fd = futil::openat(
+                    size_t compressed_len =
+                        zutil::gzip_compress(gzip_buf.data,max_gzipped_size,
+                                             file_buf.data,chunk_len,
+                                             Z_BEST_COMPRESSION);
+                    futil::file gz_file(
                         fields_dir,
                         futil::path(write_lock.m.fields[i].name,
                                     src_name + ".gz"),
                         O_CREAT | O_TRUNC | O_RDWR,0660);
-                    gzFile gz_file = zng_gzdopen(gz_fd,"wb");
-                    int32_t gz_len = zng_gzwrite(gz_file,file_buf,chunk_len);
-                    kassert((size_t)gz_len == chunk_len);
-                    zng_gzflush(gz_file,Z_FINISH);
-                    futil::fsync(gz_fd);
-                    zng_gzclose(gz_file);
+                    gz_file.write_all(gzip_buf.data,compressed_len);
+                    gz_file.fsync();
                     write_lock.m.db.root.debugf("Done.\n");
+
+                    // Note: The fsync() for the field directory containing the
+                    // new .gz file happens below; we only ever compress when
+                    // spilling over into a new uncompressed data file and the
+                    // directory fsync() will happen after creating that file.
 
                     // TODO: If destination file was larger than the chunk size,
                     // delete it and just keep the uncompressed version around.
                     // TODO: Make whatever file is left behind read-only.
+                    //       The issue is that a crash could leave a file
+                    //       behind that we will later try to reopen with
+                    //       O_CREAT | O_TRUNC | O_RDWR when we recover.  That
+                    //       will fail if the file is marked read-only.
                 }
             }
 
             // Figure out what to name the new files.
             std::string time_data_str = std::to_string(wci.timestamps[0]);
+
+            // Add the timestamp file to the index.  The index's tail file now
+            // points to nonexistent timestamp and field/bitmap files, which is
+            // normally forbidden.  However, this index entry isn't covered by
+            // time_last yet, so we are okay to have it here while we populate
+            // it and a crash will automatically be handled by time_last
+            // validation.
+            memset(&ie,0,sizeof(ie));
+            ie.time_ns = wci.timestamps[0];
+            strcpy(ie.timestamp_file,time_data_str.c_str());
+            index_fd.write_all(&ie,sizeof(ie));
+            index_fd.fsync_and_barrier();
 
             // Create and open all new field and bitmap files.  We fully-
             // populate the bitmap files with zeroes even though they don't
@@ -307,40 +338,26 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             bitmap_fds.clear();
             for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
-                field_fds.emplace_back(fields_dir,
-                                       futil::path(write_lock.m.fields[i].name,
-                                                   time_data_str),
-                                       O_CREAT | O_TRUNC | O_RDWR,0660);
+                field_fds.emplace_back(field_dirs[i],time_data_str,
+                                       O_CREAT | O_EXCL | O_RDWR,0660);
                 field_fds[i].fsync();
+                field_dirs[i].fsync();
 
-                bitmap_fds.emplace_back(bitmaps_dir,
-                                        futil::path(write_lock.m.fields[i].name,
-                                                    time_data_str),
-                                        O_CREAT | O_TRUNC | O_RDWR,0660);
+                bitmap_fds.emplace_back(bitmap_dirs[i],time_data_str,
+                                        O_CREAT | O_EXCL | O_RDWR,0660);
                 bitmap_fds[i].truncate(chunk_npoints/8);
                 bitmap_fds[i].fsync();
+                bitmap_dirs[i].fsync();
             }
-            fields_dir.fsync();
-            bitmaps_dir.fsync();
 
-            // Create the new timestamp file.  As when first creating the
-            // series, it is possible that someone got this far when growing
-            // the series but crashed before updating the index file.  Truncate
-            // the file if it exists.
-            tail_fd.open(time_ns_dir,time_data_str,O_CREAT | O_TRUNC | O_WRONLY,
+            // Create the new timestamp file.  Since we just added the timestamp
+            // to the index, this file should not exist.
+            tail_fd.open(time_ns_dir,time_data_str,O_CREAT | O_EXCL | O_WRONLY,
                          0660);
             time_ns_dir.fsync();
+            tail_fd.fsync();
             avail_points = chunk_npoints;
             pos = 0;
-
-            // TODO: If we crash here, there is now a dangling, empty timestamp
-            // file.  It isn't in the index, so will never be accessed, but it
-            // will still exist.  If someone tries to rewrite the timestamp
-            // that created this file in the future then we will truncate/reuse
-            // it.  However, if the client doesn't try to rewrite this (maybe
-            // the client goes away before our database can recover) then it
-            // will sit here forever.  We may wish to periodically scan for
-            // orphaned files and delete them.
 
             // If the series is empty (time_first > lime_last), then we also
             // need to make time_first point at the start of this chunk.
@@ -355,16 +372,6 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                 write_lock.time_first_fd.write_all(&write_lock.time_first,8);
                 write_lock.time_first_fd.fsync();
             }
-
-            // Barrier before we update the index file.
-            tail_fd.fsync_and_barrier();
-
-            // Add the timestamp file to the index.
-            memset(&ie,0,sizeof(ie));
-            ie.time_ns = wci.timestamps[0];
-            strcpy(ie.timestamp_file,time_data_str.c_str());
-            index_fd.write_all(&ie,sizeof(ie));
-            index_fd.fsync();
         }
 
         // Compute how many points we can write.
@@ -414,7 +421,8 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             write_lock.time_last_fd.fsync_and_barrier();
             for (const auto& ufp : unlink_field_paths)
                 futil::unlink_if_exists(fields_dir,ufp);
-            fields_dir.fsync();
+            for (auto& field_dir : field_dirs)
+                field_dir.fsync();
 
             unlink_field_paths.clear();
         }

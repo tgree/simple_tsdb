@@ -21,6 +21,9 @@ tsdb::series_write_lock
 tsdb::open_or_create_and_lock_series(const measurement& m,
     const futil::path& series)
 {
+    if (series._path.find_first_of("/ \\") != std::string::npos)
+        throw tsdb::invalid_series_exception();
+
     // Try to acquire a write lock on the series.
     try
     {
@@ -69,6 +72,8 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
     time_last_fd.flock(LOCK_EX);
 
     // Sync everything.
+    fields_dir.fsync();
+    bitmaps_dir.fsync();
     time_first_fd.fsync();
     index_fd.fsync();
     wal_fd.fsync();
@@ -98,6 +103,7 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
 
     // Sync the new directory and return the locked series.
     m.dir.fsync_and_flush();
+    m.db.root.tmp_dir.fsync_and_flush();
     return series_write_lock(m,series,std::move(time_first_fd),
                              std::move(wal_fd),std::move(time_last_fd));
 }

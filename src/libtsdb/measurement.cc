@@ -7,6 +7,15 @@
 #include <futil/xact.h>
 #include <hdr/types.h>
 
+// TODO: Annoyingly, this doesn't properly detect a measurement directory that
+//       exists but has not schema file.  That will throw
+//       no_such_measurement_exception but put create_measurement() into an
+//       infinite retry loop.
+//
+//       For now, we have adjusted create_measurement() to only retry once;
+//       that should be sufficient to resolve any race condition while still
+//       providing an exit case where we can't actually open the measurement
+//       because it is somehow corrupt.
 tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     db(db),
     dir(db.dir,path),
@@ -80,7 +89,7 @@ tsdb::create_measurement(const database& db, const futil::path& name,
         }
     }
 
-    for (;;)
+    for (size_t i=0; i<2; ++i)
     {
         try
         {
@@ -120,6 +129,8 @@ tsdb::create_measurement(const database& db, const futil::path& name,
                                         db.dir,name))
         {
             m_dir.fsync_and_flush();
+            db.dir.fsync_and_flush();
+            db.root.tmp_dir.fsync_and_flush();
             schema_fd.commit();
             m_dir.commit();
             return;
@@ -129,10 +140,12 @@ tsdb::create_measurement(const database& db, const futil::path& name,
         // in the target measurement location, indicating that someone has just
         // created the measurement.  Loop around and try again.
     }
+
+    // The measurement exists, but we can't open it for some reason.  It must
+    // be corrupt.
+    throw tsdb::corrupt_measurement_exception();
 }
 catch (const futil::errno_exception& e)
 {
-    if (e.errnov == ENOENT)
-        throw tsdb::no_such_database_exception();
     throw tsdb::create_measurement_io_error_exception(e.errnov);
 }

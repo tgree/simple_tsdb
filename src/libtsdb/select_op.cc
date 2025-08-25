@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "select_op.h"
 #include "database.h"
+#include <zutil/zutil.h>
 #include <inttypes.h>
 #include <algorithm>
 
@@ -12,16 +13,12 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
     const std::vector<std::string>& field_names, uint64_t _t0, uint64_t _t1,
     uint64_t limit):
         read_lock(read_lock),
-        time_last(futil::file(read_lock.series_dir,"time_last",
-                              O_RDONLY).read_u64()),
         index_begin(NULL),
         index_end(NULL),
         t0(MAX(_t0,read_lock.time_first)),
-        t1(MIN(_t1,time_last)),
+        t1(MIN(_t1,read_lock.time_last)),
         rem_limit(limit),
         index_slot(NULL),
-        timestamp_mapping(NULL,read_lock.m.db.root.config.chunk_size,PROT_NONE,
-                          MAP_ANONYMOUS | MAP_PRIVATE,-1,0),
         timestamp_buf(read_lock.m.db.root.config.chunk_size),
         npoints(0),
         bitmap_offset(0),
@@ -55,6 +52,11 @@ tsdb::select_op::select_op(const series_read_lock& read_lock,
                       index_fd.fd,0),
     index_begin = (const index_entry*)index_mapping.addr;
     index_end = index_begin + index_mapping.len / sizeof(index_entry);
+    while (index_end > index_begin &&
+           (index_end-1)->time_ns > read_lock.time_last)
+    {
+        --index_end;
+    }
 }
 
 void
@@ -111,28 +113,23 @@ tsdb::select_op::map_data()
         const auto& f = fields[i];
         const auto* fti = &ftinfos[f->type];
         size_t len = end_index*fti->nbytes;
+        field_data[i] = (const char*)field_bufs[i].data +
+                        start_index*fti->nbytes;
 
         //  Try opening an uncompressed file first.  If one exists, we must use
         //  it; any compressed file that exists could be the result of a
         //  partial compression operation that then crashed before completing.
-        try
+        futil::file field_fd;
+        field_fd.open_if_exists(
+            fields_dir,futil::path(f->name,index_slot->timestamp_file),
+            O_RDONLY);
+        if (field_fd.fd != -1)
         {
-            futil::file field_fd(
-                fields_dir,futil::path(f->name,index_slot->timestamp_file),
-                O_RDONLY);
             field_fd.read_all(field_bufs[i].data,len);
-            field_data[i] = (const char*)field_bufs[i].data +
-                            start_index*fti->nbytes;
             continue;
         }
-        catch (const futil::errno_exception& e)
-        {
-            if (e.errnov != ENOENT)
-                throw;
-        }
 
-        // No uncompressed file exists.  Try with a compressed file.  First,
-        // make an anonymous backing region to hold the uncompressed data.
+        // No uncompressed file exists.  Try with a compressed file.
         // TODO: Only unzip the part of the file we care about?
         // TODO: Instead, in write_series() we will no longer keep .gz files if
         //       they are larger than the raw data.  So a buffer of chunk_size
@@ -141,20 +138,25 @@ tsdb::select_op::map_data()
         //       (avoiding making new mappings all the time) and just ungzip
         //       from that memory buffer which should be faster than
         //       zng_gzread() file IO.
-        field_data[i] = (const char*)field_bufs[i].data +
-                        start_index*fti->nbytes;
 
-        // Now, try and open the file and unzip it into the backing region.
+        // TODO: We are now reading the entire file into memory and then
+        //       decompressing it.  Before, the gzFile code was chunking it
+        //       so it didn't need to read it all at once, so now we consume
+        //       more memory.
+
         char gz_name[TIMESTAMP_FILE_NAME_LEN + 3];
         auto* p = stpcpy(gz_name,index_slot->timestamp_file);
         strcpy(p,".gz");
-        int field_fd = futil::openat(fields_dir,futil::path(f->name,gz_name),
-                                     O_RDONLY);
-        gzFile gzf = zng_gzdopen(field_fd,"rb");
-        zng_gzbuffer(gzf,128*1024);
-        int32_t zlen = zng_gzread(gzf,field_bufs[i].data,len);
-        kassert((size_t)zlen == len);
-        zng_gzclose_r(gzf);
+
+        // Read the compressed file into a backing buffer.
+        size_t max_gzipped_size = read_lock.m.db.root.max_gzipped_size;
+        auto_buf gz_buf(max_gzipped_size);
+        size_t gz_len =
+            futil::file(fields_dir,futil::path(f->name,gz_name),O_RDONLY)
+                .read_all_or_eof(gz_buf.data,max_gzipped_size);
+
+        // Decompress it.
+        zutil::gzip_decompress(field_bufs[i].data,len,gz_buf.data,gz_len);
     }
 
     // Map the bitmap points.  Bitmap files are always fixed size.
@@ -255,32 +257,46 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     --t0_index_slot;
     --t1_index_slot;
 
+    futil::directory time_ns_dir(read_lock.series_dir,"time_ns");
+
+    // Map the t0 slot and find the beginning of the target range.  If we hit
+    // in the gap at the end of the slot, advance by one.
+    const uint64_t* t0_data_begin;
+    const uint64_t* t0_data_end;
+    const uint64_t* t0_lower;
+    for (size_t i=0; i<2; ++i)
+    {
+        futil::file t0_file(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
+        auto t0_mmap = t0_file.mmap(NULL,t0_file.lseek(0,SEEK_END),PROT_READ,
+                                    MAP_SHARED,0);
+        t0_data_begin = (const uint64_t*)t0_mmap.addr;
+        t0_data_end = t0_data_begin + t0_mmap.len/8;
+        t0_lower = std::lower_bound(t0_data_begin,t0_data_end,t0);
+
+        if (t0_lower < t0_data_end)
+            break;
+
+        ++t0_index_slot;
+        if (t0_index_slot == index_end || t1_index_slot < t0_index_slot)
+            return;
+    }
+    size_t t0_index = t0_lower - t0_data_begin;
+
+    // Map the t1 slot and find the end of the target range.
+    futil::file t1_file(time_ns_dir,t1_index_slot->timestamp_file,O_RDONLY);
+    auto t1_mmap = t1_file.mmap(NULL,t1_file.lseek(0,SEEK_END),PROT_READ,
+                                MAP_SHARED,0);
+    auto* t1_data_begin = (const uint64_t*)t1_mmap.addr;
+    auto* t1_data_end = t1_data_begin + t1_mmap.len/8;
+    auto* t1_upper = std::upper_bound(t1_data_begin,t1_data_end,t1);
+    size_t t1_index = t1_upper - t1_data_begin;
+
     // Figure out how many full middle slots there are.
     size_t n_middle_slots;
     if (t0_index_slot + 1 < t1_index_slot)
         n_middle_slots = t1_index_slot - t0_index_slot - 1;
     else
         n_middle_slots = 0;
-
-    // Now, we need to map both slots and find the beginning and ending of the
-    // target range.
-    futil::directory time_ns_dir(read_lock.series_dir,"time_ns");
-    futil::file t0_file(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
-    futil::file t1_file(time_ns_dir,t1_index_slot->timestamp_file,O_RDONLY);
-    auto t0_mmap = t0_file.mmap(NULL,t0_file.lseek(0,SEEK_END),PROT_READ,
-                                MAP_SHARED,0);
-    auto t1_mmap = t1_file.mmap(NULL,t1_file.lseek(0,SEEK_END),PROT_READ,
-                                MAP_SHARED,0);
-
-    // Search for the beginning and end timestamps.
-    auto* t0_data_begin = (const uint64_t*)t0_mmap.addr;
-    auto* t1_data_begin = (const uint64_t*)t1_mmap.addr;
-    auto* t0_data_end = t0_data_begin + t0_mmap.len/8;
-    auto* t1_data_end = t1_data_begin + t1_mmap.len/8;
-    auto* t0_lower = std::lower_bound(t0_data_begin,t0_data_end,t0);
-    auto* t1_upper = std::upper_bound(t1_data_begin,t1_data_end,t1);
-    size_t t0_index = t0_lower - t0_data_begin;
-    size_t t1_index = t1_upper - t1_data_begin;
 
     // Figure out how many points are actually available.
     size_t t0_avail_points;
@@ -289,8 +305,8 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     const size_t chunk_npoints = read_lock.m.db.root.config.chunk_size/8;
     if (t0_index_slot != t1_index_slot)
     {
-        t0_avail_points = t0_mmap.len/8 - (t0_lower - t0_data_begin);
-        t1_avail_points = t1_upper - t1_data_begin;
+        t0_avail_points = t0_data_end - t0_lower;
+        t1_avail_points = t1_index;
         avail_points = t0_avail_points + t1_avail_points +
             chunk_npoints*n_middle_slots;
     }
@@ -321,7 +337,7 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
         // Extract the timestamp from the right index.
         size_t t1_index = t1_upper - t1_data_begin;
         t0_index = (t1_index - rem_limit) & (chunk_npoints - 1);
-        t0_file.open(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
+        futil::file t0_file(time_ns_dir,t0_index_slot->timestamp_file,O_RDONLY);
         t0_file.lseek(t0_index*8,SEEK_SET);
         t0 = t0_file.read_u64();
     }

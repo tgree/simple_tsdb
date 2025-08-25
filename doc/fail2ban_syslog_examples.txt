@@ -1,3 +1,4 @@
 2025-08-17T00:58:44.448046+00:00 ip-172-31-22-143 tsdbserver[278112]: Zombie detected: 167.94.138.175:32908
 2025-08-17T00:58:48.138149+00:00 ip-172-31-22-143 tsdbserver[278112]: SSL wrap failure: 167.94.138.175:46318 Fatal SSL library error
 2025-08-17T00:59:37.398049+00:00 ip-172-31-22-143 tsdbserver[278112]: Authentication from 127.0.0.1:53080 for user dashboard failed.
+2025-08-18T01:21:35.788555+00:00 ip-172-31-22-143 tsdbserver[642648]: Authentication from 91.196.152.208:60975 failed.
