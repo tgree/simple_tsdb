@@ -308,18 +308,20 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             bitmap_fds.clear();
             for (size_t i=0; i<write_lock.m.fields.size(); ++i)
             {
-                field_fds.emplace_back(fields_dir,
-                                       futil::path(write_lock.m.fields[i].name,
-                                                   time_data_str),
+                futil::directory field_dir(fields_dir,
+                                           write_lock.m.fields[i].name);
+                field_fds.emplace_back(field_dir,time_data_str,
                                        O_CREAT | O_TRUNC | O_RDWR,0660);
                 field_fds[i].fsync();
+                field_dir.fsync();
 
-                bitmap_fds.emplace_back(bitmaps_dir,
-                                        futil::path(write_lock.m.fields[i].name,
-                                                    time_data_str),
+                futil::directory bitmap_dir(bitmaps_dir,
+                                            write_lock.m.fields[i].name);
+                bitmap_fds.emplace_back(bitmap_dir,time_data_str,
                                         O_CREAT | O_TRUNC | O_RDWR,0660);
                 bitmap_fds[i].truncate(chunk_npoints/8);
                 bitmap_fds[i].fsync();
+                bitmap_dir.fsync();
             }
             fields_dir.fsync();
             bitmaps_dir.fsync();
