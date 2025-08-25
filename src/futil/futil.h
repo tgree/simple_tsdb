@@ -722,17 +722,24 @@ namespace futil
             openat_if_exists(d.fd,p,oflag);
         }
 
-        void read_all(void* _p, size_t n)
+        size_t read_all_or_eof(void* _p, size_t n)
         {
             auto* p = (char*)_p;
             while (n)
             {
                 ssize_t v = futil::read(fd,p,n);
                 if (v == 0)
-                    throw futil::errno_exception(EIO);
+                    break;
                 p += v;
                 n -= v;
             }
+            return p - (char*)_p;
+        }
+
+        void read_all(void* p, size_t n)
+        {
+            if (read_all_or_eof(p,n) != n)
+                throw futil::errno_exception(EIO);
         }
 
         uint64_t read_u64()
