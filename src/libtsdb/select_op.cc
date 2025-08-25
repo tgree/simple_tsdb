@@ -291,8 +291,8 @@ tsdb::select_op_last::select_op_last(const series_read_lock& read_lock,
     const size_t chunk_npoints = read_lock.m.db.root.config.chunk_size/8;
     if (t0_index_slot != t1_index_slot)
     {
-        t0_avail_points = t0_mmap.len/8 - (t0_lower - t0_data_begin);
-        t1_avail_points = t1_upper - t1_data_begin;
+        t0_avail_points = t0_data_end - t0_lower;
+        t1_avail_points = t1_index;
         avail_points = t0_avail_points + t1_avail_points +
             chunk_npoints*n_middle_slots;
     }
