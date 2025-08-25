@@ -28,7 +28,9 @@ namespace tsdb
         uint64_t                t1;
         uint64_t                rem_limit;
 
-        // Mapping objects to track mmap()-ed files.
+        // Position in the index and buffer to hold timestamps, which we don't
+        // mmap since we typically iterate over a large range of them and mmap
+        // would trigger many page faults.
         const index_entry*      index_slot;
         auto_buf                timestamp_buf;
 
