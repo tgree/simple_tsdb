@@ -134,6 +134,91 @@ class tmock_test
         }
     }
 
+    TMOCK_TEST(test_delete_one_by_one)
+    {
+        init_db(16);
+        std::vector<size_t> nvec;
+        for (size_t i=0; i<45; ++i)
+            nvec.push_back(1);
+        populate_db(99,3,nvec);
+
+        tsdb::count_result prev_cr;
+        {
+            tsdb::root root(".",false);
+            tsdb::database db1(root,"db1");
+            tsdb::measurement m1(db1,"measurement1");
+            tsdb::series_total_lock stl(m1,"series1");
+            prev_cr = tsdb::count_points(stl,0,-1);
+            tmock::assert_equiv(prev_cr.npoints,45UL);
+            tmock::assert_equiv(prev_cr.time_first,99UL);
+            tmock::assert_equiv(prev_cr.time_last,231UL);
+
+            snapshot_fs();
+            snapshot_auto_begin();
+            for (size_t t=90; t<235; ++t)
+            {
+                tsdb::delete_points(stl,t);
+                assert_tree_fsynced(fs_root);
+
+                auto cr = tsdb::count_points(stl,0,-1);
+                if (t < 99)
+                {
+                    tmock::assert_equiv(cr.npoints,45UL);
+                    tmock::assert_equiv(cr.time_first,99UL);
+                    tmock::assert_equiv(cr.time_last,231UL);
+                }
+                else if (t < 231)
+                {
+                    tmock::assert_equiv(cr.npoints,45 - ((t - 99)/3 + 1));
+                    tmock::assert_equiv(
+                        cr.time_first,round_up_to_nearest_multiple(t + 1,3UL));
+                    tmock::assert_equiv(cr.time_last,231UL);
+                }
+                else
+                {
+                    tmock::assert_equiv(cr.npoints,0UL);
+                    tmock::assert_equiv(cr.time_first,0UL); // Want t+1 instead
+                    tmock::assert_equiv(cr.time_last,-1UL); // Want 840 instead
+                }
+            }
+            snapshot_auto_end();
+        }
+
+        for (auto* dn : snapshots)
+        {
+            activate_and_fsync_snapshot(dn);
+            tsdb::root root(".",false);
+            tsdb::database db1(root,"db1");
+            tsdb::measurement m1(db1,"measurement1");
+
+            {
+                tsdb::series_read_lock srl(m1,"series1");
+                auto cr = tsdb::count_points(srl,0,-1);
+                TASSERT(cr.npoints <= prev_cr.npoints);
+                if (cr.npoints)
+                {
+                    TASSERT(cr.time_first >= prev_cr.time_first);
+                    tmock::assert_equiv(cr.time_last,231UL);
+                }
+                else
+                {
+                    tmock::assert_equiv(cr.time_first,0UL); // Want t+1 instead
+                    tmock::assert_equiv(cr.time_last,-1UL); // Want 840 instead
+                }
+                prev_cr = cr;
+            }
+
+            nvec.resize(20);
+            populate_db(850,10,nvec);
+
+            {
+                tsdb::series_read_lock srl(m1,"series1");
+                auto cr = tsdb::count_points(srl,0,-1);
+                tmock::assert_equiv(cr.npoints,prev_cr.npoints + 20);
+            }
+        }
+    }
+
     TMOCK_TEST(test_delete_consistency)
     {
         init_db(16);
