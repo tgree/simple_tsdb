@@ -349,8 +349,6 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                 bitmap_fds[i].fsync();
                 bitmap_dirs[i].fsync();
             }
-            fields_dir.fsync();
-            bitmaps_dir.fsync();
 
             // Create the new timestamp file.  As when first creating the
             // series, it is possible that someone got this far when growing
@@ -449,7 +447,6 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                 futil::unlink_if_exists(fields_dir,ufp);
             for (auto& field_dir : field_dirs)
                 field_dir.fsync();
-            fields_dir.fsync();
 
             unlink_field_paths.clear();
         }
