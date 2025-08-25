@@ -75,7 +75,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_create_new_series)
+    TMOCK_TEST(test_create_new_series)
     {
         {
             tsdb::configuration c = {
