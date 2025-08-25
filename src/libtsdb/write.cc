@@ -5,8 +5,7 @@
 #include <hdr/auto_buf.h>
 #include <algorithm>
 
-#define WITH_GZFILEOP
-#include <zlib-ng/zlib-ng.h>
+#include <zutil/zutil.h>
 
 tsdb::write_chunk_index::write_chunk_index(const measurement& m,
     size_t npoints, size_t bitmap_offset, size_t data_len, void* data):
@@ -260,7 +259,10 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
             // they are now full.  Compress them.
             if (!field_fds.empty())
             {
+                size_t max_gzipped_size = write_lock.m.db.root.max_gzipped_size;
+
                 auto_buf file_buf(chunk_size);
+                auto_buf gzip_buf(max_gzipped_size);
                 for (size_t i=0; i<write_lock.m.fields.size(); ++i)
                 {
                     const auto* fti = &ftinfos[write_lock.m.fields[i].type];
@@ -277,17 +279,16 @@ tsdb::write_series(series_write_lock& write_lock, write_chunk_index& wci)
                     // Create the destination file and write it out.
                     write_lock.m.db.root.debugf("Compressing %s...\n",
                                                 unlink_field_paths[i].c_str());
-                    int gz_fd = futil::openat(
+                    size_t compressed_len =
+                        zutil::gzip_compress(gzip_buf.data,max_gzipped_size,
+                                             file_buf.data,chunk_len,
+                                             Z_BEST_COMPRESSION);
+                    futil::file(
                         fields_dir,
                         futil::path(write_lock.m.fields[i].name,
                                     src_name + ".gz"),
-                        O_CREAT | O_TRUNC | O_RDWR,0660);
-                    gzFile gz_file = zng_gzdopen(gz_fd,"wb");
-                    int32_t gz_len = zng_gzwrite(gz_file,file_buf,chunk_len);
-                    kassert((size_t)gz_len == chunk_len);
-                    zng_gzflush(gz_file,Z_FINISH);
-                    futil::fsync(gz_fd);
-                    zng_gzclose(gz_file);
+                        O_CREAT | O_TRUNC | O_RDWR,0660)
+                            .write_all(gzip_buf.data,compressed_len);
                     write_lock.m.db.root.debugf("Done.\n");
 
                     // TODO: If destination file was larger than the chunk size,
