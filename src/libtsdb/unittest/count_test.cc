@@ -76,7 +76,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_count_first_overlap)
+    TMOCK_TEST(test_count_first_overlap)
     {
         generate_db();
 
@@ -157,7 +157,7 @@ class tmock_test
         TASSERT(found_extra);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_count_sliding)
+    TMOCK_TEST(test_count_sliding)
     {
         generate_db();
 
