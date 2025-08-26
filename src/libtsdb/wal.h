@@ -262,8 +262,8 @@ namespace tsdb
         // 
         // If an increment is necessary, (t0' - 1) is the furthest we should
         // go.  If no increment is necessary then t1 is fine as-is.
-        wal_query(const series_read_lock& read_lock, uint64_t _t0, uint64_t _t1,
-                  int oflag = O_RDONLY):
+        wal_query(const series_read_lock& read_lock, uint64_t _t0,
+                  uint64_t _t1):
             read_lock(read_lock),
             entry_size(sizeof(wal_entry) + read_lock.m.fields.size()*8),
             t0(MAX(_t0,read_lock.time_first,read_lock.time_last + 1)),
