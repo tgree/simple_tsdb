@@ -40,6 +40,7 @@ std::set<file_node*> live_files;
 file_descriptor fd_table[128];
 static dir_node* current_wd = fs_root;
 static bool snapshot_auto = false;
+std::function<void(uint32_t)> futil::hook_func;
 
 static void
 auto_snapshot_fs()
@@ -115,6 +116,8 @@ resolve_path(dir_node* base_dir, const std::string& path)
 void*
 futil::mmap(void* addr, size_t len, int prot, int flags, int fd, off_t offset)
 {
+    FW_PROBE(HI_MMAP,"mmap(%p,%zu,%d,%d,%d,%" PRId64 ")",
+             addr,len,prot,flags,fd,offset);
     kassert(addr == NULL);
     kassert(flags == MAP_SHARED);
     kassert(offset == 0);
@@ -133,6 +136,7 @@ futil::mmap(void* addr, size_t len, int prot, int flags, int fd, off_t offset)
 void
 futil::munmap(void* addr, size_t len)
 {
+    FW_PROBE(HI_MUNMAP,"munmap(%p,%zu)",addr,len);
     for (auto* fn : live_files)
     {
         if (&fn->data[0] <= addr && addr < &fn->data[0] + fn->data.size())
@@ -155,6 +159,7 @@ futil::munmap(void* addr, size_t len)
 void
 futil::msync(void* addr, size_t len, int flags)
 {
+    FW_PROBE(HI_MSYNC,"msync(%p,%zu,%d)",addr,len,flags);
     kassert(flags == MS_SYNC);
     for (auto* fn : live_files)
     {
@@ -174,6 +179,7 @@ futil::msync(void* addr, size_t len, int flags)
 void
 futil::fsync(int fd)
 {
+    FW_PROBE(HI_FSYNC,"fsync(%d)",fd);
     if (fd >= (int)NELEMS(fd_table) || fd <= 0)
         throw futil::errno_exception(EBADF);
     switch (fd_table[fd].type)
@@ -198,6 +204,7 @@ futil::fsync(int fd)
 void
 futil::close(int fd)
 {
+    FW_PROBE(HI_CLOSE,"close(%d)",fd);
     if (fd >= (int)NELEMS(fd_table) || fd <= 0)
         throw futil::errno_exception(EBADF);
     if (fd_table[fd].type == FDT_FILE)
@@ -232,18 +239,21 @@ futil::close(int fd)
 void
 futil::fsync_and_flush(int fd)
 {
+    FW_PROBE(HI_FSYNC_AND_FLUSH,"fsync_and_flush(%d)",fd);
     futil::fsync(fd);
 }
 
 void
 futil::fsync_and_barrier(int fd)
 {
+    FW_PROBE(HI_FSYNC_AND_BARRIER,"fsync_and_barrier(%d)",fd);
     futil::fsync(fd);
 }
 
 int
 futil::openat(int at_fd, const char* path, int oflag)
 {
+    FW_PROBE(HI_OPENAT1,"openat(%d,\"%s\",%d)",at_fd,path,oflag);
     kassert(!(oflag & O_APPEND));
     kassert(!(oflag & O_CLOEXEC));
     kassert(!(oflag & O_CREAT));
@@ -328,6 +338,7 @@ futil::openat(int at_fd, const char* path, int oflag)
 int
 futil::openat(int at_fd, const char* path, int oflag, mode_t mode)
 {
+    FW_PROBE(HI_OPENAT2,"openat(%d,\"%s\",%d,%d)",at_fd,path,oflag,mode);
     kassert(!(oflag & O_APPEND));
     kassert(!(oflag & O_CLOEXEC));
     kassert(oflag & O_CREAT);
@@ -405,6 +416,8 @@ futil::openat(int at_fd, const char* path, int oflag, mode_t mode)
 int
 futil::openat_if_exists(int at_fd, const char* path, int oflag) try
 {
+    FW_PROBE(HI_OPENAT_IF_EXISTS,"openat_if_exists(%d,\"%s\",%d)",
+             at_fd,path,oflag);
     return futil::openat(at_fd,path,oflag);
 }
 catch (const futil::errno_exception& e)
@@ -418,6 +431,9 @@ int
 futil::createat_if_not_exists(int at_fd, const char* path, int oflag,
     mode_t mode) try
 {
+    FW_PROBE(HI_CREATEAT_IF_NOT_EXISTS,
+             "createat_if_not_exists(%d,\"%s\",%d,%d)",
+             at_fd,path,oflag,mode);
     return futil::openat(at_fd,path,oflag | O_CREAT | O_EXCL,mode);
 }
 catch (const futil::errno_exception& e)
@@ -430,6 +446,7 @@ catch (const futil::errno_exception& e)
 DIR*
 futil::fdopendir(int at_fd)
 {
+    FW_PROBE(HI_FDOPENDIR,"fdopendir(%d)",at_fd);
     auto dn = find_at_fd_dir_node(at_fd);
     return reinterpret_cast<DIR*>(new ffs_DIR(at_fd,dn));
 }
@@ -438,6 +455,7 @@ struct dirent*
 futil::readdir(DIR* _dirp)
 {
     auto dirp = reinterpret_cast<ffs_DIR*>(_dirp);
+    FW_PROBE(HI_READDIR,"readdir(%p)",dirp);
     if (dirp->files_iter != dirp->dn->files.end())
     {
         auto* fn = dirp->files_iter->second;
@@ -495,6 +513,7 @@ void
 futil::closedir(DIR* _dirp)
 {
     auto dirp = reinterpret_cast<ffs_DIR*>(_dirp);
+    FW_PROBE(HI_CLOSEDIR,"closedir(%p)",dirp);
     int at_fd = dirp->at_fd;
     delete dirp;
     futil::close(at_fd);
@@ -503,12 +522,14 @@ futil::closedir(DIR* _dirp)
 int
 futil::open(const char* path, int oflag)
 {
+    FW_PROBE(HI_OPEN,"open(\"%s\",%d)",path,oflag);
     return futil::openat(AT_FDCWD,path,oflag);
 }
 
 ssize_t
 futil::read(int fd, void* buf, size_t nbyte)
 {
+    FW_PROBE(HI_READ,"read(%d,%p,%zu)",fd,buf,nbyte);
     file_node* file = find_fd_file_node(fd);
     if (fd_table[fd].pos >= (off_t)file->data.size())
         return 0;
@@ -523,6 +544,7 @@ futil::read(int fd, void* buf, size_t nbyte)
 ssize_t
 futil::write(int fd, const void* buf, size_t nbyte)
 {
+    FW_PROBE(HI_WRITE,"write(%d,%p,%zu)",fd,buf,nbyte);
     file_node* fn = find_fd_file_node(fd);
 
     // Zero-length writes do not extend the file length, even if the position
@@ -548,6 +570,7 @@ futil::write(int fd, const void* buf, size_t nbyte)
 off_t
 futil::lseek(int fd, off_t offset, int whence)
 {
+    FW_PROBE(HI_LSEEK,"lseek(%d,%" PRId64 ",%d)",fd,offset,whence);
     file_node* fn = find_fd_file_node(fd);
 
     off_t new_pos = 0;
@@ -582,6 +605,7 @@ futil::lseek(int fd, off_t offset, int whence)
 void
 futil::flock(int fd, int operation)
 {
+    FW_PROBE(HI_FLOCK,"flock(%d,%d)",fd,operation);
     kassert(operation == LOCK_SH ||
             operation == (LOCK_SH | LOCK_NB) ||
             operation == LOCK_EX ||
@@ -614,6 +638,7 @@ futil::flock(int fd, int operation)
 void
 futil::ftruncate(int fd, off_t length)
 {
+    FW_PROBE(HI_FTRUNCATE,"ftruncate(%d,%" PRId64 ")",fd,length);
     file_node* fn = find_fd_file_node(fd);
 
     if (length < 0)
@@ -628,6 +653,7 @@ futil::ftruncate(int fd, off_t length)
 void
 futil::mkdirat(int at_fd, const char* path, mode_t mode)
 {
+    FW_PROBE(HI_MKDIRAT,"mkdirat(%d,\"%s\",%d)",at_fd,path,mode);
     dir_node* at_dir = find_at_fd_dir_node(at_fd);
     auto rp = resolve_path(at_dir,path);
 
@@ -649,6 +675,8 @@ futil::mkdirat(int at_fd, const char* path, mode_t mode)
 bool
 futil::mkdirat_if_not_exists(int at_fd, const char* path, mode_t mode) try
 {
+    FW_PROBE(HI_MKDIRAT_IF_NOT_EXISTS,
+             "mkdirat_if_not_exists(%d,\"%s\",%d)",at_fd,path,mode);
     futil::mkdirat(at_fd,path,mode);
     return true;
 }
@@ -662,6 +690,7 @@ catch (const futil::errno_exception& e)
 void
 futil::unlinkat(int at_fd, const char* path, int flag)
 {
+    FW_PROBE(HI_UNLINKAT,"unlinkat(%d,\"%s\",%d)",at_fd,path,flag);
 #if IS_MACOS
     kassert(!(flag & AT_SYMLINK_NOFOLLOW_ANY));
 #endif
@@ -728,6 +757,8 @@ futil::unlinkat(int at_fd, const char* path, int flag)
 void
 futil::unlinkat_if_exists(int at_fd, const char* path, int flag) try
 {
+    FW_PROBE(HI_UNLINKAT_IF_EXISTS,"unlinkat_if_exists(%d,\"%s\",%d)",
+             at_fd,path,flag);
     futil::unlinkat(at_fd,path,flag);
 }
 catch (const futil::errno_exception& e)
@@ -739,6 +770,7 @@ catch (const futil::errno_exception& e)
 void
 futil::renameat(int fromfd, const char* from, int tofd, const char* to)
 {
+    FW_PROBE(HI_RENAMEAT,"renameat(%d,\"%s\",%d,\"%s\")",fromfd,from,tofd,to);
     auto fromdn = find_at_fd_dir_node(fromfd);
     auto todn   = find_at_fd_dir_node(tofd);
     auto fromrp = resolve_path(fromdn,from);
@@ -841,6 +873,9 @@ bool
 futil::renameat_if_not_exists(int fromfd, const char* from, int tofd,
     const char* to)
 {
+    FW_PROBE(HI_RENAMEAT_IF_NOT_EXISTS,
+             "renameat_if_not_exists(%d,\"%s\",%d,\"%s\")",
+             fromfd,from,tofd,to);
     auto todn = find_at_fd_dir_node(tofd);
     auto torp = resolve_path(todn,to);
     kassert(!torp.name.empty());
