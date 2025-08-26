@@ -446,7 +446,7 @@ futil::readdir(DIR* _dirp)
 #if IS_MACOS
         dirp->de.d_namlen = fn->name.size();
 #endif
-        strlcpy(dirp->de.d_name,fn->name.c_str(),sizeof(dirp->de.d_name));
+        snprintf(dirp->de.d_name,sizeof(dirp->de.d_name),"%s",fn->name.c_str());
         ++dirp->files_iter;
         return &dirp->de;
     }
@@ -484,7 +484,7 @@ futil::readdir(DIR* _dirp)
 #if IS_MACOS
         dirp->de.d_namlen = dn->name.size();
 #endif
-        strlcpy(dirp->de.d_name,dn->name.c_str(),sizeof(dirp->de.d_name));
+        snprintf(dirp->de.d_name,sizeof(dirp->de.d_name),"%s",dn->name.c_str());
         ++dirp->subdirs_iter;
         return &dirp->de;
     }
