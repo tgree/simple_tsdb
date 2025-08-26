@@ -3,7 +3,8 @@
 SUBMODULES :=
 
 tsdbcli2.MK  := $(MODULE_MK)
-tsdbcli2.LIB := libtsdb.a libfutil.a libz-ng.a libeditline.a libssl.a libcrypto.a
+tsdbcli2.LIB := libtsdb.a libfutil.a libz-ng.a libeditline.a
+tsdbcli2.DYLIB := ssl crypto
 tsdbcli2.OBJ := \
 	$(MODULE_BUILD_DIR)/parse_types.o \
 	$(MODULE_BUILD_DIR)/print_op_results.o \

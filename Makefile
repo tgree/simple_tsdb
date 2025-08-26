@@ -111,9 +111,9 @@ ifeq ($(UNAME_S), Darwin)
 	COMMON_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	TEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	ITEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
-	COMMON_LDFLAGS += -Wl,-dead_strip
-	TEST_LDFLAGS += -Wl,-dead_strip
-	ITEST_LDFLAGS += -Wl,-dead_strip
+	COMMON_LDFLAGS += -Wl,-dead_strip -L$(HOMEBREW_PREFIX)/opt/openssl/lib
+	TEST_LDFLAGS += -Wl,-dead_strip -L$(HOMEBREW_PREFIX)/opt/openssl/lib
+	ITEST_LDFLAGS += -Wl,-dead_strip -L$(HOMEBREW_PREFIX)/opt/openssl/lib
 else
 	COMMON_LDFLAGS += -Wl,--gc-sections
 	TEST_LDFLAGS += -Wl,--gc-sections
