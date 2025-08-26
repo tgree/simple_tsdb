@@ -27,13 +27,6 @@ tmock::abort(const char* s, const char* f, unsigned int l)
 }
 
 void
-tmock::_tassert(bool expr, const char* s, const char* f, unsigned int l)
-{
-    if (!expr)
-        tmock::abort(s,f,l);
-}
-
-void
 tmock::abort_mem_dump(const void* v, const void* expected, size_t len,
     const char* file, size_t line)
 {
@@ -57,115 +50,42 @@ tmock::abort_mem_dump(const void* v, const void* expected, size_t len,
 }
 
 void
-tmock::assert_equiv(const char* s, const char* expected, const char* file,
+tmock::abort_not_equiv(long long v, long long expected, const char* file,
     size_t line)
 {
-    if (strcmp(s,expected))
+    if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
-        if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
-        {
-            printf("%s:%zu:\n",file,line);
-            printf(" Expected: '%s'\n",expected);
-            printf("      Got: '%s'\n",s);
-        }
-        ::abort();
+        printf("%s:%zu:\n",file,line);
+        printf(" Expected: %lld\n",expected);
+        printf("      Got: %lld\n",v);
     }
+    ::abort();
 }
 
 void
-tmock::assert_equiv(uint16_t v, uint16_t expected, const char* file,
-    size_t line)
+tmock::abort_not_equiv(unsigned long long v, unsigned long long expected,
+    const char* file, size_t line)
 {
-    if (v != expected)
+    if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
-        if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
-        {
-            printf("%s:%zu:\n",file,line);
-            printf(" Expected: 0x%04X\n",expected);
-            printf("      Got: 0x%04X\n",v);
-        }
-        ::abort();
+        printf("%s:%zu:\n",file,line);
+        printf(" Expected: %llu\n",expected);
+        printf("      Got: %llu\n",v);
     }
+    ::abort();
 }
 
 void
-tmock::assert_equiv(uint32_t v, uint32_t expected, const char* file,
+tmock::abort_not_equiv(const char* s, const char* expected, const char* file,
     size_t line)
 {
-    if (v != expected)
+    if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
-        if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
-        {
-            printf("%s:%zu:\n",file,line);
-            printf(" Expected: 0x%08X\n",expected);
-            printf("      Got: 0x%08X\n",v);
-        }
-        ::abort();
+        printf("%s:%zu:\n",file,line);
+        printf(" Expected: '%s'\n",expected);
+        printf("      Got: '%s'\n",s);
     }
-}
-
-void
-tmock::assert_equiv(uint64_t v, uint64_t expected, const char* file,
-    size_t line)
-{
-    if (v != expected)
-    {
-        if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
-        {
-            printf("%s:%zu:\n",file,line);
-            printf(" Expected: 0x%016lX\n",expected);
-            printf("      Got: 0x%016lX\n",v);
-        }
-        ::abort();
-    }
-}
-
-void
-tmock::assert_equiv(int16_t v, int16_t expected, const char* file,
-    size_t line)
-{
-    if (v != expected)
-    {
-        if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
-        {
-            printf("%s:%zu:\n",file,line);
-            printf(" Expected: %d\n",expected);
-            printf("      Got: %d\n",v);
-        }
-        ::abort();
-    }
-}
-
-void
-tmock::assert_equiv(int32_t v, int32_t expected, const char* file,
-    size_t line)
-{
-    if (v != expected)
-    {
-        if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
-        {
-            printf("%s:%zu:\n",file,line);
-            printf(" Expected: %d\n",expected);
-            printf("      Got: %d\n",v);
-        }
-        ::abort();
-    }
-}
-
-void
-tmock::assert_equiv(int64_t v, int64_t expected, const char* file,
-    size_t line)
-{
-    if (v != expected)
-    {
-        if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
-        {
-            printf("%s:%zu:\n",file,line);
-            printf(" Expected: %ld\n",expected);
-            printf("      Got: %ld\n",v);
-        }
-        ::abort();
-    }
+    ::abort();
 }
 
 void

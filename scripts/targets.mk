@@ -14,7 +14,8 @@ $$(BIN_DIR)/$(1).map $$(BIN_DIR)/$(1): $$($(1).LIB:%.a=$$(LIB_DIR)/%.a) $$($(1).
 		$$(COMMON_LDFLAGS) \
 		-o $$@ \
 		$$($(1).OBJ) \
-		$$($(1).LIB:%.a=$$(LIB_DIR)/%.a)
+		$$($(1).LIB:%.a=$$(LIB_DIR)/%.a) \
+		$$($(1).DYLIB:%=-l%)
 endef
 
 # Canned recipe to define all link rules for a list of targets.
