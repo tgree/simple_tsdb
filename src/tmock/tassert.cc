@@ -27,13 +27,6 @@ tmock::abort(const char* s, const char* f, unsigned int l)
 }
 
 void
-tmock::_tassert(bool expr, const char* s, const char* f, unsigned int l)
-{
-    if (!expr)
-        tmock::abort(s,f,l);
-}
-
-void
 tmock::abort_mem_dump(const void* v, const void* expected, size_t len,
     const char* file, size_t line)
 {
