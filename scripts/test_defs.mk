@@ -33,6 +33,7 @@ $$(TESTS_DIR)/$(1): $$($(1).OBJ) $$($(1).LIB:%.a=$$(LIB_DIR)/%.a) $$(LTMOCK) $$(
 	@$$(BUILD_TEST) \
 		$$($(1).OBJ) \
 		$$($(1).LIB:%.a=$$(LIB_DIR)/%.a) \
+		$$($(1).DYLIB:%=-l%) \
 		$$(LTMOCK)
 endef
 
