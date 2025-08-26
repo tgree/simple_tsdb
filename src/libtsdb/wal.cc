@@ -12,7 +12,7 @@ static void
 commit_wal(tsdb::series_write_lock& write_lock)
 {
     // Figure out what it is we need to write.
-    tsdb::wal_query wq(write_lock,write_lock.time_first,(uint64_t)-1,O_RDWR);
+    tsdb::wal_query wq(write_lock,write_lock.time_first,(uint64_t)-1);
     if (!wq.nentries)
         return;
 

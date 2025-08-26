@@ -18,11 +18,54 @@
 #include <string.h>
 #include <inttypes.h>
 #include <exception>
+#include <functional>
 
 #define FUTIL_WRAP_TRACE    0
 
 namespace futil
 {
+    enum hook_id
+    {
+        HI_MMAP                     = 0x00010000,
+        HI_MUNMAP                   = 0x00020000,
+        HI_MSYNC                    = 0x00030000,
+        HI_FSYNC                    = 0x00040000,
+        HI_CLOSE                    = 0x00050000,
+        HI_FCNTL1                   = 0x00060000,
+        HI_FCNTL2                   = 0x00070000,
+        HI_FSYNC_AND_FLUSH          = 0x00080000,
+        HI_FSYNC_AND_BARRIER        = 0x00090000,
+        HI_VDPRINTF                 = 0x000A0000,
+        HI_OPENAT1                  = 0x000B0000,
+        HI_OPENAT2                  = 0x000C0000,
+        HI_OPENAT_IF_EXISTS         = 0x000D0000,
+        HI_CREATEAT_IF_NOT_EXISTS   = 0x000E0000,
+        HI_FDOPENDIR                = 0x000F0000,
+        HI_READDIR                  = 0x00100000,
+        HI_CLOSEDIR                 = 0x00110000,
+        HI_OPEN                     = 0x00120000,
+        HI_READ                     = 0x00130000,
+        HI_WRITE                    = 0x00140000,
+        HI_LSEEK                    = 0x00150000,
+        HI_FLOCK                    = 0x00160000,
+        HI_FTRUNCATE                = 0x00170000,
+        HI_MKDIR                    = 0x00180000,
+        HI_MKDIRAT                  = 0x00190000,
+        HI_MKDIR_IF_NOT_EXISTS      = 0x001A0000,
+        HI_MKDIRAT_IF_NOT_EXISTS    = 0x001B0000,
+        HI_SYMLINK                  = 0x001C0000,
+        HI_UNLINK                   = 0x001D0000,
+        HI_UNLINKAT                 = 0x001E0000,
+        HI_UNLINK_IF_EXISTS         = 0x001F0000,
+        HI_UNLINKAT_IF_EXISTS       = 0x00200000,
+        HI_RENAMEAT                 = 0x00210000,
+        HI_RENAMEAT_IF_NOT_EXISTS   = 0x00220000,
+        HI_MKDTEMP                  = 0x00230000,
+        HI_CHDIR                    = 0x00240000,
+        HI_FCHMOD                   = 0x00250000,
+        HI_FCHMODAT                 = 0x00260000,
+    };
+
     struct exception : public std::exception
     {
         exception() {}
@@ -58,18 +101,48 @@ namespace futil
         }
     };
 
-    // Poor man's strace().
-    static inline void __PRINTF__(1,2) _FW_TRACE(const char* fmt, ...)
-    {
-        if (!FUTIL_WRAP_TRACE)
-            return;
+#ifdef UNITTEST
+    extern std::function<void(uint32_t)> hook_func;
+#endif
 
-        va_list ap;
-        va_start(ap,fmt);
-        vprintf(fmt,ap);
-        va_end(ap);
-    }
-#define FW_TRACE(fmt, ...) _FW_TRACE(fmt "\n", ##__VA_ARGS__)
+    struct _futil_probe
+    {
+        const hook_id id;
+        _futil_probe(hook_id id, const char* fmt, ...) __PRINTF__(3,4) :
+            id(id)
+        {
+#ifdef UNITTEST
+            if (hook_func)
+            {
+                auto _hook_func = hook_func;
+                hook_func = NULL;
+                _hook_func(id | 0x0000);
+                hook_func = _hook_func;
+            }
+#endif
+            if (!FUTIL_WRAP_TRACE)
+                return;
+
+            va_list ap;
+            va_start(ap,fmt);
+            vprintf(fmt,ap);
+            va_end(ap);
+        }
+        ~_futil_probe()
+        {
+#ifdef UNITTEST
+            if (hook_func)
+            {
+                auto _hook_func = hook_func;
+                hook_func = NULL;
+                _hook_func(id | 0x0001);
+                hook_func = _hook_func;
+            }
+#endif
+        }
+    };
+#define FW_PROBE(id,fmt,...) _futil_probe(id,fmt "\n", ##__VA_ARGS__)
+#define FW_TRACE(fmt,...) if (FUTIL_WRAP_TRACE) printf(fmt "\n", ##__VA_ARGS__)
 
     static inline void __NORETURN__ FW_THROW_ERRNO(int errnov)
     {
@@ -131,7 +204,7 @@ namespace futil
     inline void* mmap(void* addr, size_t len, int prot, int flags, int fd,
                       off_t offset)
     {
-        FW_TRACE("mmap(%p,%zu,%d,%d,%d,%" PRId64 ")",
+        FW_PROBE(HI_MMAP,"mmap(%p,%zu,%d,%d,%d,%" PRId64 ")",
                  addr,len,prot,flags,fd,offset);
         addr = ::mmap(addr,len,prot,flags,fd,offset);
         if (addr == MAP_FAILED)
@@ -141,21 +214,21 @@ namespace futil
 
     inline void munmap(void* addr, size_t len)
     {
-        FW_TRACE("munmap(%p,%zu)",addr,len);
+        FW_PROBE(HI_MUNMAP,"munmap(%p,%zu)",addr,len);
         if (::munmap(addr,len) == -1)
             FW_THROW_ERRNO();
     }
 
     inline void msync(void* addr, size_t len, int flags)
     {
-        FW_TRACE("msync(%p,%zu,%d)",addr,len,flags);
+        FW_PROBE(HI_MSYNC,"msync(%p,%zu,%d)",addr,len,flags);
         if (::msync(addr,len,flags) == -1)
             FW_THROW_ERRNO();
     }
 
     inline void fsync(int fd)
     {
-        FW_TRACE("fsync(%d)",fd);
+        FW_PROBE(HI_FSYNC,"fsync(%d)",fd);
         for (;;)
         {
 #if IS_MACOS
@@ -172,7 +245,7 @@ namespace futil
 
     inline void close(int fd)
     {
-        FW_TRACE("close(%d)",fd);
+        FW_PROBE(HI_CLOSE,"close(%d)",fd);
         for (;;)
         {
             if (::close(fd) != -1)
@@ -184,7 +257,7 @@ namespace futil
 
     inline int fcntl(int fd, int cmd)
     {
-        FW_TRACE("fcntl(%d,%d)",fd,cmd);
+        FW_PROBE(HI_FCNTL1,"fcntl(%d,%d)",fd,cmd);
         for (;;)
         {
             int val = ::fcntl(fd,cmd);
@@ -198,7 +271,7 @@ namespace futil
     template<typename T>
     inline int fcntl(int fd, int cmd, T arg)
     {
-        FW_TRACE("fcntl(%d,%d,...)",fd,cmd);
+        FW_PROBE(HI_FCNTL2,"fcntl(%d,%d,...)",fd,cmd);
         for (;;)
         {
             int val = ::fcntl(fd,cmd,arg);
@@ -211,7 +284,7 @@ namespace futil
 
     inline void fsync_and_flush(int fd)
     {
-        FW_TRACE("fsync_and_flush(%d)",fd);
+        FW_PROBE(HI_FSYNC_AND_FLUSH,"fsync_and_flush(%d)",fd);
 #if IS_MACOS
         // Performs an fsync() and then flushes the disk controller's
         // buffers to the physical drive medium.
@@ -225,7 +298,7 @@ namespace futil
 
     inline void fsync_and_barrier(int fd)
     {
-        FW_TRACE("fsync_and_barrier(%d)",fd);
+        FW_PROBE(HI_FSYNC_AND_BARRIER,"fsync_and_barrier(%d)",fd);
 #if IS_MACOS
         // Performs an fsync() and then inserts an IO barrier, preventing
         // IO reordering across the barrier.  This is available only on
@@ -255,12 +328,13 @@ namespace futil
 
     inline int vdprintf(int fd, const char* fmt, va_list ap)
     {
+        FW_PROBE(HI_VDPRINTF,"vdprintf(%d,\"%s\",...)",fd,fmt);
         return ::vdprintf(fd,fmt,ap);
     }
 
     inline int openat(int at_fd, const char* path, int oflag)
     {
-        FW_TRACE("openat(%d,\"%s\",%d)",at_fd,path,oflag);
+        FW_PROBE(HI_OPENAT1,"openat(%d,\"%s\",%d)",at_fd,path,oflag);
         if (oflag & O_CREAT)
         {
             FW_TRACE("---> throw inconsistent file params");
@@ -278,7 +352,7 @@ namespace futil
 
     inline int openat(int at_fd, const char* path, int oflag, mode_t mode)
     {
-        FW_TRACE("openat(%d,\"%s\",%d,%d)",at_fd,path,oflag,mode);
+        FW_PROBE(HI_OPENAT2,"openat(%d,\"%s\",%d,%d)",at_fd,path,oflag,mode);
         if (!(oflag & O_CREAT))
         {
             FW_TRACE("---> throw inconsistent file params");
@@ -296,7 +370,8 @@ namespace futil
 
     inline int openat_if_exists(int at_fd, const char* path, int oflag)
     {
-        FW_TRACE("openat_if_exists(%d,\"%s\",%d)",at_fd,path,oflag);
+        FW_PROBE(HI_OPENAT_IF_EXISTS,"openat_if_exists(%d,\"%s\",%d)",
+                 at_fd,path,oflag);
         for (;;)
         {
             int fd = ::openat(at_fd,path,oflag);
@@ -310,7 +385,8 @@ namespace futil
     inline int createat_if_not_exists(int at_fd, const char* path, int oflag,
                                       mode_t mode)
     {
-        FW_TRACE("createat_if_not_exists(%d,\"%s\",%d,%d)",
+        FW_PROBE(HI_CREATEAT_IF_NOT_EXISTS,
+                 "createat_if_not_exists(%d,\"%s\",%d,%d)",
                  at_fd,path,oflag,mode);
         for (;;)
         {
@@ -326,7 +402,7 @@ namespace futil
 
     inline DIR* fdopendir(int fd)
     {
-        FW_TRACE("fdopendir(%d)",fd);
+        FW_PROBE(HI_FDOPENDIR,"fdopendir(%d)",fd);
         auto* dirp = ::fdopendir(fd);
         if (!dirp)
             FW_THROW_ERRNO(EBADF);
@@ -335,20 +411,20 @@ namespace futil
 
     inline struct dirent* readdir(DIR* dirp)
     {
-        FW_TRACE("readdir(%p)",dirp);
+        FW_PROBE(HI_READDIR,"readdir(%p)",dirp);
         return ::readdir(dirp);
     }
 
     inline void closedir(DIR* dirp)
     {
-        FW_TRACE("closedir(%p)",dirp);
+        FW_PROBE(HI_CLOSEDIR,"closedir(%p)",dirp);
         if (::closedir(dirp) == -1)
             FW_THROW_ERRNO();
     }
 
     inline int open(const char* path, int oflag)
     {
-        FW_TRACE("open(\"%s\",%d)",path,oflag);
+        FW_PROBE(HI_OPEN,"open(\"%s\",%d)",path,oflag);
         for (;;)
         {
             int fd = ::open(path,oflag);
@@ -361,7 +437,7 @@ namespace futil
     
     inline ssize_t read(int fd, void* buf, size_t nbyte)
     {
-        FW_TRACE("read(%d,%p,%zu)",fd,buf,nbyte);
+        FW_PROBE(HI_READ,"read(%d,%p,%zu)",fd,buf,nbyte);
         for (;;)
         {
             ssize_t v = ::read(fd,buf,nbyte);
@@ -374,7 +450,7 @@ namespace futil
 
     inline ssize_t write(int fd, const void* buf, size_t nbyte)
     {
-        FW_TRACE("write(%d,%p,%zu)",fd,buf,nbyte);
+        FW_PROBE(HI_WRITE,"write(%d,%p,%zu)",fd,buf,nbyte);
         for (;;)
         {
             ssize_t v = ::write(fd,buf,nbyte);
@@ -387,7 +463,7 @@ namespace futil
 
     inline off_t lseek(int fd, off_t offset, int whence)
     {
-        FW_TRACE("lseek(%d,%" PRId64 ",%d)",fd,offset,whence);
+        FW_PROBE(HI_LSEEK,"lseek(%d,%" PRId64 ",%d)",fd,offset,whence);
         for (;;)
         {
             off_t pos = ::lseek(fd,offset,whence);
@@ -400,14 +476,14 @@ namespace futil
 
     inline void flock(int fd, int operation)
     {
-        FW_TRACE("flock(%d,%d)",fd,operation);
+        FW_PROBE(HI_FLOCK,"flock(%d,%d)",fd,operation);
         if (::flock(fd,operation) == -1)
             FW_THROW_ERRNO();
     }
 
     inline void ftruncate(int fd, off_t length)
     {
-        FW_TRACE("ftruncate(%d,%" PRId64 ")",fd,length);
+        FW_PROBE(HI_FTRUNCATE,"ftruncate(%d,%" PRId64 ")",fd,length);
         for (;;)
         {
             if (::ftruncate(fd,length) != -1)
@@ -419,7 +495,7 @@ namespace futil
 
     inline void mkdir(const char* path, mode_t mode)
     {
-        FW_TRACE("mkdir(\"%s\",%d)",path,mode);
+        FW_PROBE(HI_MKDIR,"mkdir(\"%s\",%d)",path,mode);
         // mkdir() doesn't seem to return EINTR.
         if (::mkdir(path,mode) == -1)
             FW_THROW_ERRNO();
@@ -427,7 +503,7 @@ namespace futil
 
     inline void mkdirat(int at_fd, const char* path, mode_t mode)
     {
-        FW_TRACE("mkdirat(%d,\"%s\",%d)",at_fd,path,mode);
+        FW_PROBE(HI_MKDIRAT,"mkdirat(%d,\"%s\",%d)",at_fd,path,mode);
         // mkdirat() doesn't seem to return EINTR.
         if (::mkdirat(at_fd,path,mode) == -1)
             FW_THROW_ERRNO();
@@ -435,7 +511,8 @@ namespace futil
 
     inline bool mkdir_if_not_exists(const char* path, mode_t mode)
     {
-        FW_TRACE("mkdir_if_not_exists(\"%s\",%d)",path,mode);
+        FW_PROBE(HI_MKDIR_IF_NOT_EXISTS,"mkdir_if_not_exists(\"%s\",%d)",
+                 path,mode);
         // mkdir() doesn't seem to return EINTR.
         int v = ::mkdir(path,mode);
         if (v == -1 && errno != EEXIST)
@@ -445,7 +522,8 @@ namespace futil
 
     inline bool mkdirat_if_not_exists(int at_fd, const char* path, mode_t mode)
     {
-        FW_TRACE("mkdirat_if_not_exists(%d,\"%s\",%d)",at_fd,path,mode);
+        FW_PROBE(HI_MKDIRAT_IF_NOT_EXISTS,
+                 "mkdirat_if_not_exists(%d,\"%s\",%d)",at_fd,path,mode);
         // mkdirat() doesn't seem to return EINTR.
         int v = ::mkdirat(at_fd,path,mode);
         if (v == -1 && errno != EEXIST)
@@ -455,7 +533,7 @@ namespace futil
 
     inline void symlink(const char* path1, const char* path2)
     {
-        FW_TRACE("symlink(\"%s\",\"%s\")",path1,path2);
+        FW_PROBE(HI_SYMLINK,"symlink(\"%s\",\"%s\")",path1,path2);
         // symlink() doesn't seem to return EINTR.
         if (::symlink(path1,path2) == -1)
             FW_THROW_ERRNO();
@@ -463,7 +541,7 @@ namespace futil
 
     inline void unlink(const char* path)
     {
-        FW_TRACE("unlink(\"%s\")",path);
+        FW_PROBE(HI_UNLINK,"unlink(\"%s\")",path);
         // unlink() doesn't seem to return EINTR.
         if (::unlink(path) == -1)
             FW_THROW_ERRNO();
@@ -471,7 +549,7 @@ namespace futil
 
     inline void unlinkat(int at_fd, const char* path, int flag)
     {
-        FW_TRACE("unlinkat(%d,\"%s\",%d)",at_fd,path,flag);
+        FW_PROBE(HI_UNLINKAT,"unlinkat(%d,\"%s\",%d)",at_fd,path,flag);
         // unlinkat() doesn't seem to return EINTR.
         if (::unlinkat(at_fd,path,flag) == -1)
             FW_THROW_ERRNO();
@@ -479,7 +557,7 @@ namespace futil
 
     inline void unlink_if_exists(const char* path)
     {
-        FW_TRACE("unlink_if_exists(\"%s\")",path);
+        FW_PROBE(HI_UNLINK_IF_EXISTS,"unlink_if_exists(\"%s\")",path);
         // unlink() doesn't seem to return EINTR.
         if (::unlink(path) == -1 && errno != ENOENT)
             FW_THROW_ERRNO();
@@ -487,7 +565,8 @@ namespace futil
 
     inline void unlinkat_if_exists(int at_fd, const char* path, int flag)
     {
-        FW_TRACE("unlinkat_if_exists(%d,\"%s\",%d)",at_fd,path,flag);
+        FW_PROBE(HI_UNLINKAT_IF_EXISTS,"unlinkat_if_exists(%d,\"%s\",%d)",
+                 at_fd,path,flag);
         // unlinkat() doesn't seem to return EINTR.
         if (::unlinkat(at_fd,path,flag) == -1 && errno != ENOENT)
             FW_THROW_ERRNO();
@@ -495,7 +574,8 @@ namespace futil
 
     inline void renameat(int fromfd, const char* from, int tofd, const char* to)
     {
-        FW_TRACE("renameat(%d,\"%s\",%d,\"%s\")",fromfd,from,tofd,to);
+        FW_PROBE(HI_RENAMEAT,"renameat(%d,\"%s\",%d,\"%s\")",
+                 fromfd,from,tofd,to);
         // renameat() doesn't seem to return EINTR.
         if (::renameat(fromfd,from,tofd,to) == -1)
             FW_THROW_ERRNO();
@@ -504,7 +584,9 @@ namespace futil
     inline bool renameat_if_not_exists(int fromfd, const char* from, int tofd,
                                        const char* to)
     {
-        FW_TRACE("renameat_if_not_exists(%d,\"%s\",%d,\"%s\")",fromfd,from,tofd,to);
+        FW_PROBE(HI_RENAMEAT_IF_NOT_EXISTS,
+                 "renameat_if_not_exists(%d,\"%s\",%d,\"%s\")",
+                 fromfd,from,tofd,to);
 #if IS_MACOS
         if (!::renameatx_np(fromfd,from,tofd,to,RENAME_EXCL))
             return true;
@@ -521,21 +603,21 @@ namespace futil
 
     inline void mkdtemp(char* tmp)
     {
-        FW_TRACE("mkdtemp(\"%s\")",tmp);
+        FW_PROBE(HI_MKDTEMP,"mkdtemp(\"%s\")",tmp);
         if (::mkdtemp(tmp) == NULL)
             FW_THROW_ERRNO();
     }
 
     inline void chdir(const char* path)
     {
-        FW_TRACE("chdir(\"%s\")",path);
+        FW_PROBE(HI_CHDIR,"chdir(\"%s\")",path);
         if (::chdir(path) == -1)
             FW_THROW_ERRNO();
     }
 
     inline void fchmod(int fd, mode_t mode)
     {
-        FW_TRACE("fchmod(%d,%d)",fd,mode);
+        FW_PROBE(HI_FCHMOD,"fchmod(%d,%d)",fd,mode);
         for (;;)
         {
             if (!::fchmod(fd,mode))
@@ -547,7 +629,7 @@ namespace futil
 
     inline void fchmodat(int at_fd, const char* path, mode_t mode, int flag)
     {
-        FW_TRACE("fchmodat(%d,\"%s\",%d,%d)",at_fd,path,mode,flag);
+        FW_PROBE(HI_FCHMODAT,"fchmodat(%d,\"%s\",%d,%d)",at_fd,path,mode,flag);
         for (;;)
         {
             if (!::fchmodat(at_fd,path,mode,flag))

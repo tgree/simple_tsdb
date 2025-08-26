@@ -3,21 +3,24 @@
 SUBMODULES :=
 
 tsdbserver.MK  := $(MODULE_MK)
-tsdbserver.LIB := libtsdb.a libz-ng.a libssl.a libcrypto.a
+tsdbserver.LIB := libtsdb.a libz-ng.a
+tsdbserver.DYLIB := ssl crypto
 tsdbserver.OBJ := \
 	$(MODULE_BUILD_DIR)/server.o \
 	$(MODULE_BUILD_DIR)/tokens.o \
 	$(BUILD_O_DIR)/floor/kassert.o
 
 tsdbclienttest.MK  := $(MODULE_MK)
-tsdbclienttest.LIB := libtsdb.a libz-ng.a libssl.a libcrypto.a
+tsdbclienttest.LIB := libtsdb.a libz-ng.a
+tsdbclienttest.DYLIB := ssl crypto
 tsdbclienttest.OBJ := \
 	$(MODULE_BUILD_DIR)/client_test.o \
 	$(MODULE_BUILD_DIR)/client.o \
 	$(BUILD_O_DIR)/floor/kassert.o
 
 tsdbreflector.MK  := $(MODULE_MK)
-tsdbreflector.LIB := libtsdb.a libz-ng.a libssl.a libcrypto.a
+tsdbreflector.LIB := libtsdb.a libz-ng.a
+tsdbreflector.DYLIB := ssl crypto
 tsdbreflector.OBJ := \
 	$(MODULE_BUILD_DIR)/reflector.o \
 	$(MODULE_BUILD_DIR)/client.o \

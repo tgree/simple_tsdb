@@ -2,6 +2,7 @@
 # All rights reserved.
 TESTS := \
 	 bitmap_test \
+	 concurrency_test \
 	 count_test \
 	 database_test \
 	 delete_test \
@@ -15,6 +16,20 @@ TESTS := \
 
 bitmap_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/bitmap_test.o
+concurrency_test.LIB := libz-ng.a
+concurrency_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/concurrency_test.o \
+	$(MODULE_TBUILD_DIR)/fake_db.o \
+	$(PARENT_TBUILD_DIR)/delete.o \
+	$(PARENT_TBUILD_DIR)/wal.o \
+	$(PARENT_TBUILD_DIR)/write.o \
+	$(PARENT_TBUILD_DIR)/count.o \
+	$(PARENT_TBUILD_DIR)/select_op.o \
+	$(PARENT_TBUILD_DIR)/series.o \
+	$(PARENT_TBUILD_DIR)/measurement.o \
+	$(PARENT_TBUILD_DIR)/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_O_DIR)/floor/kassert.o
 count_test.LIB := libz-ng.a
 count_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/count_test.o \
@@ -54,7 +69,7 @@ measurement_test.OBJ := \
 	$(PARENT_TBUILD_DIR)/root.o \
 	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
 	$(BUILD_O_DIR)/floor/kassert.o
-root_test.LIB := libcrypto.a
+root_test.DYLIB := crypto
 root_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/root_test.o \
 	$(PARENT_TBUILD_DIR)/root.o \
