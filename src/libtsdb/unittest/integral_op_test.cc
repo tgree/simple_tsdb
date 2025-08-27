@@ -38,6 +38,19 @@ class tmock_test
         tsdb::measurement m1(db1,"measurement1");
         tsdb::series_read_lock srl(m1,"series1");
         tsdb::integral_op op(srl,"series1",{"field3"},0,-1);
+
+        TASSERT(op.is_null[0]);
+        double integral = 0;
+        const double dt = 10. / 1e9;
+        for (size_t i=1; i<53; ++i)
+        {
+            integral += 0.5 * ((double)dps[i-1].field3 +
+                               (double)dps[i].field3) * dt;
+        }
+
+        tmock::assert_equiv(op.t0_ns,100);
+        tmock::assert_equiv(op.t1_ns,620);
+        tmock::assert_equiv(op.integral[0],integral);
     }
 };
 
