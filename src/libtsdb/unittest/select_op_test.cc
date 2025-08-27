@@ -345,7 +345,7 @@ class tmock_test
                             tmock::assert_equiv(
                                 op.get_field<double,1>(i),dp->field2);
                             tmock::assert_equiv(
-                                op.get_field<uint32_t,2>(i),dp->field3);
+                                op.get_field<float,2>(i),dp->field3);
                             tmock::assert_equiv(
                                 op.is_field_null(0,i),!dp->is_non_null[0]);
                             tmock::assert_equiv(
@@ -421,7 +421,7 @@ class tmock_test
                             tmock::assert_equiv(
                                 op.get_field<double,1>(i),dp->field2);
                             tmock::assert_equiv(
-                                op.get_field<uint32_t,2>(i),dp->field3);
+                                op.get_field<float,2>(i),dp->field3);
                             tmock::assert_equiv(
                                 op.is_field_null(0,i),!dp->is_non_null[0]);
                             tmock::assert_equiv(

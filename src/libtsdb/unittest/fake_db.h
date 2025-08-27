@@ -9,7 +9,7 @@ struct data_point
 {
     uint32_t    field1;
     double      field2;
-    uint32_t    field3;
+    float       field3;
     bool        is_non_null[3];
 };
 
