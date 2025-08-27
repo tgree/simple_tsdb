@@ -58,7 +58,7 @@ write_points(tsdb::series_write_lock& write_lock, size_t npoints, uint64_t t0,
         wci.set_bitmap_bit(2,i,dp[i].is_non_null[2]);
         ((uint32_t*)wci.fields[0].data_ptr)[i] = dp[i].field1;
         ((double*)wci.fields[1].data_ptr)[i] = dp[i].field2;
-        ((uint32_t*)wci.fields[2].data_ptr)[i] = dp[i].field3;
+        ((float*)wci.fields[2].data_ptr)[i] = dp[i].field3;
         t += dt;
     }
 
