@@ -55,6 +55,8 @@ namespace tmock
                          size_t line) __NORETURN__;
     void abort_not_equiv(unsigned long long v, unsigned long long expected,
                          const char* file, size_t line) __NORETURN__;
+    void abort_not_equiv(double v, double expected,
+                         const char* file, size_t line) __NORETURN__;
 #define ABORT_NOT_EQUIV_FUNC(T,U) \
     inline void abort_not_equiv(T v, T expected, const char* file, \
                                 size_t line) \
@@ -70,6 +72,7 @@ namespace tmock
     ABORT_NOT_EQUIV_FUNC(unsigned short,unsigned long long);
     ABORT_NOT_EQUIV_FUNC(unsigned int,unsigned long long);
     ABORT_NOT_EQUIV_FUNC(unsigned long,unsigned long long);
+    ABORT_NOT_EQUIV_FUNC(float,double);
     template<typename T> __NORETURN__
     void abort_not_equiv(const T& v, const T& expected, const char* file,
                          size_t line)

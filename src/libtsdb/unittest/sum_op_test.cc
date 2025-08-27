@@ -83,8 +83,8 @@ class tmock_test
             uint32_t field1_max = 0;
             double field2_min = std::numeric_limits<double>::infinity();
             double field2_max = -std::numeric_limits<double>::infinity();
-            uint32_t field3_min = 0xFFFFFFFF;
-            uint32_t field3_max = 0;
+            float field3_min = std::numeric_limits<float>::infinity();
+            float field3_max = -std::numeric_limits<float>::infinity();
 
             for (size_t i=0; i<10; ++i)
             {
@@ -121,10 +121,10 @@ class tmock_test
             tmock::assert_equiv(op.sums[2],sums[2]);
             tmock::assert_equiv(op.mins[0].u32,field1_min);
             tmock::assert_equiv(op.mins[1].f64,field2_min);
-            tmock::assert_equiv(op.mins[2].u32,field3_min);
+            tmock::assert_equiv(op.mins[2].f32,field3_min);
             tmock::assert_equiv(op.maxs[0].u32,field1_max);
             tmock::assert_equiv(op.maxs[1].f64,field2_max);
-            tmock::assert_equiv(op.maxs[2].u32,field3_max);
+            tmock::assert_equiv(op.maxs[2].f32,field3_max);
             tmock::assert_equiv(op.npoints[0],npoints[0]);
             tmock::assert_equiv(op.npoints[1],npoints[1]);
             tmock::assert_equiv(op.npoints[2],npoints[2]);

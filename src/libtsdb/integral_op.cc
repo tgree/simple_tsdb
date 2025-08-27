@@ -39,11 +39,11 @@ tsdb::integral_op::integral_op(const series_read_lock& read_lock,
             }
 
             // Update the integral.
-            double dt = ((double)(t_ns - prev_t_ns)) / 1e9;
+            double dt = ((double)(t_ns - prev_t_ns)) / 2e9;
             for (size_t j=0; j<op.fields.size(); ++j)
             {
                 double v = op.cast_field<double>(j,i);
-                integral[j] += 0.5 * (prev_v[j] + v) * dt;
+                integral[j] += (prev_v[j] + v) * dt;
                 prev_v[j] = v;
                 is_null[j] |= op.is_field_null(j,i);
             }
@@ -67,19 +67,19 @@ tsdb::integral_op::integral_op(const series_read_lock& read_lock,
                 size_t field_index = op.fields[j]->index;
                 is_null[j] = wqiter->is_field_null(field_index);
                 prev_v[j] = wqiter->cast_field<double>(
-                        field_index,op.fields[field_index]->type);
+                        field_index,op.fields[j]->type);
             }
             continue;
         }
 
         // Update the integral.
-        double dt = ((double)(t_ns - prev_t_ns)) / 1e9;
+        double dt = ((double)(t_ns - prev_t_ns)) / 2e9;
         for (size_t j=0; j<op.fields.size(); ++j)
         {
             size_t field_index = op.fields[j]->index;
             double v = wqiter->cast_field<double>(
-                    field_index,op.fields[field_index]->type);
-            integral[j] += 0.5 * (prev_v[j] + v) * dt;
+                    field_index,op.fields[j]->type);
+            integral[j] += (prev_v[j] + v) * dt;
             prev_v[j] = v;
             is_null[j] |= wqiter->is_field_null(field_index);
         }
