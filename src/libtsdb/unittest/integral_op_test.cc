@@ -29,7 +29,7 @@ generate_db()
 
 class tmock_test
 {
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_integral_full)
+    TMOCK_TEST(test_integral_full)
     {
         generate_db();
 
