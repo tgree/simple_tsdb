@@ -6,6 +6,7 @@ TESTS := \
 	 count_test \
 	 database_test \
 	 delete_test \
+	 integral_op_test \
 	 measurement_test \
 	 root_test \
 	 select_op_test \
@@ -57,6 +58,19 @@ delete_test.OBJ := \
 	$(PARENT_TBUILD_DIR)/wal.o \
 	$(PARENT_TBUILD_DIR)/write.o \
 	$(PARENT_TBUILD_DIR)/count.o \
+	$(PARENT_TBUILD_DIR)/select_op.o \
+	$(PARENT_TBUILD_DIR)/series.o \
+	$(PARENT_TBUILD_DIR)/measurement.o \
+	$(PARENT_TBUILD_DIR)/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+integral_op_test.LIB := libz-ng.a
+integral_op_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/integral_op_test.o \
+	$(MODULE_TBUILD_DIR)/fake_db.o \
+	$(PARENT_TBUILD_DIR)/integral_op.o \
+	$(PARENT_TBUILD_DIR)/wal.o \
+	$(PARENT_TBUILD_DIR)/write.o \
 	$(PARENT_TBUILD_DIR)/select_op.o \
 	$(PARENT_TBUILD_DIR)/series.o \
 	$(PARENT_TBUILD_DIR)/measurement.o \
