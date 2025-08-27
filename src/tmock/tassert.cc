@@ -76,6 +76,18 @@ tmock::abort_not_equiv(unsigned long long v, unsigned long long expected,
 }
 
 void
+tmock::abort_not_equiv(double v, double expected, const char* file, size_t line)
+{
+    if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
+    {
+        printf("%s:%zu:\n",file,line);
+        printf(" Expected: %.10f\n",expected);
+        printf("      Got: %.10f\n",v);
+    }
+    ::abort();
+}
+
+void
 tmock::abort_not_equiv(const char* s, const char* expected, const char* file,
     size_t line)
 {
