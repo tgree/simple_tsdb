@@ -52,6 +52,82 @@ class tmock_test
         tmock::assert_equiv(op.t1_ns,620);
         tmock::assert_equiv(op.integral[0],integral);
     }
+
+    TMOCK_TEST(test_integral_gaps)
+    {
+        generate_db();
+
+        tsdb::root root(".",false);
+        tsdb::database db1(root,"db1");
+        tsdb::measurement m1(db1,"measurement1");
+        tsdb::series_read_lock srl(m1,"series1");
+
+        for (size_t t = 81; t <= 631; t += 10)
+        {
+            auto op = tsdb::integral_op(srl,"series1",
+                                        {"field1","field2","field3"},
+                                        t,t+8);
+            TASSERT(op.is_null[0]);
+            TASSERT(op.is_null[1]);
+            TASSERT(op.is_null[2]);
+        }
+    }
+
+    TMOCK_TEST(test_integral_single_points)
+    {
+        generate_db();
+
+        tsdb::root root(".",false);
+        tsdb::database db1(root,"db1");
+        tsdb::measurement m1(db1,"measurement1");
+        tsdb::series_read_lock srl(m1,"series1");
+
+        auto* dp = &dps[0];
+        for (size_t t = 95; t <= 615; t += 10)
+        {
+            auto op = tsdb::integral_op(srl,"series1",
+                                        {"field1","field2","field3"},
+                                        t,t+8);
+            TASSERT(op.is_null[0] == !dp->is_non_null[0]);
+            TASSERT(op.is_null[1] == !dp->is_non_null[1]);
+            TASSERT(op.is_null[2] == !dp->is_non_null[2]);
+            tmock::assert_equiv(op.integral[0],(double)dp->field1);
+            tmock::assert_equiv(op.integral[1],(double)dp->field2);
+            tmock::assert_equiv(op.integral[2],(double)dp->field3);
+            ++dp;
+        }
+    }
+
+    TMOCK_TEST(test_integral_pairs)
+    {
+        generate_db();
+
+        tsdb::root root(".",false);
+        tsdb::database db1(root,"db1");
+        tsdb::measurement m1(db1,"measurement1");
+        tsdb::series_read_lock srl(m1,"series1");
+
+        auto* dp = &dps[0];
+        for (size_t t = 95; t <= 605; t += 10)
+        {
+            auto op = tsdb::integral_op(srl,"series1",
+                                        {"field1","field2","field3"},
+                                        t,t+18);
+            TASSERT(op.is_null[0] == !(dp[0].is_non_null[0] &&
+                                       dp[1].is_non_null[0]));
+            TASSERT(op.is_null[1] == !(dp[0].is_non_null[1] &&
+                                       dp[1].is_non_null[1]));
+            TASSERT(op.is_null[2] == !(dp[0].is_non_null[2] &&
+                                       dp[1].is_non_null[2]));
+            tmock::assert_equiv(op.integral[0],
+                ((double)dp[0].field1 + (double)dp[1].field1) * (10. / 2e9));
+            tmock::assert_equiv(op.integral[1],
+                ((double)dp[0].field2 + (double)dp[1].field2) * (10. / 2e9));
+            tmock::assert_equiv(op.integral[2],
+                ((double)dp[0].field3 + (double)dp[1].field3) * (10. / 2e9));
+            ++dp;
+        }
+    }
 };
 
 TMOCK_MAIN();
