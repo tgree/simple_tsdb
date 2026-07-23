@@ -332,9 +332,12 @@ class RXChunk:
 class SelectOP:
     def __init__(self, client, ct_op, database, measurement, series, schema,
                  fields, t0, t1, N):
+        fields = None if fields == ['*'] else fields
+
         self.client = client
         self.schema = schema
-        self.fields = fields or [se.name for se in schema.fields]
+        self.fields = (fields if fields is not None
+                       else [se.name for se in schema.fields])
 
         dt_n = DT_NLAST if ct_op == CT_SELECT_POINTS_LAST else DT_NLIMIT
 
@@ -1229,6 +1232,12 @@ class Client:
 
     def select_points(self, database, measurement, series, schema, fields=None,
                       t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        '''
+        Selects points from the database.  Specify fields as None to get all
+        fields.  Specify fields as [] to get just timestamps.  Otherwise,
+        specify fields as a list of field names to retrieve.  Retrieves the
+        first N points that satisfy the query.
+        '''
         if self.conn is None:
             self.connect()
 
@@ -1244,6 +1253,12 @@ class Client:
     def select_last_points(self, database, measurement, series, schema,
                            fields=None, t0=0, t1=0xFFFFFFFFFFFFFFFF,
                            N=0xFFFFFFFFFFFFFFFF):
+        '''
+        Selects points from the database.  Specify fields as None to get all
+        fields.  Specify fields as [] to get just timestamps.  Otherwise,
+        specify fields as a list of field names to retrieve.  Retrieves the
+        last N points that satisfy the query.
+        '''
         if self.conn is None:
             self.connect()
 
