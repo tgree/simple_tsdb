@@ -215,6 +215,12 @@ class Schema:
                          for f in self.fields])
 
     def pack_points(self, points, index, n):
+        '''
+        Packs all of the fields defined in the schema into a suitable bytes
+        object for transmission.  If the points have fields that are not part
+        of the schema, those fields are silently ignored - it is not an error
+        to submit points with extra fields.
+        '''
         timestamps = [points[i]['time_ns'] for i in range(index, index + n)]
         timestamps = np.array(timestamps, dtype=np.uint64)
         data = b''
@@ -1355,6 +1361,14 @@ class Client:
 
     def get_all_points_mean(self, database, measurement, series, fields, t0, t1,
                             window_ns):
+        '''
+        Computes the arithmetic mean of the points in each window_ns-sized
+        window and returns the result as a GetAllPointsMeanResult object.  The
+        arithmetic mean of the points is not the same as the average value of
+        the points in each window (which would require the integral of each
+        window instead), but if the points are evenly-spaced then it is a good
+        approximation.
+        '''
         t0 = timestamp_to_int(t0)
         t1 = timestamp_to_int(t1)
         op = self.sum_points(database, measurement, series, fields, t0, t1,
