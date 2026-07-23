@@ -1,6 +1,6 @@
 # Copyright (c) 2025 by Terry Greeniaus.  All rights reserved.
 MODULE      := flask_simple_tsdb
-MODULE_VERS := 2.1.3.1
+MODULE_VERS := 3.1.2.0
 MODULE_DEPS :=
 MODULES := \
 	setup.cfg \
