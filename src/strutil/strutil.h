@@ -90,6 +90,8 @@ namespace str
     inline std::vector<std::string>
     split(const std::string& s, const char* sep = NULL)
     {
+        if (s.empty())
+            return std::vector<std::string>();
         if (!sep || sep[0] == '\0')
             return split_whitespace(s);
 
