@@ -157,7 +157,7 @@ export function QueryEditor(props: EditorProps): ReactElement {
   /*
    * In case it isn't obvious, because it really wasn't obvious to me.  Every time the query
    * changes (because we called props.onChange(), this function runs again and generates a
-   * whole new snipped of HTML which completely replaces whatever was being displayed before!
+   * whole new snippet of HTML which completely replaces whatever was being displayed before!
    */
   const asyncMeasurementsState = useMeasurements(props.datasource);
   const asyncSeriesState = useSeries(props.datasource, props.query);
