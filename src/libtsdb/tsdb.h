@@ -16,6 +16,7 @@
 #include "write.h"
 #include "delete.h"
 #include "sum_op.h"
+#include "sum_compute_op.h"
 #include "integral_op.h"
 #include "wal.h"
 
