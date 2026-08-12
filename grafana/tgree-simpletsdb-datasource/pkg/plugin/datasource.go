@@ -295,7 +295,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	return response, nil
 }
 
-// These fields are defind directly by BasicQuery in src/types.ts.
+// These fields are defined directly by BasicQuery in src/types.ts.
 // BasicQuery gets turned into JSON and then we unmarshal it into
 // this struct here, discarding any JSON fields we don't care about.
 type queryModel struct {
