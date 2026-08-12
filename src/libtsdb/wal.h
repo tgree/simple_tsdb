@@ -43,7 +43,7 @@ namespace tsdb
         }
 
         template<typename T>
-        constexpr T cast_field(size_t i, const tsdb::field_type ft)
+        constexpr T cast_field(size_t i, const tsdb::field_type ft) const
         {
             switch (ft)
             {
