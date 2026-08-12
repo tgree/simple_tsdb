@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"time"
+	"net"
 	"net/http"
 	"io"
 	"unsafe"
@@ -649,23 +650,98 @@ func (d *Datasource) handleFields(rw http.ResponseWriter, req *http.Request) {
 	rw.WriteHeader(http.StatusOK)
 }
 
+// Helper to safely strip port for tls.Config.ServerName validation
+func extractHost(address string) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return address
+	}
+	return host
+}
+
+// IsLocalAddress checks if the host is localhost, a loopback IP, or a private LAN IP.
+func IsLocalAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+
+	hostLower := strings.ToLower(strings.TrimSpace(host))
+
+	// 1. Check for standard local domain naming schemes
+	if hostLower == "localhost" || strings.HasSuffix(hostLower, ".localhost") {
+		return true
+	}
+
+
+	// 2. Check for Docker & OrbStack internal host-routing domains
+	if hostLower == "host.docker.internal" || hostLower == "vm.internal" {
+		return true
+	}
+
+	// 3. Check for standard IP-based local/private infrastructure
+	ip := net.ParseIP(hostLower)
+	if ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	}
+
+	return false
+}
+
+// SmartDial automatically uses TLS for remote connections and falls back to 
+// plaintext TCP for local/internal networks.
+func SmartDial(network, address string, timeout time.Duration) (net.Conn, error) {
+	// Base dialer used to enforce connection timeouts
+	dialer := &net.Dialer{
+		Timeout: timeout,
+	}
+
+	if IsLocalAddress(address) {
+		// fmt.Printf("[SmartDial] Local address detected (%s). Using plaintext TCP.\n", address)
+		backend.Logger.Debug("SmartDial", "local_address", address)
+		return dialer.Dial(network, address)
+	}
+
+	// fmt.Printf("[SmartDial] Remote address detected (%s). Using TLS.\n", address)
+	backend.Logger.Debug("SmartDial", "remote_address", address)
+	
+	// Create a tls.Dialer wrapping our base dialer to inherit the timeout
+	tlsDialer := &tls.Dialer{
+		NetDialer: dialer,
+		Config: &tls.Config{
+			// Setting the ServerName is best practice when wrapping a generic dialer
+			ServerName: extractHost(address),
+		},
+	}
+	
+	return tlsDialer.Dial(network, address)
+}
+
 type TSDBClient struct {
-	conn	*tls.Conn
+	conn	net.Conn
 }
 
 func NewTSDBClient(hostname string, username string, password string) (*TSDBClient, error) {
-	conn, err := tls.Dial("tcp", hostname, &tls.Config{})
+	conn, err := SmartDial("tcp", hostname, 5 * time.Second)
 	if err != nil {
+		backend.Logger.Debug("SmartDial", "err", err)
 		return nil, err
 	}
+
 	client := &TSDBClient{
 		conn: conn,
 	}
-	err = client.Authenticate(username, password)
-	if err != nil {
-		client.Close()
-		return nil, err
+
+	_, isTLS := conn.(*tls.Conn)
+	if isTLS {
+		backend.Logger.Debug("SmartDial", "isTLS", isTLS)
+		err = client.Authenticate(username, password)
+		if err != nil {
+			client.Close()
+			return nil, err
+		}
 	}
+
 	return client, nil
 }
 
