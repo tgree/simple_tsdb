@@ -337,10 +337,6 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	response := backend.DataResponse{Frames: []*data.Frame{}}
 
 	for _, series := range seriesList {
-		alias := series + "." + qm.Field
-		if qm.Alias != "" {
-			alias = strings.Replace(qm.Alias, "$series", series, 1)
-		}
 		// Retrieve the point count for this measurement.
 		count_result, err := tc.CountPoints(dm.Database, qm.Measurement, series, t0, t1)
 		if err != nil {
@@ -349,6 +345,12 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 		backend.Logger.Debug("Count Result", "count_result", count_result.String())
 		if count_result.npoints == 0 {
 			continue
+		}
+
+		// Generate the name for this query.
+		alias := series + "." + qm.Field
+		if qm.Alias != "" {
+			alias = strings.Replace(qm.Alias, "$series", series, 1)
 		}
 
 		var frame *data.Frame;
