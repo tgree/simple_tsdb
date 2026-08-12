@@ -113,38 +113,42 @@ namespace tsdb
             return N;
         }
 
+        field_vector<const schema_entry*> gen_all_entries() const
+        {
+            // Generate a lookup table for all field names.
+            field_vector<const schema_entry*> entries;
+            for (auto& f : fields)
+                entries.emplace_back(&f);
+            return entries;
+        }
+
         field_vector<const schema_entry*> gen_entries(
             const std::vector<std::string>& field_names) const
         {
+            if (field_names.size() == 1 && field_names[0] == "*")
+                return gen_all_entries();
+
             // Generate a lookup table for the specified field names.  An empty
             // list is assumed to mean all fields in their natural order.
             field_vector<const schema_entry*> entries;
-            if (!field_names.empty())
+            uint64_t field_mask = 0;
+            for (auto& field_name : field_names)
             {
-                uint64_t field_mask = 0;
-                for (auto& field_name : field_names)
-                {
-                    bool found = false;
-                    for (auto& f : fields)
-                    {
-                        if (field_name == f.name)
-                        {
-                            if (field_mask & (1 << f.index))
-                                throw duplicate_field_exception();
-                            field_mask |= (1 << f.index);
-                            entries.emplace_back(&f);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                        throw no_such_field_exception();
-                }
-            }
-            else
-            {
+                bool found = false;
                 for (auto& f : fields)
-                    entries.emplace_back(&f);
+                {
+                    if (field_name == f.name)
+                    {
+                        if (field_mask & (1 << f.index))
+                            throw duplicate_field_exception();
+                        field_mask |= (1 << f.index);
+                        entries.emplace_back(&f);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    throw no_such_field_exception();
             }
             return entries;
         }

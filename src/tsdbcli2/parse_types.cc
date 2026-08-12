@@ -31,7 +31,10 @@ parse_type<fields_list>(
             throw parse_exception("Expected fields specifier.");
     }
     else
+    {
+        fields.emplace_back("*");
         ++begin;
+    }
 
     return fields_list{std::move(fields)};
 }

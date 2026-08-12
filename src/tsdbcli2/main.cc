@@ -200,6 +200,43 @@ handle_select_3(
 }
 
 static void
+handle_select_4(
+    const FROM_keyword fk,
+    const series_specifier& ss,
+    const select_time_range& tr,
+    const select_limit& n)
+{
+    // Handles:
+    // SELECT FROM <database/measurement/series>
+    //      [WHERE ...time_ns...] LIMIT N
+    handle_select_1(fields_list(),fk,ss,tr,n);
+}
+
+static void
+handle_select_5(
+    const FROM_keyword fk,
+    const series_specifier& ss,
+    const select_time_range& tr,
+    const select_last& n)
+{
+    // Handles:
+    // SELECT FROM <database/measurement/series>
+    //      [WHERE ...time_ns...] LAST N
+    handle_select_2(fields_list(),fk,ss,tr,n);
+}
+
+static void
+handle_select_6(
+    const FROM_keyword fk,
+    const series_specifier& ss,
+    const select_time_range& tr)
+{
+    // Handles:
+    // SELECT FROM <database/measurement/series> [WHERE ...time_ns...]
+    handle_select_3(fields_list(),fk,ss,tr);
+}
+
+static void
 handle_mean(
     const fields_list& fs,
     const FROM_keyword,
@@ -403,7 +440,8 @@ static const command_handler command_handlers[] =
     {"LIST ACTIVE SERIES",{XLATE(handle_list_active_series)}},
     {"COUNT",{XLATE(handle_count)}},
     {"SELECT",{XLATE(handle_select_1),XLATE(handle_select_2),
-               XLATE(handle_select_3)}},
+               XLATE(handle_select_3),XLATE(handle_select_4),
+               XLATE(handle_select_5),XLATE(handle_select_6)}},
     {"MEAN",{XLATE(handle_mean)}},
     {"INTEGRATE",{XLATE(handle_integrate)}},
     {"DELETE",{XLATE(handle_delete)}},
