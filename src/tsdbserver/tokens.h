@@ -152,11 +152,6 @@ parse_cmd(Conn& conn, const command_syntax<Conn&, Args...>& cs,
                 tokens.push_back(std::move(pdt));
             break;
 
-            case DT_CHUNK:
-                throw futil::errno_exception(ENOTSUP);
-                tokens.push_back(std::move(pdt));
-            break;
-
             case DT_TIME_FIRST:
             case DT_TIME_LAST:
             case DT_NLIMIT:
