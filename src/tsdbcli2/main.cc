@@ -3,8 +3,11 @@
 #include "parse.h"
 #include "parse_types.h"
 #include "print_op_results.h"
+#include "print_compute_results.h"
 #include <version.h>
 #include <strutil/strutil.h>
+#include <shunter/shunting_yard.h>
+#include <shunter/shunting_functions.h>
 #include <libtsdb/tsdb.h>
 #include <editline/include/editline.h>
 
@@ -237,6 +240,77 @@ handle_select_6(
 }
 
 static void
+handle_compute_1(
+    const quoted_string& qs,
+    const FROM_keyword,
+    const series_specifier& ss,
+    const select_time_range& tr,
+    const select_limit& n)
+{
+    // Handles:
+    // COMPUTE <quoted string> FROM <database/measurement/series>
+    //      [WHERE ...time_ns...] LIMIT N
+    shunting_yard::shunter shunter(&qs.string[1],qs.string.size() - 2);
+    shunting_functions::populate(shunter);
+    std::vector<std::string> field_names;
+    for (const auto& v : shunter.variables)
+        field_names.push_back(v.name);
+
+    tsdb::database db(*root,ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    tsdb::series_read_lock read_lock(m,ss.series);
+    tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
+    tsdb::select_op_first op(read_lock,ss.series,field_names,tr.t0,tr.t1,n.n);
+    printf("COMPUTE %s\n",shunter.to_string().c_str());
+    print_compute_results(op,wq,shunter,n.n);
+}
+
+static void
+handle_compute_2(
+    const quoted_string& qs,
+    const FROM_keyword,
+    const series_specifier& ss,
+    const select_time_range& tr,
+    const select_last& n)
+{
+    // Handles:
+    // COMPUTE <quoted string> FROM <database/measurement/series>
+    //      [WHERE ...time_ns...] LAST N
+    shunting_yard::shunter shunter(&qs.string[1],qs.string.size() - 2);
+    shunting_functions::populate(shunter);
+    std::vector<std::string> field_names;
+    for (const auto& v : shunter.variables)
+        field_names.push_back(v.name);
+
+    tsdb::database db(*root,ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    tsdb::series_read_lock read_lock(m,ss.series);
+    tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
+    if (wq.nentries > n.n)
+    {
+        wq._begin += (wq.nentries - n.n);
+        wq.nentries = n.n;
+    }
+    tsdb::select_op_last op(read_lock,ss.series,field_names,tr.t0,tr.t1,
+                            n.n - wq.nentries);
+    printf("COMPUTE %s\n",shunter.to_string().c_str());
+    print_compute_results(op,wq,shunter,n.n);
+}
+
+static void
+handle_compute_3(
+    const quoted_string& qs,
+    const FROM_keyword fk,
+    const series_specifier& ss,
+    const select_time_range& tr)
+{
+    // Handles:
+    // COMPUTE <quoted string> FROM <database/measurement/series>
+    //      [WHERE ...time_ns...]
+    handle_compute_1(qs,fk,ss,tr,select_limit{(uint64_t)-1});
+}
+
+static void
 handle_mean(
     const fields_list& fs,
     const FROM_keyword,
@@ -442,6 +516,8 @@ static const command_handler command_handlers[] =
     {"SELECT",{XLATE(handle_select_1),XLATE(handle_select_2),
                XLATE(handle_select_3),XLATE(handle_select_4),
                XLATE(handle_select_5),XLATE(handle_select_6)}},
+    {"COMPUTE",{XLATE(handle_compute_1),XLATE(handle_compute_2),
+                XLATE(handle_compute_3)}},
     {"MEAN",{XLATE(handle_mean)}},
     {"INTEGRATE",{XLATE(handle_integrate)}},
     {"DELETE",{XLATE(handle_delete)}},
