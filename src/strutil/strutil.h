@@ -110,6 +110,28 @@ namespace str
         return v;
     }
 
+    // Joins the string, using sep as the separator.
+    inline std::string
+    join(const std::vector<std::string>& v, const char* sep = " ")
+    {
+        std::string s;
+
+        if (v.empty())
+            return s;
+
+        s = v[0];
+        if (v.size() == 1)
+            return s;
+
+        for (size_t i=1; i<v.size(); ++i)
+        {
+            s += sep;
+            s += v[i];
+        }
+
+        return s;
+    }
+
     // Returns true if all charactes in the string are printable.
     inline bool
     isprint(const std::string& s)
