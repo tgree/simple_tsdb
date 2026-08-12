@@ -28,6 +28,8 @@ enum command_token : uint32_t
     CT_INTEGRATE_POINTS     = 0x75120AD9,
     CT_NOP                  = 0x22CF1296,
     CT_AUTHENTICATE         = 0x0995EBDA,
+    CT_COMPUTE_POINTS_LIMIT = 0x1FFF763F,
+    CT_COMPUTE_POINTS_LAST  = 0xE3D1252C,
 };
 
 const char* get_command_token_str(command_token ct);
@@ -56,6 +58,8 @@ enum data_token : uint32_t
     DT_INTEGRAL_BITMAP   = 0xD3760722,  // <bitmap> (uint64_t)
     DT_USERNAME          = 0x6E39D1DE,  // <username>
     DT_PASSWORD          = 0x602E5B01,  // <password>
+    DT_COMPUTE_FORMULA   = 0x29C662C7,  // <formula>
+    DT_COMPUTE_CHUNK     = 0x12FF8CB9,  // <chunk header>, then data
 };
 
 struct chunk_header
@@ -141,6 +145,7 @@ parse_cmd(Conn& conn, const command_syntax<Conn&, Args...>& cs,
             case DT_FIELD_LIST:
             case DT_USERNAME:
             case DT_PASSWORD:
+            case DT_COMPUTE_FORMULA:
                 pdt.len = conn.s.template pop<uint16_t>();
                 if (pdt.len >= 1024)
                 {

@@ -26,6 +26,8 @@ CT_SUM_POINTS           = 0x90305A39
 CT_INTEGRATE_POINTS     = 0x75120AD9
 CT_NOP                  = 0x22CF1296
 CT_AUTHENTICATE         = 0x0995EBDA
+CT_COMPUTE_POINTS_LIMIT = 0x1FFF763F
+CT_COMPUTE_POINTS_LAST  = 0xE3D1252C
 
 # Data tokens
 DT_DATABASE             = 0x39385A4F
@@ -50,6 +52,8 @@ DT_INTEGRALS            = 0x78760A3D
 DT_INTEGRAL_BITMAP      = 0xD3760722
 DT_USERNAME             = 0x6E39D1DE
 DT_PASSWORD             = 0x602E5B01
+DT_COMPUTE_FORMULA      = 0x29C662C7
+DT_COMPUTE_CHUNK        = 0x12FF8CB9
 
 
 # Status codes.
@@ -83,6 +87,13 @@ class StatusCode:
     INVALID_CHUNK_SIZE           = -27
     CORRUPT_MEASUREMENT          = -28
     INVALID_TIME_FIRST           = -29
+    INVALID_NUMBER               = -30
+    INVALID_FORMULA_CHARACTER    = -31
+    UNEXPECTED_TOKEN             = -32
+    SHUNT_MISSING_FUNC_ARG       = -33
+    MISSING_PAREN                = -34
+    SHUNT_MISSING_OP_ARG         = -35
+    SHUNT_EXTRA_EXPRESSIONS      = -36
 
 
 class StatusException(Exception):
@@ -368,6 +379,97 @@ class SelectOP:
         self.last_token = self.client._recv_u32()
 
         return RXChunk(self.schema, self.fields, npoints, bitmap_offset, data)
+
+
+class RXComputeChunk:
+    def __init__(self, npoints, bitmap_offset, data):
+        self.npoints       = npoints
+        self.bitmap_offset = bitmap_offset
+        self.data          = data
+
+        data_view       = memoryview(data)
+        self.timestamps = np.frombuffer(data_view[0:npoints*8], dtype=np.uint64)
+        offset          = npoints*8
+
+        bitmap_nbytes = math.ceil((bitmap_offset + npoints) / 64) * 8
+        self.bitmap   = data_view[offset:offset + bitmap_nbytes]
+        offset       += bitmap_nbytes
+
+        values_nbytes = npoints * 8
+        self.values   = np.frombuffer(data_view[offset:offset + values_nbytes],
+                                      dtype=np.float64)
+        offset += values_nbytes
+
+        assert offset == len(data)
+
+    def __len__(self):
+        return len(self.values)
+
+    def __getitem__(self, i):
+        if i < 0 or i >= len(self.values):
+            raise IndexError
+
+        if not self.get_bitmap_bit(i):
+            return None
+        return self.values[i]
+
+    def get_bitmap_bit(self, i):
+        bitmap_i = (self.bitmap_offset + i) // 64
+        shift    = (self.bitmap_offset + i) % 64
+        v        = int(self.bitmap[bitmap_i])
+        return v & (1 << shift)
+
+
+class ComputeOP:
+    def __init__(self, client, ct_op, database, measurement, series, equation,
+                 t0, t1, N):
+        self.client = client
+
+        dt_n = DT_NLAST if ct_op == CT_COMPUTE_POINTS_LAST else DT_NLIMIT
+
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        equation = equation.encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIH%usIQIQIQI' % (len(database),
+                                                             len(measurement),
+                                                             len(series),
+                                                             len(equation)),
+                          ct_op,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_COMPUTE_FORMULA, len(equation), equation,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          dt_n, N,
+                          DT_END)
+        self.client._sendall(cmd)
+
+        dt = self.client._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self.client._recv_i32())
+
+        self.last_token = dt
+
+    def read_chunk(self):
+        if self.last_token == DT_END:
+            if self.client._recv_u32() != DT_STATUS_CODE:
+                raise ProtocolException('Expected DT_STATUS_CODE')
+            if self.client._recv_i32() != 0:
+                raise ProtocolException('Expected status 0')
+            return None
+
+        if self.last_token != DT_COMPUTE_CHUNK:
+            raise ProtocolException('Expected DT_COMPUTE_CHUNK')
+        npoints       = self.client._recv_u32()
+        bitmap_offset = self.client._recv_u32()
+        data_len      = self.client._recv_u32()
+        data          = self.client._recvall(data_len)
+
+        self.last_token = self.client._recv_u32()
+
+        return RXComputeChunk(npoints, bitmap_offset, data)
 
 
 class RXSumsChunk:
@@ -794,6 +896,16 @@ class Connection:
         return SelectOP(self, CT_SELECT_POINTS_LAST, database, measurement,
                         series, schema, fields, t0, t1, N)
 
+    def compute_points(self, database, measurement, series, equation, t0, t1,
+                       N):
+        return ComputeOP(self, CT_COMPUTE_POINTS_LIMIT, database, measurement,
+                         series, equation, t0, t1, N)
+
+    def compute_last_points(self, database, measurement, series, equation, t0,
+                            t1, N):
+        return ComputeOP(self, CT_COMPUTE_POINTS_LAST, database, measurement,
+                         series, equation, t0, t1, N)
+
     def count_points(self, database, measurement, series, t0, t1):
         database = database.encode()
         measurement = measurement.encode()
@@ -1054,6 +1166,34 @@ class Client:
         try:
             return self.conn.select_last_points(database, measurement, series,
                                                 schema, fields, t0, t1, N)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def compute_points(self, database, measurement, series, equation, t0=0,
+                       t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.compute_points(database, measurement, series,
+                                            equation, t0, t1, N)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def compute_last_points(self, database, measurement, series, equation,
+                            t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.compute_last_points(database, measurement, series,
+                                                 equation, t0, t1, N)
         except StatusException:
             raise
         except:  # noqa: E722

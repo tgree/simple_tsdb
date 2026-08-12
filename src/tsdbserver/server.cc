@@ -10,6 +10,8 @@
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <futil/ssl.h>
+#include <shunter/shunting_yard.h>
+#include <shunter/shunting_functions.h>
 #include <libtsdb/tsdb.h>
 
 #include <algorithm>
@@ -241,6 +243,10 @@ static void handle_integrate_points(
     connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_nop(
     connection& conn, const std::vector<parsed_data_token>& tokens);
+static void handle_compute_points_limit(
+    connection& conn, const std::vector<parsed_data_token>& tokens);
+static void handle_compute_points_last(
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 
 static const command_syntax<connection&> commands[] =
 {
@@ -323,6 +329,18 @@ static const command_syntax<connection&> commands[] =
         func_delegate(handle_nop),
         CT_NOP,
         {DT_END},
+    },
+    {
+        func_delegate(handle_compute_points_limit),
+        CT_COMPUTE_POINTS_LIMIT,
+        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_COMPUTE_FORMULA,
+         DT_TIME_FIRST, DT_TIME_LAST, DT_NLIMIT, DT_END},
+    },
+    {
+        func_delegate(handle_compute_points_last),
+        CT_COMPUTE_POINTS_LAST,
+        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_COMPUTE_FORMULA,
+         DT_TIME_FIRST, DT_TIME_LAST, DT_NLAST, DT_END},
     },
 };
 
@@ -933,6 +951,199 @@ static void
 handle_nop(connection& conn, const std::vector<parsed_data_token>& tokens)
 {
     // Do nothing.
+}
+
+static void
+_handle_compute_points(connection& conn, tsdb::select_op& op,
+    tsdb::wal_query& wq, shunting_yard::shunter& shunter, size_t N)
+{
+    while (op.npoints)
+    {
+        N -= op.npoints;
+
+        size_t len = op.compute_computation_chunk_len();
+        uint32_t tokens[4] = {DT_COMPUTE_CHUNK,(uint32_t)op.npoints,
+                              (uint32_t)(op.bitmap_offset % 64),(uint32_t)len};
+        conn.s.send_all(tokens,sizeof(tokens));
+
+        // Start by sending timestamp data.
+        conn.s.send_all(op.timestamps_begin,8*op.npoints);
+
+        // Generate and send the bitmap.
+        size_t bitmap_index = op.bitmap_offset / 64;
+        size_t bitmap_offset = op.bitmap_offset % 64;
+        size_t bitmap_n = ceil_div<size_t>(op.bitmap_offset + op.npoints,64) -
+                          bitmap_index;
+        std::vector<uint64_t> bitmap;
+        bitmap.resize(bitmap_n);
+        memset(&bitmap[0],0xFF,bitmap_n*8);
+        for (size_t i=0; i<op.fields.size(); ++i)
+        {
+            auto* field_bitmap = (const uint64_t*)op.bitmap_bufs[i].data;
+            for (size_t j=0; j<bitmap_n; ++j)
+                bitmap[j] &= field_bitmap[bitmap_index + j];
+        }
+        conn.s.send_all(&bitmap[0],bitmap_n*8);
+
+        // Perform the computation.
+        std::vector<double> values;
+        values.resize(op.npoints);
+        printf("op.npoints %zu op.bitmap_offset %zu bitmap_index %zu "
+               "bitmap_offset %zu bitmap_n %zu\n",
+               op.npoints,op.bitmap_offset,bitmap_index,bitmap_offset,bitmap_n);
+        for (size_t i=0; i<op.npoints; ++i)
+        {
+            // If one of the fields is NULL, then nothing to compute.
+            if (!tsdb::get_bitmap_bit(&bitmap[0],bitmap_offset + i))
+            {
+                values[i] = -1;
+                continue;
+            }
+
+            // Populate the shunter and compute the result.
+            for (size_t j=0; j<op.fields.size(); ++j)
+                shunter.variables[j].value = op.cast_field<double>(j,i);
+            values[i] = shunter.evaluate();
+        }
+
+        // Send the result values.
+        conn.s.send_all(&values[0],op.npoints*8);
+
+        op.next();
+    }
+    if (N && wq.nentries)
+    {
+        // We are going to assume that the WAL is small compared to the maximum
+        // chunk size, so we won't be allocating a horrible amount of memory.
+        // Typically the maximum WAL size will be 1024 entries since we don't
+        // really need a very large WAL in order to shrink the main storage
+        // write overhead to a very small number.
+        N = MIN(N,wq.nentries);
+
+        size_t len = op.compute_new_computation_chunk_len(N);
+        uint32_t tokens[4] = {DT_COMPUTE_CHUNK,(uint32_t)N,0,(uint32_t)len};
+        conn.s.send_all(tokens,sizeof(tokens));
+
+        // Generate and send the timestamp data.  We reuse the same buffer for
+        // everything.
+        auto_buf u64_buf(sizeof(uint64_t)*N);
+        auto* timestamps = (uint64_t*)u64_buf.data;
+        for (size_t i=0; i<N; ++i)
+            timestamps[i] = wq[i].time_ns;
+        conn.s.send_all(timestamps,N*sizeof(uint64_t));
+
+        // Generate and send the bitmap.
+        auto* bitmap = (uint64_t*)u64_buf.data;
+        size_t bitmap_len = ceil_div<size_t>(N,64)*sizeof(uint64_t);
+        for (size_t i=0; i<N; ++i)
+        {
+            bool is_null = false;
+            for (auto* f : op.fields)
+                is_null |= wq[i].is_field_null(f->index);
+            tsdb::set_bitmap_bit(bitmap,i,!is_null);
+        }
+        conn.s.send_all(bitmap,bitmap_len);
+
+        // Perform the computation.
+        std::vector<double> values;
+        values.resize(N);
+        for (size_t i=0; i<N; ++i)
+        {
+            // If one of the fields is NULL, then nothing to compute.
+            if (!tsdb::get_bitmap_bit(bitmap,i))
+                continue;
+
+            // Populate the shunter and compute the result.
+            for (size_t j=0; j<op.fields.size(); ++j)
+            {
+                shunter.variables[j].value =
+                    wq[i].cast_field<double>(op.fields[j]->index,
+                                             op.fields[j]->type);
+            }
+            values[i] = shunter.evaluate();
+        }
+
+        // Send the result values.
+        conn.s.send_all(&values[0],N*8);
+    }
+
+    uint32_t dt = DT_END;
+    conn.s.send_all(&dt,sizeof(dt));
+}
+
+static void
+handle_compute_points_limit(connection& conn,
+    const std::vector<parsed_data_token>& tokens)
+{
+    // Create the shunter and test it before going further.
+    shunting_yard::shunter shunter(tokens[3].data,tokens[3].len);
+    shunting_functions::populate(shunter);
+    shunter.evaluate();
+
+    std::vector<std::string> field_names;
+    for (const auto& v : shunter.variables)
+        field_names.push_back(v.name);
+
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
+    futil::path path(database,measurement,series);
+    uint64_t t0 = tokens[4].u64;
+    uint64_t t1 = tokens[5].u64;
+    uint64_t N = tokens[6].u64;
+
+    root->debugf("COMPUTE %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+                 " LIMIT %" PRIu64 "\n",
+                 shunter.to_string().c_str(),path.c_str(),t0,t1,N);
+
+    tsdb::database db(*root,database);
+    tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
+    tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
+    tsdb::wal_query wq(read_lock,t0,t1);
+    tsdb::select_op_first op(read_lock,path,field_names,t0,t1,N);
+    _handle_compute_points(conn,op,wq,shunter,N);
+}
+
+static void
+handle_compute_points_last(connection& conn,
+    const std::vector<parsed_data_token>& tokens)
+{
+    // Create the shunter and test it before going further.
+    shunting_yard::shunter shunter(tokens[3].data,tokens[3].len);
+    shunting_functions::populate(shunter);
+    shunter.evaluate();
+
+    std::vector<std::string> field_names;
+    for (const auto& v : shunter.variables)
+        field_names.push_back(v.name);
+
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
+    futil::path path(database,measurement,series);
+    uint64_t t0 = tokens[4].u64;
+    uint64_t t1 = tokens[5].u64;
+    uint64_t N = tokens[6].u64;
+
+    root->debugf("COMPUTE %s FROM %s WHERE %" PRIu64 " <= time_ns <= %" PRIu64
+                 " LAST %" PRIu64 "\n",
+                 shunter.to_string().c_str(),path.c_str(),t0,t1,N);
+
+    tsdb::database db(*root,database);
+    tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
+    tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
+    tsdb::wal_query wq(read_lock,t0,t1);
+    if (wq.nentries > N)
+    {
+        wq._begin += (wq.nentries - N);
+        wq.nentries = N;
+    }
+    tsdb::select_op_last op(read_lock,path,field_names,t0,t1,N - wq.nentries);
+    _handle_compute_points(conn,op,wq,shunter,N);
 }
 
 static void

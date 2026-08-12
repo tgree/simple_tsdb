@@ -8,6 +8,7 @@ tsdbserver.DYLIB := ssl crypto
 tsdbserver.OBJ := \
 	$(MODULE_BUILD_DIR)/server.o \
 	$(MODULE_BUILD_DIR)/tokens.o \
+	$(BUILD_O_DIR)/shunter/shunting_functions.o \
 	$(BUILD_O_DIR)/floor/kassert.o
 
 tsdbclienttest.MK  := $(MODULE_MK)

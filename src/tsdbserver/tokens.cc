@@ -27,6 +27,8 @@ get_command_token_str(command_token ct)
         case CT_INTEGRATE_POINTS:     return "INTEGRATE POINTS";
         case CT_NOP:                  return "NOP";
         case CT_AUTHENTICATE:         return "AUTHENTICATE";
+        case CT_COMPUTE_POINTS_LIMIT: return "COMPUTE POINTS LIMIT";
+        case CT_COMPUTE_POINTS_LAST:  return "COMPUTE POINTS LAST";
     }
     return "?";
 }

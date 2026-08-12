@@ -72,6 +72,20 @@ namespace tsdb
             return compute_new_chunk_len(npoints,bitmap_offset);
         }
 
+        constexpr size_t compute_new_computation_chunk_len(
+                size_t N, size_t _bitmap_offset = 0) const
+        {
+            size_t bitmap_begin = _bitmap_offset / 64;
+            size_t bitmap_end = ceil_div<size_t>(_bitmap_offset + N,64);
+            size_t bitmap_n = bitmap_end - bitmap_begin;
+            return 8*(N + bitmap_n + N);
+        }
+
+        constexpr size_t compute_computation_chunk_len() const
+        {
+            return compute_new_computation_chunk_len(npoints,bitmap_offset);
+        }
+
         constexpr bool get_bitmap_bit(size_t field_index, size_t i) const
         {
             return tsdb::get_bitmap_bit(
