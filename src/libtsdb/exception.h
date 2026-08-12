@@ -41,6 +41,13 @@ namespace tsdb
         INVALID_CHUNK_SIZE              = -27,
         CORRUPT_MEASUREMENT             = -28,
         INVALID_TIME_FIRST              = -29,
+        INVALID_NUMBER                  = -30,
+        INVALID_FORMULA_CHARACTER       = -31,
+        UNEXPECTED_TOKEN                = -32,
+        SHUNT_MISSING_FUNC_ARG          = -33,
+        MISSING_PAREN                   = -34,
+        SHUNT_MISSING_OP_ARG            = -35,
+        SHUNT_EXTRA_EXPRESSIONS         = -36,
     };
 
     struct exception : public std::exception
@@ -255,6 +262,21 @@ DEFINE_TSDB_EXCEPTION(invalid_chunk_size_exception,INVALID_CHUNK_SIZE,
                       "Invalid chunk size.");
 DEFINE_TSDB_EXCEPTION(corrupt_measurement_exception,CORRUPT_MEASUREMENT,
                       "Corrupt measurement.");
+DEFINE_TSDB_EXCEPTION(invalid_number_exception,INVALID_NUMBER,
+                      "Invalid number.");
+DEFINE_TSDB_EXCEPTION(invalid_formula_character_exception,
+                      INVALID_FORMULA_CHARACTER,
+                      "Invalid character in formula.");
+DEFINE_TSDB_EXCEPTION(unexpected_token_exception,UNEXPECTED_TOKEN,
+                      "Unexpected token.");
+DEFINE_TSDB_EXCEPTION(shunt_missing_func_arg_exception,SHUNT_MISSING_FUNC_ARG,
+                      "Missing function argument.");
+DEFINE_TSDB_EXCEPTION(missing_paren_exception,MISSING_PAREN,
+                      "Missing parenthesis.");
+DEFINE_TSDB_EXCEPTION(shunt_missing_op_arg_exception,SHUNT_MISSING_OP_ARG,
+                      "Missing operation argument.");
+DEFINE_TSDB_EXCEPTION(shunt_extra_expressions_exception,SHUNT_EXTRA_EXPRESSIONS,
+                      "Extra expressions in equation.");
 }
 
 #endif /* __SRC_LIBTSDB_EXCEPTION_H */

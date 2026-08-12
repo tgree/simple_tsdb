@@ -69,6 +69,20 @@ check_status(tsdb::status_code sc)
             throw tsdb::corrupt_measurement_exception();
         case tsdb::INVALID_TIME_FIRST:
             throw tsdb::tail_file_invalid_time_first_exception(0,0);
+        case tsdb::INVALID_NUMBER:
+            throw tsdb::invalid_number_exception();
+        case tsdb::INVALID_FORMULA_CHARACTER:
+            throw tsdb::invalid_formula_character_exception();
+        case tsdb::UNEXPECTED_TOKEN:
+            throw tsdb::unexpected_token_exception();
+        case tsdb::SHUNT_MISSING_FUNC_ARG:
+            throw tsdb::shunt_missing_func_arg_exception();
+        case tsdb::MISSING_PAREN:
+            throw tsdb::missing_paren_exception();
+        case tsdb::SHUNT_MISSING_OP_ARG:
+            throw tsdb::shunt_missing_op_arg_exception();
+        case tsdb::SHUNT_EXTRA_EXPRESSIONS:
+            throw tsdb::shunt_extra_expressions_exception();
     }
 
     throw protocol_exception("Unknown status code");
