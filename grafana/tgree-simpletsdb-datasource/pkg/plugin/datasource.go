@@ -38,6 +38,9 @@ const (
 	CT_SUM_POINTS           uint32 = 0x90305A39
 	CT_NOP                  uint32 = 0x22CF1296
 	CT_AUTHENTICATE         uint32 = 0x0995EBDA
+	CT_COMPUTE_POINTS_LIMIT uint32 = 0x1FFF763F
+	CT_COMPUTE_POINTS_LAST  uint32 = 0xE3D1252C
+	CT_SUM_COMPUTE_POINTS   uint32 = 0xBF6322ED
 
 	DT_DATABASE             uint32 = 0x39385A4F   // <database>
 	DT_MEASUREMENT          uint32 = 0xDC1F48F3   // <measurement>
@@ -59,6 +62,9 @@ const (
 	DT_SUMS_CHUNK           uint32 = 0x53FC76FC   // <chunk_npoints> (uint16_t)
 	DT_USERNAME             uint32 = 0x6E39D1DE   // <username>
 	DT_PASSWORD             uint32 = 0x602E5B01   // <password>
+	DT_COMPUTE_FORMULA      uint32 = 0x29C662C7   // <formula>
+	DT_COMPUTE_CHUNK        uint32 = 0x12FF8CB9   // <chunk header>, then data
+	DT_SUM_COMPUTE_CHUNK    uint32 = 0x5C9E1B82   // <chunk header>, then data
 
 	INIT_IO_ERROR                int  = -1
 	CREATE_DATABASE_IO_ERROR     int  = -2
@@ -306,6 +312,8 @@ type queryModel struct {
 	Transform       string
 	Zoom            string
 	Alias           string
+	Querytype	string
+	Equation   	string
 
 	// From DataQuery.
 	IntervalMs      uint64
@@ -318,6 +326,9 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	err := json.Unmarshal(query.JSON, &qm)
 	if err != nil {
 		return nil, err
+	}
+	if qm.Querytype == "" {
+		qm.Querytype = "SELECT"
 	}
 	backend.Logger.Debug("Query", "query", query)
 
@@ -353,19 +364,40 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 			alias = strings.Replace(qm.Alias, "$series", series, 1)
 		}
 
+		// Do the query according to the query type.
 		var frame *data.Frame;
-		if (count_result.npoints > qm.MaxDataPoints) {
-			switch qm.Zoom {
-			case "Min/Max":
-				frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
-				                           t0, t1, qm.IntervalMs * 1000000)
+		if qm.Querytype == "SELECT" {
+			if (count_result.npoints > qm.MaxDataPoints) {
+				switch qm.Zoom {
+				case "Min/Max":
+					frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field,
+					                           alias, t0, t1, qm.IntervalMs * 1000000)
 
-			case "Mean":
-				frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
-				                         t0, t1, qm.IntervalMs * 1000000)
+				case "Mean":
+					frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field,
+					                         alias, t0, t1, qm.IntervalMs * 1000000)
+				}
+			} else {
+				frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0,
+				                           t1)
 			}
 		} else {
-			frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
+			if (count_result.npoints > qm.MaxDataPoints) {
+				switch qm.Zoom {
+				case "Min/Max":
+					frame, err = d.queryComputeMinMax(tc, dm.Database, qm.Measurement, series,
+					                                  qm.Equation, alias, t0, t1,
+								          qm.IntervalMs * 1000000)
+
+				case "Mean":
+					frame, err = d.queryComputeMean(tc, dm.Database, qm.Measurement, series,
+					                                qm.Equation, alias, t0, t1,
+								        qm.IntervalMs * 1000000)
+				}
+			} else {
+				frame, err = d.queryCompute(tc, dm.Database, qm.Measurement, series, qm.Equation, alias,
+				                            t0, t1)
+			}
 		}
 		if err != nil {
 			return nil, err
@@ -443,9 +475,114 @@ func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement st
 	), nil
 }
 
+func (d *Datasource) queryCompute(tc *TSDBClient, database string, measurement string, series string, equation string, alias string, t0 uint64, t1 uint64) (*data.Frame, error) {
+	// Generate the COMPUTE operation.
+	op, err := tc.NewComputeOp(database, measurement, series, equation, t0, t1, 0xFFFFFFFFFFFFFFFF)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pull chunks of data from the server and append them to our running data.
+	timestamps := []time.Time{}
+	ptrs := []*float64{}
+	all_nil := true
+	for {
+		rxc, err := op.ReadChunk()
+		if err != nil {
+			return nil, err
+		}
+		if rxc == nil {
+			break
+		}
+
+		for _, time_ns := range rxc.timestamps {
+			timestamps = append(timestamps, time.Unix(0, int64(time_ns)))
+		}
+
+		for i := uint32(0); i < rxc.npoints; i++ {
+			if rxc.IsNull(i) {
+				ptrs = append(ptrs, nil)
+			} else {
+				ptrs = append(ptrs, &rxc.values[i])
+				all_nil = false
+			}
+		}
+	}
+	
+	// If no data, return empty frame.
+	if all_nil {
+		return nil, nil
+	}
+
+	// Return the response.
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
+}
+
 func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement string, series string, field string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
 	// Generate the SUMS operation.
 	op, err := tc.NewSumsOp(database, measurement, series, field, t0, t1, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pull chunks of data from the server and append them to our running data.
+	// TODO: The number of buckets is known a priori...
+	timestamps := []time.Time{}
+	means := []float64{}
+	ptrs := []*float64{}
+	chunk_base := uint64(0)
+	total_points := uint64(0)
+	for {
+		rxc, err := op.ReadChunk()
+		if err != nil {
+			return nil, err
+		}
+		if rxc == nil {
+			break
+		}
+
+		for _, time_ns := range rxc.timestamps {
+			timestamps = append(timestamps, time.Unix(0, int64(time_ns)))
+		}
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			if rxc.npoints[i] == 0 {
+				means = append(means, 0)
+			} else {
+				means = append(means, rxc.sums[i] / float64(rxc.npoints[i]))
+			}
+		}
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			total_points += rxc.npoints[i]
+			if rxc.npoints[i] == 0 {
+				ptrs = append(ptrs, nil)
+			} else {
+				ptrs = append(ptrs, &means[chunk_base + uint64(i)])
+			}
+		}
+
+		chunk_base += uint64(rxc.nbuckets)
+	}
+
+	// If no data, return empty frame.
+	if total_points == 0 {
+		return nil, nil
+	}
+
+	// Return the response.
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
+}
+
+func (d *Datasource) queryComputeMean(tc *TSDBClient, database string, measurement string, series string, equation string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
+	// Generate the SUMS operation.
+	op, err := tc.NewSumComputeOp(database, measurement, series, equation, t0, t1, window_ns)
 	if err != nil {
 		return nil, err
 	}
@@ -544,6 +681,60 @@ func (d *Datasource) queryMinMax(tc *TSDBClient, database string, measurement st
 			} else {
 				ptrs = rxc.AppendMax(ptrs, i)
 				ptrs = rxc.AppendMin(ptrs, i)
+			}
+		}
+	}
+
+	if !have_non_nil {
+		return nil, nil
+	}
+
+	// Return the response.
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
+}
+
+func (d *Datasource) queryComputeMinMax(tc *TSDBClient, database string, measurement string, series string, equation string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
+	// Generate the SUMS operation.
+	op, err := tc.NewSumComputeOp(database, measurement, series, equation, t0, t1, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pull chunks of data from the server and append them to our running data.
+	// TODO: The number of buckets is known a priori...
+	timestamps := []time.Time{}
+	ptrs := []*float64{}
+	have_non_nil := false
+	for {
+		rxc, err := op.ReadChunk()
+		if err != nil {
+			return nil, err
+		}
+		if rxc == nil {
+			break
+		}
+
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			// Grafana only has millisecond resolution!  Harsh.
+			timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i])))
+			timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i]) + 1000000))
+			if rxc.npoints[i] == 0 {
+				ptrs = append(ptrs, nil)
+				ptrs = append(ptrs, nil)
+			} else if !have_non_nil {
+				mean := rxc.sums[i] / float64(rxc.npoints[i])
+				ptrs = append(ptrs, &mean)
+				ptrs = append(ptrs, &rxc.maxs[i])
+				ptrs = append(ptrs, &rxc.mins[i])
+				timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i]) + 2000000))
+				have_non_nil = true
+			} else {
+				ptrs = append(ptrs, &rxc.maxs[i])
+				ptrs = append(ptrs, &rxc.mins[i])
 			}
 		}
 	}
@@ -1833,6 +2024,199 @@ func (self *RXChunk) String() string {
 	return fmt.Sprintf("<npoints %v, bitmap_offset %v>", self.npoints, self.bitmap_offset)
 }
 
+type ComputeOp struct {
+	client		*TSDBClient
+	database	string
+	measurement	string
+	series		string
+	equation   	string
+	t0		uint64
+	t1		uint64
+	limit		uint64
+	last_token	uint32
+}
+
+func (self *TSDBClient) NewComputeOp(database string, measurement string, series string, equation string, t0 uint64, t1 uint64, limit uint64) (*ComputeOp, error) {
+	op := ComputeOp{
+		client:		self,
+		database:	database,
+		measurement:	measurement,
+		series:		series,
+		equation:	equation,
+		t0:		t0,
+		t1:		t1,
+		limit:		limit,
+	}
+
+	err := self.WriteU32(CT_COMPUTE_POINTS_LIMIT)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_SERIES, series)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_COMPUTE_FORMULA, equation)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_NLIMIT, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	op.last_token, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if op.last_token == DT_STATUS_CODE {
+		sc, err := self.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		return nil, &DataSourceError{ErrorCode: int(sc)}
+	}
+
+	return &op, nil
+}
+
+type RXComputeChunk struct {
+	op		*ComputeOp
+	npoints		uint32
+	bitmap_offset	uint32
+	data		[]byte
+	timestamps	[]uint64
+	bitmap		[]uint64
+	values		[]float64
+}
+
+func (self *ComputeOp) ReadChunk() (*RXComputeChunk, error) {
+	if self.last_token == DT_END {
+		dt, err := self.client.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt != DT_STATUS_CODE {
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_STATUS_CODE",
+			}
+		}
+		
+		sc, err := self.client.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		if sc != 0 {
+			return nil, &DataSourceError{ErrorCode: int(sc)}
+		}
+
+		return nil, nil
+	}
+
+	if self.last_token != DT_COMPUTE_CHUNK {
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_COMPUTE_CHUNK or DT_END",
+		}
+	}
+	npoints, err := self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	bitmap_offset, err := self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	data_len, err := self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	data := make([]byte, data_len)
+	n, err := io.ReadFull(self.client.conn, data)
+	if err != nil {
+		return nil, err
+	}
+	if n != int(data_len) {
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Unexpected read length!",
+		}
+	}
+
+	self.last_token, err = self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewComputeChunk(self, npoints, bitmap_offset, data)
+}
+
+func NewComputeChunk(op *ComputeOp, npoints uint32, bitmap_offset uint32, data []byte) (*RXComputeChunk, error) {
+	offset := uint32(0)
+
+	p := unsafe.Pointer(&data[offset])
+	timestamps := unsafe.Slice((*uint64)(p), npoints)
+	offset += npoints * 8
+
+	bitmap_nslots := ((bitmap_offset + npoints + 63) / 64)
+	p = unsafe.Pointer(&data[offset])
+	bitmap := unsafe.Slice((*uint64)(p), bitmap_nslots)
+	offset += bitmap_nslots * 8
+
+	p = unsafe.Pointer(&data[offset])
+	values := unsafe.Slice((*float64)(p), npoints)
+	offset += npoints * 8
+
+	return &RXComputeChunk{
+		op:		op,
+		npoints:	npoints,
+		bitmap_offset:	bitmap_offset,
+		data:		data,
+		timestamps:	timestamps,
+		bitmap:		bitmap,
+		values:		values,
+	}, nil
+}
+
+func (self *RXComputeChunk) IsNull(i uint32) bool {
+	bitmap_index := (self.bitmap_offset + i) / 64
+	shift := (self.bitmap_offset + i) % 64
+	return (self.bitmap[bitmap_index] & (1 << shift)) == 0
+}
+
+func (self *RXComputeChunk) String() string {
+	return fmt.Sprintf("<npoints %v, bitmap_offset %v>", self.npoints, self.bitmap_offset)
+}
+
 type SumsOp struct {
 	client		*TSDBClient
 	database	string
@@ -2174,6 +2558,191 @@ func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, 
 		sums:		sums,
 		mins:           mins,
 		maxs:           maxs,
+		npoints:	npoints,
+	}, nil
+}
+
+type SumComputeOp struct {
+	client		*TSDBClient
+	database	string
+	measurement	string
+	series		string
+	equation	string
+	t0		uint64
+	t1		uint64
+	window_ns	uint64
+	last_token	uint32
+}
+
+func (self *TSDBClient) NewSumComputeOp(database string, measurement string, series string, equation string, t0 uint64, t1 uint64, window_ns uint64) (*SumComputeOp, error) {
+	op := SumComputeOp{
+		client:		self,
+		database:	database,
+		measurement:	measurement,
+		series:		series,
+		equation:	equation,
+		t0:		t0,
+		t1:		t1,
+		window_ns:	window_ns,
+	}
+
+	err := self.WriteU32(CT_SUM_COMPUTE_POINTS)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_SERIES, series)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_COMPUTE_FORMULA, equation)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_WINDOW_NS, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	op.last_token, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if op.last_token == DT_STATUS_CODE {
+		sc, err := self.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		return nil, &DataSourceError{ErrorCode: int(sc)}
+	}
+
+	return &op, nil
+}
+
+type RXSumComputeChunk struct {
+	op		*SumComputeOp
+	nbuckets	uint16
+	timestamps	[]uint64
+	sums		[]float64
+	mins		[]float64
+	maxs		[]float64
+	npoints		[]uint64
+}
+
+func (self *SumComputeOp) ReadChunk() (*RXSumComputeChunk, error) {
+	if self.last_token == DT_END {
+		dt, err := self.client.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt != DT_STATUS_CODE {
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_STATUS_CODE",
+			}
+		}
+		
+		sc, err := self.client.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		if sc != 0 {
+			return nil, &DataSourceError{ErrorCode: int(sc)}
+		}
+
+		return nil, nil
+	}
+
+	if self.last_token != DT_SUM_COMPUTE_CHUNK {
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_SUMS_CHUNK or DT_END",
+		}
+	}
+	chunk_npoints, err := self.client.ReadU16()
+	if err != nil {
+		return nil, err
+	}
+
+	data_len := chunk_npoints * (8 * 5)
+	data := make([]byte, data_len)
+	n, err := io.ReadFull(self.client.conn, data)
+	if err != nil {
+		return nil, err
+	}
+	if n != int(data_len) {
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Unexpected read length!",
+		}
+	}
+
+	self.last_token, err = self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewSumComputeChunk(self, chunk_npoints, data)
+}
+
+func NewSumComputeChunk(op *SumComputeOp, chunk_npoints uint16, data []byte) (*RXSumComputeChunk, error) {
+	offset := uint32(0)
+	dpos := uint32(chunk_npoints) * 8
+
+	p := unsafe.Pointer(&data[offset])
+	timestamps := unsafe.Slice((*uint64)(p), chunk_npoints)
+	offset += dpos
+
+	p = unsafe.Pointer(&data[offset])
+	sums := unsafe.Slice((*float64)(p), chunk_npoints)
+	offset += dpos
+
+	p = unsafe.Pointer(&data[offset])
+	mins := unsafe.Slice((*float64)(p), chunk_npoints)
+	offset += dpos
+
+	p = unsafe.Pointer(&data[offset])
+	maxs := unsafe.Slice((*float64)(p), chunk_npoints)
+	offset += dpos
+
+	p = unsafe.Pointer(&data[offset])
+	npoints := unsafe.Slice((*uint64)(p), chunk_npoints)
+	offset += dpos
+
+	return &RXSumComputeChunk{
+		op:		op,
+		nbuckets:	chunk_npoints,
+		timestamps:	timestamps,
+		sums:		sums,
+		mins:		mins,
+		maxs:		maxs,
 		npoints:	npoints,
 	}, nil
 }

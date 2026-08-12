@@ -8,6 +8,8 @@ export interface BasicQuery extends DataQuery {
   transform?: string;
   zoom?: string;
   alias?: string;
+  querytype?: string;
+  equation?: string;
 }
 
 /**
