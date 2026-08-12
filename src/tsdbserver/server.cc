@@ -247,6 +247,8 @@ static void handle_compute_points_limit(
     connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_compute_points_last(
     connection& conn, const std::vector<parsed_data_token>& tokens);
+static void handle_sum_compute_points(
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 
 static const command_syntax<connection&> commands[] =
 {
@@ -341,6 +343,12 @@ static const command_syntax<connection&> commands[] =
         CT_COMPUTE_POINTS_LAST,
         {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_COMPUTE_FORMULA,
          DT_TIME_FIRST, DT_TIME_LAST, DT_NLAST, DT_END},
+    },
+    {
+        func_delegate(handle_sum_compute_points),
+        CT_SUM_COMPUTE_POINTS,
+        {DT_DATABASE, DT_MEASUREMENT, DT_SERIES, DT_COMPUTE_FORMULA,
+         DT_TIME_FIRST, DT_TIME_LAST, DT_WINDOW_NS, DT_END},
     },
 };
 
@@ -1144,6 +1152,84 @@ handle_compute_points_last(connection& conn,
     }
     tsdb::select_op_last op(read_lock,path,field_names,t0,t1,N - wq.nentries);
     _handle_compute_points(conn,op,wq,shunter,N);
+}
+
+static void
+handle_sum_compute_points(connection& conn,
+    const std::vector<parsed_data_token>& tokens)
+{
+    // Create the shunter and test it before going further.
+    shunting_yard::shunter shunter(tokens[3].data,tokens[3].len);
+    shunting_functions::populate(shunter);
+    shunter.evaluate();
+
+    std::vector<std::string> field_names;
+    for (const auto& v : shunter.variables)
+        field_names.push_back(v.name);
+
+    std::string database(tokens[0].data,tokens[0].len);
+    std::string measurement(tokens[1].data,tokens[1].len);
+    std::string series(tokens[2].data,tokens[2].len);
+    futil::path path(database,measurement,series);
+    uint64_t t0 = tokens[4].u64;
+    uint64_t t1 = tokens[5].u64;
+    uint64_t window_ns = tokens[6].u64;
+
+    root->debugf("SUM COMPUTE %s FROM %s WHERE %" PRIu64 " <= time_ns <= %"
+                 PRIu64 " WINDOW_NS %" PRIu64 "\n",
+                 shunter.to_string().c_str(),path.c_str(),t0,t1,window_ns);
+    tsdb::database db(*root,database);
+    tsdb::measurement m(db,measurement);
+    conn.lt = LT_ACQUIRING_READ;
+    tsdb::series_read_lock read_lock(m,series);
+    conn.lt = LT_HOLDING_READ;
+    tsdb::sum_compute_op op(read_lock,path,field_names,shunter,t0,t1,window_ns);
+
+    fixed_vector<uint64_t> timestamps(1024);
+    fixed_vector<double> sums(1024);
+    fixed_vector<double> mins(1024);
+    fixed_vector<double> maxs(1024);
+    fixed_vector<uint64_t> npoints(1024);
+
+    bool done = false;
+    while (!done)
+    {
+        while (timestamps.size() < 1024)
+        {
+            if (!op.next())
+            {
+                done = true;
+                break;
+            }
+
+            timestamps.emplace_back(op.range_t0);
+            sums.emplace_back(op.sum);
+            mins.emplace_back(op.min);
+            maxs.emplace_back(op.max);
+            npoints.emplace_back(op.npoints);
+        }
+
+        uint16_t chunk_npoints = timestamps.size();
+        if (chunk_npoints)
+        {
+            data_token dt = DT_SUM_COMPUTE_CHUNK;
+            conn.s.send_all(&dt,sizeof(dt));
+            conn.s.send_all(&chunk_npoints,sizeof(chunk_npoints));
+            conn.s.send_all(&timestamps[0],chunk_npoints*sizeof(uint64_t));
+            timestamps.clear();
+            conn.s.send_all(&sums[0],chunk_npoints*sizeof(double));
+            sums.clear();
+            conn.s.send_all(&mins[0],chunk_npoints*sizeof(double));
+            mins.clear();
+            conn.s.send_all(&maxs[0],chunk_npoints*sizeof(double));
+            maxs.clear();
+            conn.s.send_all(&npoints[0],chunk_npoints*sizeof(uint64_t));
+            npoints.clear();
+        }
+    }
+
+    data_token dt = DT_END;
+    conn.s.send_all(&dt,sizeof(dt));
 }
 
 static void

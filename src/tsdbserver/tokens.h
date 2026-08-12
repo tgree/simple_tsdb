@@ -30,6 +30,7 @@ enum command_token : uint32_t
     CT_AUTHENTICATE         = 0x0995EBDA,
     CT_COMPUTE_POINTS_LIMIT = 0x1FFF763F,
     CT_COMPUTE_POINTS_LAST  = 0xE3D1252C,
+    CT_SUM_COMPUTE_POINTS   = 0xBF6322ED,
 };
 
 const char* get_command_token_str(command_token ct);
@@ -60,6 +61,7 @@ enum data_token : uint32_t
     DT_PASSWORD          = 0x602E5B01,  // <password>
     DT_COMPUTE_FORMULA   = 0x29C662C7,  // <formula>
     DT_COMPUTE_CHUNK     = 0x12FF8CB9,  // <chunk header>, then data
+    DT_SUM_COMPUTE_CHUNK = 0x5C9E1B82,  // <chunk header>, then data
 };
 
 struct chunk_header

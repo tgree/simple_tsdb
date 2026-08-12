@@ -28,6 +28,7 @@ CT_NOP                  = 0x22CF1296
 CT_AUTHENTICATE         = 0x0995EBDA
 CT_COMPUTE_POINTS_LIMIT = 0x1FFF763F
 CT_COMPUTE_POINTS_LAST  = 0xE3D1252C
+CT_SUM_COMPUTE_POINTS   = 0xBF6322ED
 
 # Data tokens
 DT_DATABASE             = 0x39385A4F
@@ -54,6 +55,7 @@ DT_USERNAME             = 0x6E39D1DE
 DT_PASSWORD             = 0x602E5B01
 DT_COMPUTE_FORMULA      = 0x29C662C7
 DT_COMPUTE_CHUNK        = 0x12FF8CB9
+DT_SUM_COMPUTE_CHUNK    = 0x5C9E1B82
 
 
 # Status codes.
@@ -548,6 +550,83 @@ class SumsOP:
         return RXSumsChunk(self.fields, timestamps, sums, npoints)
 
 
+class RXSumComputeChunk:
+    def __init__(self, timestamps, sums, mins, maxs, npoints):
+        self.timestamps = timestamps
+        self.sums       = sums
+        self.mins       = mins
+        self.maxs       = maxs
+        self.npoints    = npoints
+
+
+class SumComputeOP:
+    def __init__(self, client, database, measurement, series, equation, t0, t1,
+                 window_ns):
+        self.client    = client
+        self.window_ns = window_ns
+
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        equation = equation.encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIH%usIQIQIQI' % (len(database),
+                                                             len(measurement),
+                                                             len(series),
+                                                             len(equation)),
+                          CT_SUM_COMPUTE_POINTS,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_COMPUTE_FORMULA, len(equation), equation,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          DT_WINDOW_NS, window_ns,
+                          DT_END)
+        self.client._sendall(cmd)
+
+        dt = self.client._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self.client._recv_i32())
+
+        self.last_token = dt
+
+    def read_chunk(self):
+        if self.last_token == DT_END:
+            if self.client._recv_u32() != DT_STATUS_CODE:
+                raise ProtocolException('Expected DT_STATUS_CODE')
+            if self.client._recv_i32() != 0:
+                raise ProtocolException('Expected status 0')
+            return None
+
+        if self.last_token != DT_SUM_COMPUTE_CHUNK:
+            raise ProtocolException('Expected DT_SUMS_CHUNK')
+        chunk_npoints = self.client._recv_u16()
+        data_len      = chunk_npoints * (8 * 5)
+        data          = self.client._recvall(data_len)
+        data_view     = memoryview(data)
+        pos           = 0
+        sums          = []
+        npoints       = []
+        timestamps    = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.uint64)
+        pos          += 8 * chunk_npoints
+        sums          = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.float64)
+        pos          += 8 * chunk_npoints
+        mins          = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.float64)
+        pos          += 8 * chunk_npoints
+        maxs          = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.float64)
+        pos          += 8 * chunk_npoints
+        npoints       = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.uint64)
+
+        self.last_token = self.client._recv_u32()
+
+        return RXSumComputeChunk(timestamps, sums, mins, maxs, npoints)
+
+
 class CountResult:
     def __init__(self, time_first, time_last, npoints):
         self.time_first = time_first
@@ -906,6 +985,11 @@ class Connection:
         return ComputeOP(self, CT_COMPUTE_POINTS_LAST, database, measurement,
                          series, equation, t0, t1, N)
 
+    def sum_compute_points(self, database, measurement, series, equation, t0,
+                           t1, window_ns):
+        return SumComputeOP(self, database, measurement, series, equation, t0,
+                            t1, window_ns)
+
     def count_points(self, database, measurement, series, t0, t1):
         database = database.encode()
         measurement = measurement.encode()
@@ -1194,6 +1278,20 @@ class Client:
         try:
             return self.conn.compute_last_points(database, measurement, series,
                                                  equation, t0, t1, N)
+        except StatusException:
+            raise
+        except:  # noqa: E722
+            self.close()
+            raise
+
+    def sum_compute_points(self, database, measurement, series, equation,
+                           t0, t1, window_ns):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn.sum_compute_points(database, measurement, series,
+                                                equation, t0, t1, window_ns)
         except StatusException:
             raise
         except:  # noqa: E722
