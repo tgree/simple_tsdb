@@ -395,3 +395,16 @@ parse_type<window_ns>(
     begin += 2;
     return window_ns{n};
 }
+
+template<> quoted_string
+parse_type<quoted_string>(
+    std::vector<std::string>::iterator& begin,
+    std::vector<std::string>::iterator end)
+{
+    if (begin == end)
+        throw parse_exception("Expected quoted string.");
+    if (begin->front() != '"' || begin->back() != '"')
+        throw parse_exception("Expected quoted string.");
+
+    return quoted_string{*begin++};
+}

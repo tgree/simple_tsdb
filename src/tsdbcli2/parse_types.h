@@ -81,4 +81,9 @@ struct window_ns
     uint64_t    n;
 };
 
+struct quoted_string
+{
+    std::string string;
+};
+
 #endif /* __SRC_TSDBCLI_PARSE_TYPES_H */

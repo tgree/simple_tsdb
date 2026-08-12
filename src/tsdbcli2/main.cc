@@ -476,6 +476,39 @@ handle_command(
         printf("    %s\n",e.what());
 }
 
+std::vector<std::string>
+splitcmd(const std::string& s)
+{
+    std::vector<std::string> v;
+
+    size_t i = s.find_first_not_of("\n\r\t\f ");
+    while (i != std::string::npos)
+    {
+        size_t j;
+        if (s[i] == '"')
+        {
+            j = s.find('"',i + 1);
+            if (j == std::string::npos)
+                throw parse_exception("Unterminated quoted string.");
+            ++j;
+        }
+        else
+        {
+            j = s.find_first_of("\n\r\t\f ",i);
+            if (j == std::string::npos)
+            {
+                v.push_back(str::slice(s,i));
+                break;
+            }
+        }
+        v.push_back(str::slice(s,i,j));
+
+        i = s.find_first_not_of("\n\r\t\f ",j);
+    }
+
+    return v;
+}
+
 int
 main(int argc, const char* argv[])
 {
@@ -593,7 +626,7 @@ main(int argc, const char* argv[])
 
             found = true;
             cmd.erase(0,ch.keyword.size());
-            auto v = str::split(cmd);
+            auto v = splitcmd(cmd);
             try
             {
                 handle_command(ch,v.begin(),v.end());
