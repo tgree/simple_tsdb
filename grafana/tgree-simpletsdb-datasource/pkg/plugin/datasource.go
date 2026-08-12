@@ -496,7 +496,7 @@ type databasesResponse struct {
 }
 
 func (d *Datasource) handleDatabases(rw http.ResponseWriter, req *http.Request) {
-	// This *SEEMS* to be unused in the front end.  I think originally we were gonig to
+	// This *SEEMS* to be unused in the front end.  I think originally we were going to
 	// make the database selectable in the QueryEditor, but then we forced each datasource
 	// to be tied to a specific database, so now it has no use.
 	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
