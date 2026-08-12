@@ -34,28 +34,28 @@ const char* get_command_token_str(command_token ct);
 
 enum data_token : uint32_t
 {
-    DT_DATABASE         = 0x39385A4F,   // <database>
-    DT_MEASUREMENT      = 0xDC1F48F3,   // <measurement>
-    DT_SERIES           = 0x4E873749,   // <series>
-    DT_TYPED_FIELDS     = 0x02AC7330,   // <f1>/<type1>,<f2>/<type2>,...
-    DT_FIELD_LIST       = 0xBB62ACC3,   // <f1>,<f2>,...
-    DT_CHUNK            = 0xE4E8518F,   // <chunk header>, then data
-    DT_TIME_FIRST       = 0x55BA37B4,   // <t0> (uint64_t)
-    DT_TIME_LAST        = 0xC4EE45BA,   // <t1> (uint64_t)
-    DT_NLIMIT           = 0xEEF2BB02,   // LIMIT <N> (uint64_t)
-    DT_NLAST            = 0xD74F10A3,   // LAST <N> (uint64_t)
-    DT_END              = 0x4E29ADCC,   // end of command
-    DT_STATUS_CODE      = 0x8C8C07D9,   // <errno> (uint32_t)
-    DT_FIELD_TYPE       = 0x7DB40C2A,   // <type> (uint32_t)
-    DT_FIELD_NAME       = 0x5C0D45C1,   // <name>
-    DT_READY_FOR_CHUNK  = 0x6000531C,   // <max_data_len> (uint32_t)
-    DT_NPOINTS          = 0x5F469D08,   // <npoints> (uint64_t)
-    DT_WINDOW_NS        = 0x76F0C374,   // <window_ns> (uint64_t)
-    DT_SUMS_CHUNK       = 0x53FC76FC,   // <chunk_npoints> (uint16_t)
-    DT_INTEGRALS        = 0x78760A3D,   // <integral1> <integral2> ...
-    DT_INTEGRAL_BITMAP  = 0xD3760722,   // <bitmap> (uint64_t)
-    DT_USERNAME         = 0x6E39D1DE,   // <username>
-    DT_PASSWORD         = 0x602E5B01,   // <password>
+    DT_DATABASE          = 0x39385A4F,  // <database>
+    DT_MEASUREMENT       = 0xDC1F48F3,  // <measurement>
+    DT_SERIES            = 0x4E873749,  // <series>
+    DT_TYPED_FIELDS      = 0x02AC7330,  // <f1>/<type1>,<f2>/<type2>,...
+    DT_FIELD_LIST        = 0xBB62ACC3,  // <f1>,<f2>,...
+    DT_CHUNK             = 0xE4E8518F,  // <chunk header>, then data
+    DT_TIME_FIRST        = 0x55BA37B4,  // <t0> (uint64_t)
+    DT_TIME_LAST         = 0xC4EE45BA,  // <t1> (uint64_t)
+    DT_NLIMIT            = 0xEEF2BB02,  // LIMIT <N> (uint64_t)
+    DT_NLAST             = 0xD74F10A3,  // LAST <N> (uint64_t)
+    DT_END               = 0x4E29ADCC,  // end of command
+    DT_STATUS_CODE       = 0x8C8C07D9,  // <errno> (uint32_t)
+    DT_FIELD_TYPE        = 0x7DB40C2A,  // <type> (uint32_t)
+    DT_FIELD_NAME        = 0x5C0D45C1,  // <name>
+    DT_READY_FOR_CHUNK   = 0x6000531C,  // <max_data_len> (uint32_t)
+    DT_NPOINTS           = 0x5F469D08,  // <npoints> (uint64_t)
+    DT_WINDOW_NS         = 0x76F0C374,  // <window_ns> (uint64_t)
+    DT_SUMS_CHUNK        = 0x53FC76FC,  // <chunk_npoints> (uint16_t)
+    DT_INTEGRALS         = 0x78760A3D,  // <integral1> <integral2> ...
+    DT_INTEGRAL_BITMAP   = 0xD3760722,  // <bitmap> (uint64_t)
+    DT_USERNAME          = 0x6E39D1DE,  // <username>
+    DT_PASSWORD          = 0x602E5B01,  // <password>
 };
 
 struct chunk_header
