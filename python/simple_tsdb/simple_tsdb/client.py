@@ -31,6 +31,8 @@ CT_AUTHENTICATE         = 0x0995EBDA
 CT_COMPUTE_POINTS_LIMIT = 0x1FFF763F
 CT_COMPUTE_POINTS_LAST  = 0xE3D1252C
 CT_SUM_COMPUTE_POINTS   = 0xBF6322ED
+CT_GET_VERSION          = 0x3BF8F894
+
 
 # Data tokens
 DT_DATABASE             = 0x39385A4F
@@ -58,6 +60,7 @@ DT_PASSWORD             = 0x602E5B01
 DT_COMPUTE_FORMULA      = 0x29C662C7
 DT_COMPUTE_CHUNK        = 0x12FF8CB9
 DT_SUM_COMPUTE_CHUNK    = 0x5C9E1B82
+DT_VERSION_INFO         = 0x2F7C3968
 
 
 # Status codes.
@@ -162,6 +165,11 @@ def timestamp_to_int(t):
         dt = dt.replace(tzinfo=timezone.utc)
         return round(dt.timestamp() * 1e9)
     raise TypeError('Cannot convert type %s to time_ns.' % type(t))
+
+
+class VersionInfo:
+    def __init__(self, version):
+        self.version = version
 
 
 class Field:
@@ -741,6 +749,24 @@ class Connection:
                           DT_END)
         self._transact(cmd)
 
+    def _get_version_info(self):
+        cmd = struct.pack('<II',
+                          CT_GET_VERSION,
+                          DT_END)
+        self._sendall(cmd)
+
+        if self._recv_u32() != DT_VERSION_INFO:
+            raise ProtocolException('Expected DT_VERSION_INFO')
+        size = self._recv_u16()
+        data = self._recvall(size)
+        if self._recv_u32() != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
+        if self._recv_i32() != 0:
+            raise ProtocolException('Expected status 0')
+
+        version = struct.unpack_from('<H', data, offset=0)[0]
+        return VersionInfo(version)
+
     def create_database(self, database):
         database = database.encode()
         cmd = struct.pack('<IIH%usI' % len(database),
@@ -1151,6 +1177,23 @@ class Client(ClientBase):
                 self.conn._close()
             finally:
                 self.conn = None
+
+    def get_version_info(self):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            return self.conn._get_version_info()
+        except ConnectionClosedException:
+            # Versions before 1.1 don't handle CT_GET_VERSION and shut down the
+            # connection immediately.
+            self.conn = None
+            return VersionInfo(0x100)
+        except StatusException:
+            raise
+        except:     # noqa: E722
+            self.close()
+            raise
 
     def get_all_points_mean(self, database, measurement, series, fields, t0, t1,
                             window_ns):
