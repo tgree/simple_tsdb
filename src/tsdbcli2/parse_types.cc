@@ -31,7 +31,10 @@ parse_type<fields_list>(
             throw parse_exception("Expected fields specifier.");
     }
     else
+    {
+        fields.emplace_back("*");
         ++begin;
+    }
 
     return fields_list{std::move(fields)};
 }
@@ -391,4 +394,17 @@ parse_type<window_ns>(
     
     begin += 2;
     return window_ns{n};
+}
+
+template<> quoted_string
+parse_type<quoted_string>(
+    std::vector<std::string>::iterator& begin,
+    std::vector<std::string>::iterator end)
+{
+    if (begin == end)
+        throw parse_exception("Expected quoted string.");
+    if (begin->front() != '"' || begin->back() != '"')
+        throw parse_exception("Expected quoted string.");
+
+    return quoted_string{*begin++};
 }

@@ -8,5 +8,7 @@ tsdbcli2.DYLIB := ssl crypto
 tsdbcli2.OBJ := \
 	$(MODULE_BUILD_DIR)/parse_types.o \
 	$(MODULE_BUILD_DIR)/print_op_results.o \
+	$(MODULE_BUILD_DIR)/print_compute_results.o \
 	$(MODULE_BUILD_DIR)/main.o \
+	$(BUILD_O_DIR)/shunter/shunting_functions.o \
 	$(BUILD_O_DIR)/floor/kassert.o

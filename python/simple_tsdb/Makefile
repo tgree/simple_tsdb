@@ -1,6 +1,6 @@
 # Copyright (c) 2025 by Terry Greeniaus.  All rights reserved.
 MODULE      := simple_tsdb
-MODULE_VERS := 0.9.9
+MODULE_VERS := 1.1.0
 MODULE_DEPS :=
 MODULES := \
 	setup.cfg \
@@ -35,11 +35,11 @@ lint:
 
 .PHONY: install
 install: $(WHEEL_PATH) | uninstall
-	sudo $(PYTHON) -m pip install $(WHEEL_PATH) --break-system-packages
+	$(PYTHON) -m pip install $(WHEEL_PATH)
 
 .PHONY: uninstall
 uninstall:
-	sudo $(PYTHON) -m pip uninstall -y $(MODULE) --break-system-packages
+	$(PYTHON) -m pip uninstall -y $(MODULE)
 
 .PHONY: packages
 packages: $(WHEEL_PATH)

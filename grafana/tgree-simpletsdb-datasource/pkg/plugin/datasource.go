@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"time"
+	"net"
 	"net/http"
 	"io"
 	"unsafe"
@@ -37,6 +38,9 @@ const (
 	CT_SUM_POINTS           uint32 = 0x90305A39
 	CT_NOP                  uint32 = 0x22CF1296
 	CT_AUTHENTICATE         uint32 = 0x0995EBDA
+	CT_COMPUTE_POINTS_LIMIT uint32 = 0x1FFF763F
+	CT_COMPUTE_POINTS_LAST  uint32 = 0xE3D1252C
+	CT_SUM_COMPUTE_POINTS   uint32 = 0xBF6322ED
 
 	DT_DATABASE             uint32 = 0x39385A4F   // <database>
 	DT_MEASUREMENT          uint32 = 0xDC1F48F3   // <measurement>
@@ -58,6 +62,46 @@ const (
 	DT_SUMS_CHUNK           uint32 = 0x53FC76FC   // <chunk_npoints> (uint16_t)
 	DT_USERNAME             uint32 = 0x6E39D1DE   // <username>
 	DT_PASSWORD             uint32 = 0x602E5B01   // <password>
+	DT_COMPUTE_FORMULA      uint32 = 0x29C662C7   // <formula>
+	DT_COMPUTE_CHUNK        uint32 = 0x12FF8CB9   // <chunk header>, then data
+	DT_SUM_COMPUTE_CHUNK    uint32 = 0x5C9E1B82   // <chunk header>, then data
+
+	INIT_IO_ERROR                int  = -1
+	CREATE_DATABASE_IO_ERROR     int  = -2
+	CREATE_MEASUREMENT_IO_ERROR  int  = -3
+	INVALID_MEASUREMENT          int  = -4
+	INVALID_SERIES               int  = -5
+	CORRUPT_SCHEMA_FILE          int  = -6
+	NO_SUCH_FIELD                int  = -7
+	END_OF_SELECT                int  = -8
+	INCORRECT_WRITE_CHUNK_LEN    int  = -9
+	OUT_OF_ORDER_TIMESTAMPS      int  = -10
+	TIMESTAMP_OVERWRITE_MISMATCH int  = -11
+	FIELD_OVERWRITE_MISMATCH     int  = -12
+	BITMAP_OVERWRITE_MISMATCH    int  = -13
+	TAIL_FILE_TOO_BIG            int  = -14
+	TAIL_FILE_INVALID_SIZE       int  = -15
+	INVALID_TIME_LAST            int  = -16
+	NO_SUCH_SERIES               int  = -17
+	NO_SUCH_DATABASE             int  = -18
+	NO_SUCH_MEASUREMENT          int  = -19
+	MEASUREMENT_EXISTS           int  = -20
+	USER_EXISTS                  int  = -21
+	NO_SUCH_USER                 int  = -22
+	NOT_A_TSDB_ROOT              int  = -23
+	DUPLICATE_FIELD              int  = -24
+	TOO_MANY_FIELDS              int  = -25
+	INVALID_CONFIG_FILE          int  = -26
+	INVALID_CHUNK_SIZE           int  = -27
+	CORRUPT_MEASUREMENT          int  = -28
+	INVALID_TIME_FIRST           int  = -29
+	INVALID_NUMBER               int  = -30
+	INVALID_FORMULA_CHARACTER    int  = -31
+	UNEXPECTED_TOKEN             int  = -32
+	SHUNT_MISSING_FUNC_ARG       int  = -33
+	MISSING_PAREN                int  = -34
+	SHUNT_MISSING_OP_ARG         int  = -35
+	SHUNT_EXTRA_EXPRESSIONS      int  = -36
 
 	FT_BOOL uint8 = 1
 	FT_U32 uint8  = 2
@@ -68,6 +112,45 @@ const (
 	FT_I64 uint8  = 7
 )
 
+var ERR_MAP = map[int]string{
+	INIT_IO_ERROR:			"I/O error initializing database.",
+	CREATE_DATABASE_IO_ERROR:	"I/O error creating database.",
+	CREATE_MEASUREMENT_IO_ERROR:	"I/O error creating measurement.",
+	INVALID_MEASUREMENT:		"Invalid measurement path.",
+	INVALID_SERIES:			"Invalid series path.",
+	CORRUPT_SCHEMA_FILE:		"Invalid schema file.",
+	NO_SUCH_FIELD:			"No such field.",
+	END_OF_SELECT:			"End of select_op.",
+	INCORRECT_WRITE_CHUNK_LEN:	"Incorrect chunk length.",
+	OUT_OF_ORDER_TIMESTAMPS:	"Out of order timestamps.",
+	TIMESTAMP_OVERWRITE_MISMATCH:	"Timestamp overwrite mismatch.",
+	FIELD_OVERWRITE_MISMATCH:	"Field overwrite mismatch.",
+	BITMAP_OVERWRITE_MISMATCH:	"Bitmap overwrite mismatch.",
+	TAIL_FILE_TOO_BIG:		"Tail file too large.",
+	TAIL_FILE_INVALID_SIZE:		"Tail file has invalid length.",
+	INVALID_TIME_LAST:		"Tail file last timestamp not same as time_last timestamp.",
+	NO_SUCH_SERIES:			"No such series.",
+	NO_SUCH_DATABASE:		"No such database.",
+	NO_SUCH_MEASUREMENT:		"No such measurement.",
+	MEASUREMENT_EXISTS:		"Measurement already exists.",
+	USER_EXISTS:			"User already exists.",
+	NO_SUCH_USER:			"No such user.",
+	NOT_A_TSDB_ROOT:		"Not a TSDB root directory.",
+	DUPLICATE_FIELD:		"Duplicate field requested.",
+	TOO_MANY_FIELDS:		"Too many fields.",
+	INVALID_CONFIG_FILE:		"Invalid configuration file.",
+	INVALID_CHUNK_SIZE:		"Invalid chunk size.",
+	CORRUPT_MEASUREMENT:		"Corrupt measurement.",
+	INVALID_TIME_FIRST:		"Tail file first timestamp does not match index entry.",
+	INVALID_NUMBER:			"Invalid number in equation.",
+	INVALID_FORMULA_CHARACTER:	"Invalid character in equation.",
+	UNEXPECTED_TOKEN:		"Unexpected token in equation.",
+	SHUNT_MISSING_FUNC_ARG:		"Missing argument to a function in equation.",
+	MISSING_PAREN:			"Missing parenthesis in equation.",
+	SHUNT_MISSING_OP_ARG:		"Missing argument to an operation in equation.",
+	SHUNT_EXTRA_EXPRESSIONS:	"Extra expressions in equation.",
+}
+
 var FT_MAP = map[uint8]string{
 	FT_BOOL:	"bool",
 	FT_U32:		"u32",
@@ -76,6 +159,27 @@ var FT_MAP = map[uint8]string{
 	FT_F64:		"f64",
 	FT_I32:		"i32",
 	FT_I64:		"i64",
+}
+
+type DataSourceError struct {
+	ErrorCode	int
+}
+
+func (e *DataSourceError) Error() string {
+	errStr, ok := ERR_MAP[e.ErrorCode]
+	if !ok {
+		errStr = "Unrecognized error."
+	}
+	return fmt.Sprintf("[%d] %s", e.ErrorCode, errStr)
+}
+
+type BackendError struct {
+	Status		backend.Status
+	Message		string
+}
+
+func (e *BackendError) Error() string {
+	return fmt.Sprintf("[%d] %s", e.Status, e.Message)
 }
 
 // Make sure Datasource implements required interfaces. This is important to do
@@ -167,17 +271,37 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 
 	// loop over queries and execute them individually.
 	for _, q := range req.Queries {
-		res := d.query(ctx, req.PluginContext, tc, &dm, q)
+		res, err := d.query(ctx, req.PluginContext, tc, &dm, q)
+
+		if err != nil {
+			var dsErr *DataSourceError
+			var beErr *BackendError
+
+			res = &backend.DataResponse{}
+			switch {
+			case errors.As(err, &dsErr):
+				res.Error = dsErr
+				res.Status = backend.StatusInternal
+
+			case errors.As(err, &beErr):
+				res.Error = beErr
+				res.Status = beErr.Status
+
+			default:
+				res.Error = err
+				res.Status = backend.StatusInternal
+			}
+		}
 
 		// save the response in a hashmap
 		// based on with RefID as identifier
-		response.Responses[q.RefID] = res
+		response.Responses[q.RefID] = *res
 	}
 
 	return response, nil
 }
 
-// These fields are defind directly by BasicQuery in src/types.ts.
+// These fields are defined directly by BasicQuery in src/types.ts.
 // BasicQuery gets turned into JSON and then we unmarshal it into
 // this struct here, discarding any JSON fields we don't care about.
 type queryModel struct {
@@ -188,18 +312,23 @@ type queryModel struct {
 	Transform       string
 	Zoom            string
 	Alias           string
+	Querytype	string
+	Equation   	string
 
 	// From DataQuery.
 	IntervalMs      uint64
 	MaxDataPoints	uint64
 }
 
-func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *TSDBClient, dm *datasourceModel, query backend.DataQuery) backend.DataResponse {
+func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *TSDBClient, dm *datasourceModel, query backend.DataQuery) (*backend.DataResponse, error) {
 	// Unmarshal the JSON into our queryModel.
 	var qm queryModel
 	err := json.Unmarshal(query.JSON, &qm)
 	if err != nil {
-		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("json unmarshal: %v", err.Error()))
+		return nil, err
+	}
+	if qm.Querytype == "" {
+		qm.Querytype = "SELECT"
 	}
 	backend.Logger.Debug("Query", "query", query)
 
@@ -210,7 +339,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	if qm.Series == "All" {
 		seriesList, err = tc.ListActiveSeries(dm.Database, qm.Measurement, t0, t1)
 		if err != nil {
-			return backend.ErrDataResponse(backend.StatusBadRequest, "error from ListSeries")
+			return nil, err
 		}
 	} else {
 		seriesList = strings.Split(qm.Series, " + ")
@@ -219,36 +348,59 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 	response := backend.DataResponse{Frames: []*data.Frame{}}
 
 	for _, series := range seriesList {
-		alias := series + "." + qm.Field
-		if qm.Alias != "" {
-			alias = strings.Replace(qm.Alias, "$series", series, 1)
-		}
 		// Retrieve the point count for this measurement.
 		count_result, err := tc.CountPoints(dm.Database, qm.Measurement, series, t0, t1)
 		if err != nil {
-			return backend.ErrDataResponse(backend.StatusBadRequest, "error from COUNT")
+			return nil, err
 		}
 		backend.Logger.Debug("Count Result", "count_result", count_result.String())
 		if count_result.npoints == 0 {
 			continue
 		}
 
-		var frame *data.Frame;
-		if (count_result.npoints > qm.MaxDataPoints) {
-			switch qm.Zoom {
-			case "Min/Max":
-				frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
-				                           t0, t1, qm.IntervalMs * 1000000)
+		// Generate the name for this query.
+		alias := series + "." + qm.Field
+		if qm.Alias != "" {
+			alias = strings.Replace(qm.Alias, "$series", series, 1)
+		}
 
-			case "Mean":
-				frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field, alias,
-				                         t0, t1, qm.IntervalMs * 1000000)
+		// Do the query according to the query type.
+		var frame *data.Frame;
+		if qm.Querytype == "SELECT" {
+			if (count_result.npoints > qm.MaxDataPoints) {
+				switch qm.Zoom {
+				case "Min/Max":
+					frame, err = d.queryMinMax(tc, dm.Database, qm.Measurement, series, qm.Field,
+					                           alias, t0, t1, qm.IntervalMs * 1000000)
+
+				case "Mean":
+					frame, err = d.queryMean(tc, dm.Database, qm.Measurement, series, qm.Field,
+					                         alias, t0, t1, qm.IntervalMs * 1000000)
+				}
+			} else {
+				frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0,
+				                           t1)
 			}
 		} else {
-			frame, err = d.querySelect(tc, dm.Database, qm.Measurement, series, qm.Field, alias, t0, t1)
+			if (count_result.npoints > qm.MaxDataPoints) {
+				switch qm.Zoom {
+				case "Min/Max":
+					frame, err = d.queryComputeMinMax(tc, dm.Database, qm.Measurement, series,
+					                                  qm.Equation, alias, t0, t1,
+								          qm.IntervalMs * 1000000)
+
+				case "Mean":
+					frame, err = d.queryComputeMean(tc, dm.Database, qm.Measurement, series,
+					                                qm.Equation, alias, t0, t1,
+								        qm.IntervalMs * 1000000)
+				}
+			} else {
+				frame, err = d.queryCompute(tc, dm.Database, qm.Measurement, series, qm.Equation, alias,
+				                            t0, t1)
+			}
 		}
 		if err != nil {
-			return backend.ErrDataResponse(backend.StatusBadRequest, "error from DB query")
+			return nil, err
 		}
 		if frame == nil {
 			continue
@@ -270,7 +422,7 @@ func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, tc *
 		response.Frames = append(response.Frames, frame)
 	}
 
-	return response
+	return &response, nil
 }
 
 func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement string, series string, field string, alias string, t0 uint64, t1 uint64) (*data.Frame, error) {
@@ -323,9 +475,114 @@ func (d *Datasource) querySelect(tc *TSDBClient, database string, measurement st
 	), nil
 }
 
+func (d *Datasource) queryCompute(tc *TSDBClient, database string, measurement string, series string, equation string, alias string, t0 uint64, t1 uint64) (*data.Frame, error) {
+	// Generate the COMPUTE operation.
+	op, err := tc.NewComputeOp(database, measurement, series, equation, t0, t1, 0xFFFFFFFFFFFFFFFF)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pull chunks of data from the server and append them to our running data.
+	timestamps := []time.Time{}
+	ptrs := []*float64{}
+	all_nil := true
+	for {
+		rxc, err := op.ReadChunk()
+		if err != nil {
+			return nil, err
+		}
+		if rxc == nil {
+			break
+		}
+
+		for _, time_ns := range rxc.timestamps {
+			timestamps = append(timestamps, time.Unix(0, int64(time_ns)))
+		}
+
+		for i := uint32(0); i < rxc.npoints; i++ {
+			if rxc.IsNull(i) {
+				ptrs = append(ptrs, nil)
+			} else {
+				ptrs = append(ptrs, &rxc.values[i])
+				all_nil = false
+			}
+		}
+	}
+	
+	// If no data, return empty frame.
+	if all_nil {
+		return nil, nil
+	}
+
+	// Return the response.
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
+}
+
 func (d *Datasource) queryMean(tc *TSDBClient, database string, measurement string, series string, field string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
 	// Generate the SUMS operation.
 	op, err := tc.NewSumsOp(database, measurement, series, field, t0, t1, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pull chunks of data from the server and append them to our running data.
+	// TODO: The number of buckets is known a priori...
+	timestamps := []time.Time{}
+	means := []float64{}
+	ptrs := []*float64{}
+	chunk_base := uint64(0)
+	total_points := uint64(0)
+	for {
+		rxc, err := op.ReadChunk()
+		if err != nil {
+			return nil, err
+		}
+		if rxc == nil {
+			break
+		}
+
+		for _, time_ns := range rxc.timestamps {
+			timestamps = append(timestamps, time.Unix(0, int64(time_ns)))
+		}
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			if rxc.npoints[i] == 0 {
+				means = append(means, 0)
+			} else {
+				means = append(means, rxc.sums[i] / float64(rxc.npoints[i]))
+			}
+		}
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			total_points += rxc.npoints[i]
+			if rxc.npoints[i] == 0 {
+				ptrs = append(ptrs, nil)
+			} else {
+				ptrs = append(ptrs, &means[chunk_base + uint64(i)])
+			}
+		}
+
+		chunk_base += uint64(rxc.nbuckets)
+	}
+
+	// If no data, return empty frame.
+	if total_points == 0 {
+		return nil, nil
+	}
+
+	// Return the response.
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
+}
+
+func (d *Datasource) queryComputeMean(tc *TSDBClient, database string, measurement string, series string, equation string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
+	// Generate the SUMS operation.
+	op, err := tc.NewSumComputeOp(database, measurement, series, equation, t0, t1, window_ns)
 	if err != nil {
 		return nil, err
 	}
@@ -440,6 +697,60 @@ func (d *Datasource) queryMinMax(tc *TSDBClient, database string, measurement st
 	), nil
 }
 
+func (d *Datasource) queryComputeMinMax(tc *TSDBClient, database string, measurement string, series string, equation string, alias string, t0 uint64, t1 uint64, window_ns uint64) (*data.Frame, error) {
+	// Generate the SUMS operation.
+	op, err := tc.NewSumComputeOp(database, measurement, series, equation, t0, t1, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pull chunks of data from the server and append them to our running data.
+	// TODO: The number of buckets is known a priori...
+	timestamps := []time.Time{}
+	ptrs := []*float64{}
+	have_non_nil := false
+	for {
+		rxc, err := op.ReadChunk()
+		if err != nil {
+			return nil, err
+		}
+		if rxc == nil {
+			break
+		}
+
+		for i := uint16(0); i < rxc.nbuckets; i++ {
+			// Grafana only has millisecond resolution!  Harsh.
+			timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i])))
+			timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i]) + 1000000))
+			if rxc.npoints[i] == 0 {
+				ptrs = append(ptrs, nil)
+				ptrs = append(ptrs, nil)
+			} else if !have_non_nil {
+				mean := rxc.sums[i] / float64(rxc.npoints[i])
+				ptrs = append(ptrs, &mean)
+				ptrs = append(ptrs, &rxc.maxs[i])
+				ptrs = append(ptrs, &rxc.mins[i])
+				timestamps = append(timestamps, time.Unix(0, int64(rxc.timestamps[i]) + 2000000))
+				have_non_nil = true
+			} else {
+				ptrs = append(ptrs, &rxc.maxs[i])
+				ptrs = append(ptrs, &rxc.mins[i])
+			}
+		}
+	}
+
+	if !have_non_nil {
+		return nil, nil
+	}
+
+	// Return the response.
+	return data.NewFrame(
+		"response",
+		data.NewField("time", nil, timestamps),
+		data.NewField(alias, nil, ptrs),
+	), nil
+}
+
 // CheckHealth handles health checks sent from Grafana to the plugin.
 // The main use case for these health checks is the test button on the
 // datasource configuration page which allows users to verify that
@@ -496,7 +807,7 @@ type databasesResponse struct {
 }
 
 func (d *Datasource) handleDatabases(rw http.ResponseWriter, req *http.Request) {
-	// This *SEEMS* to be unused in the front end.  I think originally we were gonig to
+	// This *SEEMS* to be unused in the front end.  I think originally we were going to
 	// make the database selectable in the QueryEditor, but then we forced each datasource
 	// to be tied to a specific database, so now it has no use.
 	tc, err := NewTSDBClient(d.hostname, d.username, d.password)
@@ -649,23 +960,98 @@ func (d *Datasource) handleFields(rw http.ResponseWriter, req *http.Request) {
 	rw.WriteHeader(http.StatusOK)
 }
 
+// Helper to safely strip port for tls.Config.ServerName validation
+func extractHost(address string) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return address
+	}
+	return host
+}
+
+// IsLocalAddress checks if the host is localhost, a loopback IP, or a private LAN IP.
+func IsLocalAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+
+	hostLower := strings.ToLower(strings.TrimSpace(host))
+
+	// 1. Check for standard local domain naming schemes
+	if hostLower == "localhost" || strings.HasSuffix(hostLower, ".localhost") {
+		return true
+	}
+
+
+	// 2. Check for Docker & OrbStack internal host-routing domains
+	if hostLower == "host.docker.internal" || hostLower == "vm.internal" {
+		return true
+	}
+
+	// 3. Check for standard IP-based local/private infrastructure
+	ip := net.ParseIP(hostLower)
+	if ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	}
+
+	return false
+}
+
+// SmartDial automatically uses TLS for remote connections and falls back to 
+// plaintext TCP for local/internal networks.
+func SmartDial(network, address string, timeout time.Duration) (net.Conn, error) {
+	// Base dialer used to enforce connection timeouts
+	dialer := &net.Dialer{
+		Timeout: timeout,
+	}
+
+	if IsLocalAddress(address) {
+		// fmt.Printf("[SmartDial] Local address detected (%s). Using plaintext TCP.\n", address)
+		backend.Logger.Debug("SmartDial", "local_address", address)
+		return dialer.Dial(network, address)
+	}
+
+	// fmt.Printf("[SmartDial] Remote address detected (%s). Using TLS.\n", address)
+	backend.Logger.Debug("SmartDial", "remote_address", address)
+	
+	// Create a tls.Dialer wrapping our base dialer to inherit the timeout
+	tlsDialer := &tls.Dialer{
+		NetDialer: dialer,
+		Config: &tls.Config{
+			// Setting the ServerName is best practice when wrapping a generic dialer
+			ServerName: extractHost(address),
+		},
+	}
+	
+	return tlsDialer.Dial(network, address)
+}
+
 type TSDBClient struct {
-	conn	*tls.Conn
+	conn	net.Conn
 }
 
 func NewTSDBClient(hostname string, username string, password string) (*TSDBClient, error) {
-	conn, err := tls.Dial("tcp", hostname, &tls.Config{})
+	conn, err := SmartDial("tcp", hostname, 5 * time.Second)
 	if err != nil {
+		backend.Logger.Debug("SmartDial", "err", err)
 		return nil, err
 	}
+
 	client := &TSDBClient{
 		conn: conn,
 	}
-	err = client.Authenticate(username, password)
-	if err != nil {
-		client.Close()
-		return nil, err
+
+	_, isTLS := conn.(*tls.Conn)
+	if isTLS {
+		backend.Logger.Debug("SmartDial", "isTLS", isTLS)
+		err = client.Authenticate(username, password)
+		if err != nil {
+			client.Close()
+			return nil, err
+		}
 	}
+
 	return client, nil
 }
 
@@ -774,7 +1160,10 @@ func (self *TSDBClient) ReadString(size uint16) (string, error) {
 		return "", err
 	}
 	if n != int(size) {
-		panic("Unexpected read length!")
+		return "", &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Unexpected read length!",
+		}
 	}
 	return string(buf), nil
 }
@@ -803,15 +1192,17 @@ func (self *TSDBClient) Authenticate(username string, password string) error {
 		return err
 	}
 	if dt != DT_STATUS_CODE {
-		panic("Expected DT_STATUS_CODE.")
+		return &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_STATUS_CODE.",
+		}
 	}
 	sc, err := self.ReadI32()
 	if err != nil {
 		return err
 	}
 	if sc != 0 {
-		backend.Logger.Debug("Status", "status", sc)
-		panic("Unexpected AUTHENTICATE status")
+		return &DataSourceError{ErrorCode: int(sc)}
 	}
 
 	return nil
@@ -833,15 +1224,17 @@ func (self *TSDBClient) NOP() error {
 		return err
 	}
 	if dt != DT_STATUS_CODE {
-		panic("Expected DT_STATUS_CODE.")
+		return &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_STATUS_CODE.",
+		}
 	}
 	sc, err := self.ReadI32()
 	if err != nil {
 		return err
 	}
 	if sc != 0 {
-		backend.Logger.Debug("Status", "status", sc)
-		panic("Unexpected NOP status")
+		return &DataSourceError{ErrorCode: int(sc)}
 	}
 
 	return nil
@@ -870,15 +1263,17 @@ func (self *TSDBClient) ListDatabases() ([]string, error) {
 				return nil, err
 			}
 			if sc != 0 {
-				backend.Logger.Debug("Status", "status", sc)
-				panic("Unexpected status")
+				return nil, &DataSourceError{ErrorCode: int(sc)}
 			}
 
 			return databases, nil
 		}
 
 		if dt != DT_DATABASE {
-			panic("Expected DT_DATABASE")
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_DATABASE",
+			}
 		}
 		size, err := self.ReadU16()
 		if err != nil {
@@ -922,15 +1317,17 @@ func (self *TSDBClient) ListMeasurements(database string) ([]string, error) {
 				return nil, err
 			}
 			if sc != 0 {
-				backend.Logger.Debug("Status", "status", sc)
-				panic("Unexpected status")
+				return nil, &DataSourceError{ErrorCode: int(sc)}
 			}
 
 			return measurements, nil
 		}
 
 		if dt != DT_MEASUREMENT {
-			panic("Expected DT_MEASUREMENT")
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_MEASUREMENT",
+			}
 		}
 		size, err := self.ReadU16()
 		if err != nil {
@@ -979,15 +1376,17 @@ func (self *TSDBClient) ListSeries(database string, measurement string) ([]strin
 				return nil, err
 			}
 			if sc != 0 {
-				backend.Logger.Debug("Status", "status", sc)
-				panic("Unexpected status")
+				return nil, &DataSourceError{ErrorCode: int(sc)}
 			}
 
 			return series, nil
 		}
 
 		if dt != DT_SERIES {
-			panic("Expected DT_SERIES")
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_MEASUREMENT",
+			}
 		}
 		size, err := self.ReadU16()
 		if err != nil {
@@ -1046,15 +1445,17 @@ func (self *TSDBClient) ListActiveSeries(database string, measurement string, t0
 				return nil, err
 			}
 			if sc != 0 {
-				backend.Logger.Debug("Status", "status", sc)
-				panic("Unexpected status")
+				return nil, &DataSourceError{ErrorCode: int(sc)}
 			}
 
 			return series, nil
 		}
 
 		if dt != DT_SERIES {
-			panic("Expected DT_SERIES")
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_SERIES",
+			}
 		}
 		size, err := self.ReadU16()
 		if err != nil {
@@ -1107,14 +1508,16 @@ func (self *TSDBClient) GetSchema(database string, measurement string) (*Schema,
 				return nil, err
 			}
 			if sc != 0 {
-				backend.Logger.Debug("Status", "status", sc)
-				panic("Unexpected status")
+				return nil, &DataSourceError{ErrorCode: int(sc)}
 			}
 
 			return &schema, nil
 		}
 		if dt != DT_FIELD_TYPE {
-			panic("Expected DT_FIELD_TYPE")
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected Expected DT_FIELD_TYPE",
+			}
 		}
 		field_type, err := self.ReadU32()
 		if err != nil {
@@ -1126,7 +1529,10 @@ func (self *TSDBClient) GetSchema(database string, measurement string) (*Schema,
 			return nil, err
 		}
 		if dt != DT_FIELD_NAME {
-			panic("Expected DT_FIELD_NAME")
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_FIELD_NAME",
+			}
 		}
 		size, err := self.ReadU16()
 		if err != nil {
@@ -1200,11 +1606,13 @@ func (self *TSDBClient) CountPoints(database string, measurement string, series 
 		if err != nil {
 			return nil, err
 		}
-		backend.Logger.Debug("Status", "status", sc)
-		panic("Unexpected status")
+		return nil, &DataSourceError{ErrorCode: int(sc)}
 	}
 	if dt != DT_TIME_FIRST {
-		panic("Expected DT_TIME_FIRST")
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_TIME_FIRST",
+		}
 	}
 	time_first, err := self.ReadU64()
 	if err != nil {
@@ -1216,7 +1624,10 @@ func (self *TSDBClient) CountPoints(database string, measurement string, series 
 		return nil, err
 	}
 	if dt != DT_TIME_LAST {
-		panic("Expected DT_TIME_LAST")
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_TIME_LAST",
+		}
 	}
 	time_last, err := self.ReadU64()
 	if err != nil {
@@ -1228,7 +1639,10 @@ func (self *TSDBClient) CountPoints(database string, measurement string, series 
 		return nil, err
 	}
 	if dt != DT_NPOINTS {
-		panic("Expected DT_NPOINTS")
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_NPOINTS",
+		}
 	}
 	npoints, err := self.ReadU64()
 	if err != nil {
@@ -1240,15 +1654,17 @@ func (self *TSDBClient) CountPoints(database string, measurement string, series 
 		return nil, err
 	}
 	if dt != DT_STATUS_CODE {
-		panic("Expected DT_STATUS_CODE")
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_STATUS_CODE",
+		}
 	}
 	sc, err := self.ReadI32()
 	if err != nil {
 		return nil, err
 	}
 	if sc != 0 {
-		backend.Logger.Debug("Status", "status", sc)
-		panic("Unexpected status")
+		return nil, &DataSourceError{ErrorCode: int(sc)}
 	}
 
 	return &CountResult{
@@ -1410,8 +1826,7 @@ func (self *TSDBClient) NewSelectOp(schema *Schema, series string, field string,
 		if err != nil {
 			return nil, err
 		}
-		backend.Logger.Debug("Status", "status", sc)
-		panic("Unexpected status")
+		return nil, &DataSourceError{ErrorCode: int(sc)}
 	}
 
 	return &op, nil
@@ -1434,8 +1849,10 @@ func (self *SelectOp) ReadChunk() (*RXChunk, error) {
 			return nil, err
 		}
 		if dt != DT_STATUS_CODE {
-			backend.Logger.Debug("Garbage token", "garbage_token", dt)
-			panic("Expected DT_STATUS_CODE")
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_STATUS_CODE",
+			}
 		}
 		
 		sc, err := self.client.ReadI32()
@@ -1443,15 +1860,17 @@ func (self *SelectOp) ReadChunk() (*RXChunk, error) {
 			return nil, err
 		}
 		if sc != 0 {
-			backend.Logger.Debug("Status", "status", sc)
-			panic("Unexpected status")
+			return nil, &DataSourceError{ErrorCode: int(sc)}
 		}
 
 		return nil, nil
 	}
 
 	if self.last_token != DT_CHUNK {
-		panic("Expected DT_CHUNK or DT_END")
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_CHUNK or DT_END",
+		}
 	}
 	npoints, err := self.client.ReadU32()
 	if err != nil {
@@ -1471,8 +1890,10 @@ func (self *SelectOp) ReadChunk() (*RXChunk, error) {
 		return nil, err
 	}
 	if n != int(data_len) {
-		backend.Logger.Debug("Bad read length", "expected len", data_len, "got len", n)
-		panic("Unexpected read length!")
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Unexpected read length!",
+		}
 	}
 
 	self.last_token, err = self.client.ReadU32()
@@ -1603,6 +2024,199 @@ func (self *RXChunk) String() string {
 	return fmt.Sprintf("<npoints %v, bitmap_offset %v>", self.npoints, self.bitmap_offset)
 }
 
+type ComputeOp struct {
+	client		*TSDBClient
+	database	string
+	measurement	string
+	series		string
+	equation   	string
+	t0		uint64
+	t1		uint64
+	limit		uint64
+	last_token	uint32
+}
+
+func (self *TSDBClient) NewComputeOp(database string, measurement string, series string, equation string, t0 uint64, t1 uint64, limit uint64) (*ComputeOp, error) {
+	op := ComputeOp{
+		client:		self,
+		database:	database,
+		measurement:	measurement,
+		series:		series,
+		equation:	equation,
+		t0:		t0,
+		t1:		t1,
+		limit:		limit,
+	}
+
+	err := self.WriteU32(CT_COMPUTE_POINTS_LIMIT)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_SERIES, series)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_COMPUTE_FORMULA, equation)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_NLIMIT, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	op.last_token, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if op.last_token == DT_STATUS_CODE {
+		sc, err := self.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		return nil, &DataSourceError{ErrorCode: int(sc)}
+	}
+
+	return &op, nil
+}
+
+type RXComputeChunk struct {
+	op		*ComputeOp
+	npoints		uint32
+	bitmap_offset	uint32
+	data		[]byte
+	timestamps	[]uint64
+	bitmap		[]uint64
+	values		[]float64
+}
+
+func (self *ComputeOp) ReadChunk() (*RXComputeChunk, error) {
+	if self.last_token == DT_END {
+		dt, err := self.client.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt != DT_STATUS_CODE {
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_STATUS_CODE",
+			}
+		}
+		
+		sc, err := self.client.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		if sc != 0 {
+			return nil, &DataSourceError{ErrorCode: int(sc)}
+		}
+
+		return nil, nil
+	}
+
+	if self.last_token != DT_COMPUTE_CHUNK {
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_COMPUTE_CHUNK or DT_END",
+		}
+	}
+	npoints, err := self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	bitmap_offset, err := self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	data_len, err := self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	data := make([]byte, data_len)
+	n, err := io.ReadFull(self.client.conn, data)
+	if err != nil {
+		return nil, err
+	}
+	if n != int(data_len) {
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Unexpected read length!",
+		}
+	}
+
+	self.last_token, err = self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewComputeChunk(self, npoints, bitmap_offset, data)
+}
+
+func NewComputeChunk(op *ComputeOp, npoints uint32, bitmap_offset uint32, data []byte) (*RXComputeChunk, error) {
+	offset := uint32(0)
+
+	p := unsafe.Pointer(&data[offset])
+	timestamps := unsafe.Slice((*uint64)(p), npoints)
+	offset += npoints * 8
+
+	bitmap_nslots := ((bitmap_offset + npoints + 63) / 64)
+	p = unsafe.Pointer(&data[offset])
+	bitmap := unsafe.Slice((*uint64)(p), bitmap_nslots)
+	offset += bitmap_nslots * 8
+
+	p = unsafe.Pointer(&data[offset])
+	values := unsafe.Slice((*float64)(p), npoints)
+	offset += npoints * 8
+
+	return &RXComputeChunk{
+		op:		op,
+		npoints:	npoints,
+		bitmap_offset:	bitmap_offset,
+		data:		data,
+		timestamps:	timestamps,
+		bitmap:		bitmap,
+		values:		values,
+	}, nil
+}
+
+func (self *RXComputeChunk) IsNull(i uint32) bool {
+	bitmap_index := (self.bitmap_offset + i) / 64
+	shift := (self.bitmap_offset + i) % 64
+	return (self.bitmap[bitmap_index] & (1 << shift)) == 0
+}
+
+func (self *RXComputeChunk) String() string {
+	return fmt.Sprintf("<npoints %v, bitmap_offset %v>", self.npoints, self.bitmap_offset)
+}
+
 type SumsOp struct {
 	client		*TSDBClient
 	database	string
@@ -1681,8 +2295,7 @@ func (self *TSDBClient) NewSumsOp(database string, measurement string, series st
 		if err != nil {
 			return nil, err
 		}
-		backend.Logger.Debug("Status", "status", sc)
-		panic("Unexpected status")
+		return nil, &DataSourceError{ErrorCode: int(sc)}
 	}
 
 	return &op, nil
@@ -1706,8 +2319,10 @@ func (self *SumsOp) ReadChunk() (*RXSumsChunk, error) {
 			return nil, err
 		}
 		if dt != DT_STATUS_CODE {
-			backend.Logger.Debug("Garbage token", "garbage_token", dt)
-			panic("Expected DT_STATUS_CODE")
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_STATUS_CODE",
+			}
 		}
 		
 		sc, err := self.client.ReadI32()
@@ -1715,15 +2330,17 @@ func (self *SumsOp) ReadChunk() (*RXSumsChunk, error) {
 			return nil, err
 		}
 		if sc != 0 {
-			backend.Logger.Debug("Status", "status", sc)
-			panic("Unexpected status")
+			return nil, &DataSourceError{ErrorCode: int(sc)}
 		}
 
 		return nil, nil
 	}
 
 	if self.last_token != DT_SUMS_CHUNK {
-		panic("Expected DT_SUMS_CHUNK or DT_END")
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_SUMS_CHUNK or DT_END",
+		}
 	}
 	chunk_npoints, err := self.client.ReadU16()
 	if err != nil {
@@ -1737,8 +2354,10 @@ func (self *SumsOp) ReadChunk() (*RXSumsChunk, error) {
 		return nil, err
 	}
 	if n != int(data_len) {
-		backend.Logger.Debug("Bad read length", "expected len", data_len, "got len", n)
-		panic("Unexpected read length!")
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Unexpected read length!",
+		}
 	}
 
 	self.last_token, err = self.client.ReadU32()
@@ -1939,6 +2558,191 @@ func NewSumsChunk(op *SumsOp, chunk_npoints uint16, data []byte) (*RXSumsChunk, 
 		sums:		sums,
 		mins:           mins,
 		maxs:           maxs,
+		npoints:	npoints,
+	}, nil
+}
+
+type SumComputeOp struct {
+	client		*TSDBClient
+	database	string
+	measurement	string
+	series		string
+	equation	string
+	t0		uint64
+	t1		uint64
+	window_ns	uint64
+	last_token	uint32
+}
+
+func (self *TSDBClient) NewSumComputeOp(database string, measurement string, series string, equation string, t0 uint64, t1 uint64, window_ns uint64) (*SumComputeOp, error) {
+	op := SumComputeOp{
+		client:		self,
+		database:	database,
+		measurement:	measurement,
+		series:		series,
+		equation:	equation,
+		t0:		t0,
+		t1:		t1,
+		window_ns:	window_ns,
+	}
+
+	err := self.WriteU32(CT_SUM_COMPUTE_POINTS)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_DATABASE, database)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_MEASUREMENT, measurement)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_SERIES, series)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteStringToken(DT_COMPUTE_FORMULA, equation)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_FIRST, t0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_TIME_LAST, t1)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU64Token(DT_WINDOW_NS, window_ns)
+	if err != nil {
+		return nil, err
+	}
+
+	err = self.WriteU32(DT_END)
+	if err != nil {
+		return nil, err
+	}
+
+	op.last_token, err = self.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+	if op.last_token == DT_STATUS_CODE {
+		sc, err := self.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		return nil, &DataSourceError{ErrorCode: int(sc)}
+	}
+
+	return &op, nil
+}
+
+type RXSumComputeChunk struct {
+	op		*SumComputeOp
+	nbuckets	uint16
+	timestamps	[]uint64
+	sums		[]float64
+	mins		[]float64
+	maxs		[]float64
+	npoints		[]uint64
+}
+
+func (self *SumComputeOp) ReadChunk() (*RXSumComputeChunk, error) {
+	if self.last_token == DT_END {
+		dt, err := self.client.ReadU32()
+		if err != nil {
+			return nil, err
+		}
+		if dt != DT_STATUS_CODE {
+			return nil, &BackendError{
+				Status: backend.StatusInternal,
+				Message: "Expected DT_STATUS_CODE",
+			}
+		}
+		
+		sc, err := self.client.ReadI32()
+		if err != nil {
+			return nil, err
+		}
+		if sc != 0 {
+			return nil, &DataSourceError{ErrorCode: int(sc)}
+		}
+
+		return nil, nil
+	}
+
+	if self.last_token != DT_SUM_COMPUTE_CHUNK {
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Expected DT_SUMS_CHUNK or DT_END",
+		}
+	}
+	chunk_npoints, err := self.client.ReadU16()
+	if err != nil {
+		return nil, err
+	}
+
+	data_len := chunk_npoints * (8 * 5)
+	data := make([]byte, data_len)
+	n, err := io.ReadFull(self.client.conn, data)
+	if err != nil {
+		return nil, err
+	}
+	if n != int(data_len) {
+		return nil, &BackendError{
+			Status: backend.StatusInternal,
+			Message: "Unexpected read length!",
+		}
+	}
+
+	self.last_token, err = self.client.ReadU32()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewSumComputeChunk(self, chunk_npoints, data)
+}
+
+func NewSumComputeChunk(op *SumComputeOp, chunk_npoints uint16, data []byte) (*RXSumComputeChunk, error) {
+	offset := uint32(0)
+	dpos := uint32(chunk_npoints) * 8
+
+	p := unsafe.Pointer(&data[offset])
+	timestamps := unsafe.Slice((*uint64)(p), chunk_npoints)
+	offset += dpos
+
+	p = unsafe.Pointer(&data[offset])
+	sums := unsafe.Slice((*float64)(p), chunk_npoints)
+	offset += dpos
+
+	p = unsafe.Pointer(&data[offset])
+	mins := unsafe.Slice((*float64)(p), chunk_npoints)
+	offset += dpos
+
+	p = unsafe.Pointer(&data[offset])
+	maxs := unsafe.Slice((*float64)(p), chunk_npoints)
+	offset += dpos
+
+	p = unsafe.Pointer(&data[offset])
+	npoints := unsafe.Slice((*uint64)(p), chunk_npoints)
+	offset += dpos
+
+	return &RXSumComputeChunk{
+		op:		op,
+		nbuckets:	chunk_npoints,
+		timestamps:	timestamps,
+		sums:		sums,
+		mins:		mins,
+		maxs:		maxs,
 		npoints:	npoints,
 	}, nil
 }

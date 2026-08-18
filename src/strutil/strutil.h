@@ -90,6 +90,8 @@ namespace str
     inline std::vector<std::string>
     split(const std::string& s, const char* sep = NULL)
     {
+        if (s.empty())
+            return std::vector<std::string>();
         if (!sep || sep[0] == '\0')
             return split_whitespace(s);
 
@@ -108,6 +110,28 @@ namespace str
         }
 
         return v;
+    }
+
+    // Joins the string, using sep as the separator.
+    inline std::string
+    join(const std::vector<std::string>& v, const char* sep = " ")
+    {
+        std::string s;
+
+        if (v.empty())
+            return s;
+
+        s = v[0];
+        if (v.size() == 1)
+            return s;
+
+        for (size_t i=1; i<v.size(); ++i)
+        {
+            s += sep;
+            s += v[i];
+        }
+
+        return s;
     }
 
     // Returns true if all charactes in the string are printable.

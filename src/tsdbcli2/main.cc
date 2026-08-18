@@ -3,8 +3,11 @@
 #include "parse.h"
 #include "parse_types.h"
 #include "print_op_results.h"
+#include "print_compute_results.h"
 #include <version.h>
 #include <strutil/strutil.h>
+#include <shunter/shunting_yard.h>
+#include <shunter/shunting_functions.h>
 #include <libtsdb/tsdb.h>
 #include <editline/include/editline.h>
 
@@ -197,6 +200,114 @@ handle_select_3(
     // Handles:
     // SELECT <fields> FROM <database/measurement/series> [WHERE ...time_ns...]
     handle_select_1(fs,fk,ss,tr,select_limit{(uint64_t)-1});
+}
+
+static void
+handle_select_4(
+    const FROM_keyword fk,
+    const series_specifier& ss,
+    const select_time_range& tr,
+    const select_limit& n)
+{
+    // Handles:
+    // SELECT FROM <database/measurement/series>
+    //      [WHERE ...time_ns...] LIMIT N
+    handle_select_1(fields_list(),fk,ss,tr,n);
+}
+
+static void
+handle_select_5(
+    const FROM_keyword fk,
+    const series_specifier& ss,
+    const select_time_range& tr,
+    const select_last& n)
+{
+    // Handles:
+    // SELECT FROM <database/measurement/series>
+    //      [WHERE ...time_ns...] LAST N
+    handle_select_2(fields_list(),fk,ss,tr,n);
+}
+
+static void
+handle_select_6(
+    const FROM_keyword fk,
+    const series_specifier& ss,
+    const select_time_range& tr)
+{
+    // Handles:
+    // SELECT FROM <database/measurement/series> [WHERE ...time_ns...]
+    handle_select_3(fields_list(),fk,ss,tr);
+}
+
+static void
+handle_compute_1(
+    const quoted_string& qs,
+    const FROM_keyword,
+    const series_specifier& ss,
+    const select_time_range& tr,
+    const select_limit& n)
+{
+    // Handles:
+    // COMPUTE <quoted string> FROM <database/measurement/series>
+    //      [WHERE ...time_ns...] LIMIT N
+    shunting_yard::shunter shunter(&qs.string[1],qs.string.size() - 2);
+    shunting_functions::populate(shunter);
+    std::vector<std::string> field_names;
+    for (const auto& v : shunter.variables)
+        field_names.push_back(v.name);
+
+    tsdb::database db(*root,ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    tsdb::series_read_lock read_lock(m,ss.series);
+    tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
+    tsdb::select_op_first op(read_lock,ss.series,field_names,tr.t0,tr.t1,n.n);
+    printf("COMPUTE %s\n",shunter.to_string().c_str());
+    print_compute_results(op,wq,shunter,n.n);
+}
+
+static void
+handle_compute_2(
+    const quoted_string& qs,
+    const FROM_keyword,
+    const series_specifier& ss,
+    const select_time_range& tr,
+    const select_last& n)
+{
+    // Handles:
+    // COMPUTE <quoted string> FROM <database/measurement/series>
+    //      [WHERE ...time_ns...] LAST N
+    shunting_yard::shunter shunter(&qs.string[1],qs.string.size() - 2);
+    shunting_functions::populate(shunter);
+    std::vector<std::string> field_names;
+    for (const auto& v : shunter.variables)
+        field_names.push_back(v.name);
+
+    tsdb::database db(*root,ss.database);
+    tsdb::measurement m(db,ss.measurement);
+    tsdb::series_read_lock read_lock(m,ss.series);
+    tsdb::wal_query wq(read_lock,tr.t0,tr.t1);
+    if (wq.nentries > n.n)
+    {
+        wq._begin += (wq.nentries - n.n);
+        wq.nentries = n.n;
+    }
+    tsdb::select_op_last op(read_lock,ss.series,field_names,tr.t0,tr.t1,
+                            n.n - wq.nentries);
+    printf("COMPUTE %s\n",shunter.to_string().c_str());
+    print_compute_results(op,wq,shunter,n.n);
+}
+
+static void
+handle_compute_3(
+    const quoted_string& qs,
+    const FROM_keyword fk,
+    const series_specifier& ss,
+    const select_time_range& tr)
+{
+    // Handles:
+    // COMPUTE <quoted string> FROM <database/measurement/series>
+    //      [WHERE ...time_ns...]
+    handle_compute_1(qs,fk,ss,tr,select_limit{(uint64_t)-1});
 }
 
 static void
@@ -403,7 +514,10 @@ static const command_handler command_handlers[] =
     {"LIST ACTIVE SERIES",{XLATE(handle_list_active_series)}},
     {"COUNT",{XLATE(handle_count)}},
     {"SELECT",{XLATE(handle_select_1),XLATE(handle_select_2),
-               XLATE(handle_select_3)}},
+               XLATE(handle_select_3),XLATE(handle_select_4),
+               XLATE(handle_select_5),XLATE(handle_select_6)}},
+    {"COMPUTE",{XLATE(handle_compute_1),XLATE(handle_compute_2),
+                XLATE(handle_compute_3)}},
     {"MEAN",{XLATE(handle_mean)}},
     {"INTEGRATE",{XLATE(handle_integrate)}},
     {"DELETE",{XLATE(handle_delete)}},
@@ -436,6 +550,39 @@ handle_command(
     printf("Failed to parse %s:\n",ch.keyword.c_str());
     for (auto& e : exceptions)
         printf("    %s\n",e.what());
+}
+
+std::vector<std::string>
+splitcmd(const std::string& s)
+{
+    std::vector<std::string> v;
+
+    size_t i = s.find_first_not_of("\n\r\t\f ");
+    while (i != std::string::npos)
+    {
+        size_t j;
+        if (s[i] == '"')
+        {
+            j = s.find('"',i + 1);
+            if (j == std::string::npos)
+                throw parse_exception("Unterminated quoted string.");
+            ++j;
+        }
+        else
+        {
+            j = s.find_first_of("\n\r\t\f ",i);
+            if (j == std::string::npos)
+            {
+                v.push_back(str::slice(s,i));
+                break;
+            }
+        }
+        v.push_back(str::slice(s,i,j));
+
+        i = s.find_first_not_of("\n\r\t\f ",j);
+    }
+
+    return v;
 }
 
 int
@@ -555,7 +702,7 @@ main(int argc, const char* argv[])
 
             found = true;
             cmd.erase(0,ch.keyword.size());
-            auto v = str::split(cmd);
+            auto v = splitcmd(cmd);
             try
             {
                 handle_command(ch,v.begin(),v.end());

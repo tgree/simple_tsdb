@@ -28,34 +28,42 @@ enum command_token : uint32_t
     CT_INTEGRATE_POINTS     = 0x75120AD9,
     CT_NOP                  = 0x22CF1296,
     CT_AUTHENTICATE         = 0x0995EBDA,
+    CT_COMPUTE_POINTS_LIMIT = 0x1FFF763F,
+    CT_COMPUTE_POINTS_LAST  = 0xE3D1252C,
+    CT_SUM_COMPUTE_POINTS   = 0xBF6322ED,
+    CT_GET_VERSION          = 0x3BF8F894,
 };
 
 const char* get_command_token_str(command_token ct);
 
 enum data_token : uint32_t
 {
-    DT_DATABASE         = 0x39385A4F,   // <database>
-    DT_MEASUREMENT      = 0xDC1F48F3,   // <measurement>
-    DT_SERIES           = 0x4E873749,   // <series>
-    DT_TYPED_FIELDS     = 0x02AC7330,   // <f1>/<type1>,<f2>/<type2>,...
-    DT_FIELD_LIST       = 0xBB62ACC3,   // <f1>,<f2>,...
-    DT_CHUNK            = 0xE4E8518F,   // <chunk header>, then data
-    DT_TIME_FIRST       = 0x55BA37B4,   // <t0> (uint64_t)
-    DT_TIME_LAST        = 0xC4EE45BA,   // <t1> (uint64_t)
-    DT_NLIMIT           = 0xEEF2BB02,   // LIMIT <N> (uint64_t)
-    DT_NLAST            = 0xD74F10A3,   // LAST <N> (uint64_t)
-    DT_END              = 0x4E29ADCC,   // end of command
-    DT_STATUS_CODE      = 0x8C8C07D9,   // <errno> (uint32_t)
-    DT_FIELD_TYPE       = 0x7DB40C2A,   // <type> (uint32_t)
-    DT_FIELD_NAME       = 0x5C0D45C1,   // <name>
-    DT_READY_FOR_CHUNK  = 0x6000531C,   // <max_data_len> (uint32_t)
-    DT_NPOINTS          = 0x5F469D08,   // <npoints> (uint64_t)
-    DT_WINDOW_NS        = 0x76F0C374,   // <window_ns> (uint64_t)
-    DT_SUMS_CHUNK       = 0x53FC76FC,   // <chunk_npoints> (uint16_t)
-    DT_INTEGRALS        = 0x78760A3D,   // <integral1> <integral2> ...
-    DT_INTEGRAL_BITMAP  = 0xD3760722,   // <bitmap> (uint64_t)
-    DT_USERNAME         = 0x6E39D1DE,   // <username>
-    DT_PASSWORD         = 0x602E5B01,   // <password>
+    DT_DATABASE          = 0x39385A4F,  // <database>
+    DT_MEASUREMENT       = 0xDC1F48F3,  // <measurement>
+    DT_SERIES            = 0x4E873749,  // <series>
+    DT_TYPED_FIELDS      = 0x02AC7330,  // <f1>/<type1>,<f2>/<type2>,...
+    DT_FIELD_LIST        = 0xBB62ACC3,  // <f1>,<f2>,...
+    DT_CHUNK             = 0xE4E8518F,  // <chunk header>, then data
+    DT_TIME_FIRST        = 0x55BA37B4,  // <t0> (uint64_t)
+    DT_TIME_LAST         = 0xC4EE45BA,  // <t1> (uint64_t)
+    DT_NLIMIT            = 0xEEF2BB02,  // LIMIT <N> (uint64_t)
+    DT_NLAST             = 0xD74F10A3,  // LAST <N> (uint64_t)
+    DT_END               = 0x4E29ADCC,  // end of command
+    DT_STATUS_CODE       = 0x8C8C07D9,  // <errno> (uint32_t)
+    DT_FIELD_TYPE        = 0x7DB40C2A,  // <type> (uint32_t)
+    DT_FIELD_NAME        = 0x5C0D45C1,  // <name>
+    DT_READY_FOR_CHUNK   = 0x6000531C,  // <max_data_len> (uint32_t)
+    DT_NPOINTS           = 0x5F469D08,  // <npoints> (uint64_t)
+    DT_WINDOW_NS         = 0x76F0C374,  // <window_ns> (uint64_t)
+    DT_SUMS_CHUNK        = 0x53FC76FC,  // <chunk_npoints> (uint16_t)
+    DT_INTEGRALS         = 0x78760A3D,  // <integral1> <integral2> ...
+    DT_INTEGRAL_BITMAP   = 0xD3760722,  // <bitmap> (uint64_t)
+    DT_USERNAME          = 0x6E39D1DE,  // <username>
+    DT_PASSWORD          = 0x602E5B01,  // <password>
+    DT_COMPUTE_FORMULA   = 0x29C662C7,  // <formula>
+    DT_COMPUTE_CHUNK     = 0x12FF8CB9,  // <chunk header>, then data
+    DT_SUM_COMPUTE_CHUNK = 0x5C9E1B82,  // <chunk header>, then data
+    DT_VERSION_INFO      = 0x2F7C3968,  // <version info>
 };
 
 struct chunk_header
@@ -65,6 +73,12 @@ struct chunk_header
     uint32_t    data_len;
     uint8_t     data[];
 };
+
+struct _version_info
+{
+    uint16_t    version;
+};
+KASSERT(sizeof(_version_info) == 2);
 
 struct parsed_data_token
 {
@@ -141,19 +155,16 @@ parse_cmd(Conn& conn, const command_syntax<Conn&, Args...>& cs,
             case DT_FIELD_LIST:
             case DT_USERNAME:
             case DT_PASSWORD:
+            case DT_COMPUTE_FORMULA:
+            case DT_VERSION_INFO:
                 pdt.len = conn.s.template pop<uint16_t>();
                 if (pdt.len >= 1024)
                 {
-                    printf("String length %zu too long.\n",pdt.len);
+                    printf("Data length %zu too long.\n",pdt.len);
                     throw futil::errno_exception(EINVAL);
                 }
                 pdt.data = (char*)malloc(pdt.len);
                 conn.s.recv_all((char*)pdt.data,pdt.len);
-                tokens.push_back(std::move(pdt));
-            break;
-
-            case DT_CHUNK:
-                throw futil::errno_exception(ENOTSUP);
                 tokens.push_back(std::move(pdt));
             break;
 

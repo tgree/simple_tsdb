@@ -338,10 +338,18 @@ class tmock_test
         {
         }
 
-        auto entries = m1.gen_entries({});
+        auto entries = m1.gen_all_entries();
         tmock::assert_equiv(entries.size(),test_fields.size());
         for (size_t i=0; i<entries.size(); ++i)
             tmock::assert_mem_same(*entries[i],test_fields[i]);
+
+        entries = m1.gen_entries({"*"});
+        tmock::assert_equiv(entries.size(),test_fields.size());
+        for (size_t i=0; i<entries.size(); ++i)
+            tmock::assert_mem_same(*entries[i],test_fields[i]);
+
+        entries = m1.gen_entries({});
+        tmock::assert_equiv(entries.size(),0);
 
         entries = m1.gen_entries({"field3","field1"});
         tmock::assert_equiv(entries.size(),2UL);

@@ -4,7 +4,9 @@ import socket
 import struct
 import math
 import ssl
+import inspect
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -26,6 +28,11 @@ CT_SUM_POINTS           = 0x90305A39
 CT_INTEGRATE_POINTS     = 0x75120AD9
 CT_NOP                  = 0x22CF1296
 CT_AUTHENTICATE         = 0x0995EBDA
+CT_COMPUTE_POINTS_LIMIT = 0x1FFF763F
+CT_COMPUTE_POINTS_LAST  = 0xE3D1252C
+CT_SUM_COMPUTE_POINTS   = 0xBF6322ED
+CT_GET_VERSION          = 0x3BF8F894
+
 
 # Data tokens
 DT_DATABASE             = 0x39385A4F
@@ -50,6 +57,10 @@ DT_INTEGRALS            = 0x78760A3D
 DT_INTEGRAL_BITMAP      = 0xD3760722
 DT_USERNAME             = 0x6E39D1DE
 DT_PASSWORD             = 0x602E5B01
+DT_COMPUTE_FORMULA      = 0x29C662C7
+DT_COMPUTE_CHUNK        = 0x12FF8CB9
+DT_SUM_COMPUTE_CHUNK    = 0x5C9E1B82
+DT_VERSION_INFO         = 0x2F7C3968
 
 
 # Status codes.
@@ -83,6 +94,13 @@ class StatusCode:
     INVALID_CHUNK_SIZE           = -27
     CORRUPT_MEASUREMENT          = -28
     INVALID_TIME_FIRST           = -29
+    INVALID_NUMBER               = -30
+    INVALID_FORMULA_CHARACTER    = -31
+    UNEXPECTED_TOKEN             = -32
+    SHUNT_MISSING_FUNC_ARG       = -33
+    MISSING_PAREN                = -34
+    SHUNT_MISSING_OP_ARG         = -35
+    SHUNT_EXTRA_EXPRESSIONS      = -36
 
 
 class StatusException(Exception):
@@ -149,6 +167,11 @@ def timestamp_to_int(t):
     raise TypeError('Cannot convert type %s to time_ns.' % type(t))
 
 
+class VersionInfo:
+    def __init__(self, version):
+        self.version = version
+
+
 class Field:
     def __init__(self, field_type, name):
         self.field_type = field_type
@@ -202,6 +225,12 @@ class Schema:
                          for f in self.fields])
 
     def pack_points(self, points, index, n):
+        '''
+        Packs all of the fields defined in the schema into a suitable bytes
+        object for transmission.  If the points have fields that are not part
+        of the schema, those fields are silently ignored - it is not an error
+        to submit points with extra fields.
+        '''
         timestamps = [points[i]['time_ns'] for i in range(index, index + n)]
         timestamps = np.array(timestamps, dtype=np.uint64)
         data = b''
@@ -319,9 +348,12 @@ class RXChunk:
 class SelectOP:
     def __init__(self, client, ct_op, database, measurement, series, schema,
                  fields, t0, t1, N):
+        fields = None if fields == ['*'] else fields
+
         self.client = client
         self.schema = schema
-        self.fields = fields or [se.name for se in schema.fields]
+        self.fields = (fields if fields is not None
+                       else [se.name for se in schema.fields])
 
         dt_n = DT_NLAST if ct_op == CT_SELECT_POINTS_LAST else DT_NLIMIT
 
@@ -368,6 +400,97 @@ class SelectOP:
         self.last_token = self.client._recv_u32()
 
         return RXChunk(self.schema, self.fields, npoints, bitmap_offset, data)
+
+
+class RXComputeChunk:
+    def __init__(self, npoints, bitmap_offset, data):
+        self.npoints       = npoints
+        self.bitmap_offset = bitmap_offset
+        self.data          = data
+
+        data_view       = memoryview(data)
+        self.timestamps = np.frombuffer(data_view[0:npoints*8], dtype=np.uint64)
+        offset          = npoints*8
+
+        bitmap_nbytes = math.ceil((bitmap_offset + npoints) / 64) * 8
+        self.bitmap   = data_view[offset:offset + bitmap_nbytes]
+        offset       += bitmap_nbytes
+
+        values_nbytes = npoints * 8
+        self.values   = np.frombuffer(data_view[offset:offset + values_nbytes],
+                                      dtype=np.float64)
+        offset += values_nbytes
+
+        assert offset == len(data)
+
+    def __len__(self):
+        return len(self.values)
+
+    def __getitem__(self, i):
+        if i < 0 or i >= len(self.values):
+            raise IndexError
+
+        if not self.get_bitmap_bit(i):
+            return None
+        return self.values[i]
+
+    def get_bitmap_bit(self, i):
+        bitmap_i = (self.bitmap_offset + i) // 64
+        shift    = (self.bitmap_offset + i) % 64
+        v        = int(self.bitmap[bitmap_i])
+        return v & (1 << shift)
+
+
+class ComputeOP:
+    def __init__(self, client, ct_op, database, measurement, series, equation,
+                 t0, t1, N):
+        self.client = client
+
+        dt_n = DT_NLAST if ct_op == CT_COMPUTE_POINTS_LAST else DT_NLIMIT
+
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        equation = equation.encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIH%usIQIQIQI' % (len(database),
+                                                             len(measurement),
+                                                             len(series),
+                                                             len(equation)),
+                          ct_op,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_COMPUTE_FORMULA, len(equation), equation,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          dt_n, N,
+                          DT_END)
+        self.client._sendall(cmd)
+
+        dt = self.client._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self.client._recv_i32())
+
+        self.last_token = dt
+
+    def read_chunk(self):
+        if self.last_token == DT_END:
+            if self.client._recv_u32() != DT_STATUS_CODE:
+                raise ProtocolException('Expected DT_STATUS_CODE')
+            if self.client._recv_i32() != 0:
+                raise ProtocolException('Expected status 0')
+            return None
+
+        if self.last_token != DT_COMPUTE_CHUNK:
+            raise ProtocolException('Expected DT_COMPUTE_CHUNK')
+        npoints       = self.client._recv_u32()
+        bitmap_offset = self.client._recv_u32()
+        data_len      = self.client._recv_u32()
+        data          = self.client._recvall(data_len)
+
+        self.last_token = self.client._recv_u32()
+
+        return RXComputeChunk(npoints, bitmap_offset, data)
 
 
 class RXSumsChunk:
@@ -446,6 +569,83 @@ class SumsOP:
         return RXSumsChunk(self.fields, timestamps, sums, npoints)
 
 
+class RXSumComputeChunk:
+    def __init__(self, timestamps, sums, mins, maxs, npoints):
+        self.timestamps = timestamps
+        self.sums       = sums
+        self.mins       = mins
+        self.maxs       = maxs
+        self.npoints    = npoints
+
+
+class SumComputeOP:
+    def __init__(self, client, database, measurement, series, equation, t0, t1,
+                 window_ns):
+        self.client    = client
+        self.window_ns = window_ns
+
+        database = database.encode()
+        measurement = measurement.encode()
+        series = series.encode()
+        equation = equation.encode()
+        cmd = struct.pack('<IIH%usIH%usIH%usIH%usIQIQIQI' % (len(database),
+                                                             len(measurement),
+                                                             len(series),
+                                                             len(equation)),
+                          CT_SUM_COMPUTE_POINTS,
+                          DT_DATABASE, len(database), database,
+                          DT_MEASUREMENT, len(measurement), measurement,
+                          DT_SERIES, len(series), series,
+                          DT_COMPUTE_FORMULA, len(equation), equation,
+                          DT_TIME_FIRST, t0,
+                          DT_TIME_LAST, t1,
+                          DT_WINDOW_NS, window_ns,
+                          DT_END)
+        self.client._sendall(cmd)
+
+        dt = self.client._recv_u32()
+        if dt == DT_STATUS_CODE:
+            raise StatusException(self.client._recv_i32())
+
+        self.last_token = dt
+
+    def read_chunk(self):
+        if self.last_token == DT_END:
+            if self.client._recv_u32() != DT_STATUS_CODE:
+                raise ProtocolException('Expected DT_STATUS_CODE')
+            if self.client._recv_i32() != 0:
+                raise ProtocolException('Expected status 0')
+            return None
+
+        if self.last_token != DT_SUM_COMPUTE_CHUNK:
+            raise ProtocolException('Expected DT_SUMS_CHUNK')
+        chunk_npoints = self.client._recv_u16()
+        data_len      = chunk_npoints * (8 * 5)
+        data          = self.client._recvall(data_len)
+        data_view     = memoryview(data)
+        pos           = 0
+        sums          = []
+        npoints       = []
+        timestamps    = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.uint64)
+        pos          += 8 * chunk_npoints
+        sums          = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.float64)
+        pos          += 8 * chunk_npoints
+        mins          = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.float64)
+        pos          += 8 * chunk_npoints
+        maxs          = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.float64)
+        pos          += 8 * chunk_npoints
+        npoints       = np.frombuffer(data_view[pos:pos + 8 * chunk_npoints],
+                                      dtype=np.uint64)
+
+        self.last_token = self.client._recv_u32()
+
+        return RXSumComputeChunk(timestamps, sums, mins, maxs, npoints)
+
+
 class CountResult:
     def __init__(self, time_first, time_last, npoints):
         self.time_first = time_first
@@ -494,11 +694,11 @@ class Connection:
                 Connection.DEFAULT_SSL_CTX = ssl.create_default_context()
             self.socket = Connection.DEFAULT_SSL_CTX.wrap_socket(
                     self.raw_socket, server_hostname=host)
-            self.authenticate(*credentials)
+            self._authenticate(*credentials)
         else:
             self.socket = self.raw_socket
 
-    def close(self):
+    def _close(self):
         self.socket.close()
 
     def _sendall(self, data):
@@ -538,7 +738,7 @@ class Connection:
         if sc != 0:
             raise StatusException(sc)
 
-    def authenticate(self, username, password):
+    def _authenticate(self, username, password):
         username = username.encode()
         password = password.encode()
         cmd = struct.pack('<IIH%usIH%usI' % (len(username),
@@ -548,6 +748,24 @@ class Connection:
                           DT_PASSWORD, len(password), password,
                           DT_END)
         self._transact(cmd)
+
+    def _get_version_info(self):
+        cmd = struct.pack('<II',
+                          CT_GET_VERSION,
+                          DT_END)
+        self._sendall(cmd)
+
+        if self._recv_u32() != DT_VERSION_INFO:
+            raise ProtocolException('Expected DT_VERSION_INFO')
+        size = self._recv_u16()
+        data = self._recvall(size)
+        if self._recv_u32() != DT_STATUS_CODE:
+            raise ProtocolException('Expected DT_STATUS_CODE')
+        if self._recv_i32() != 0:
+            raise ProtocolException('Expected status 0')
+
+        version = struct.unpack_from('<H', data, offset=0)[0]
+        return VersionInfo(version)
 
     def create_database(self, database):
         database = database.encode()
@@ -784,17 +1002,46 @@ class Connection:
         if sc != 0:
             raise StatusException(sc)
 
-    def select_points(self, database, measurement, series, schema, fields, t0,
-                      t1, N):
+    def select_points(self, database, measurement, series, schema, fields=None,
+                      t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        '''
+        Selects points from the database.  Specify fields as None to get all
+        fields.  Specify fields as [] to get just timestamps.  Otherwise,
+        specify fields as a list of field names to retrieve.  Retrieves the
+        first N points that satisfy the query.
+        '''
         return SelectOP(self, CT_SELECT_POINTS_LIMIT, database, measurement,
                         series, schema, fields, t0, t1, N)
 
     def select_last_points(self, database, measurement, series, schema,
-                           fields, t0, t1, N):
+                           fields=None, t0=0, t1=0xFFFFFFFFFFFFFFFF,
+                           N=0xFFFFFFFFFFFFFFFF):
+        '''
+        Selects points from the database.  Specify fields as None to get all
+        fields.  Specify fields as [] to get just timestamps.  Otherwise,
+        specify fields as a list of field names to retrieve.  Retrieves the
+        last N points that satisfy the query.
+        '''
         return SelectOP(self, CT_SELECT_POINTS_LAST, database, measurement,
                         series, schema, fields, t0, t1, N)
 
-    def count_points(self, database, measurement, series, t0, t1):
+    def compute_points(self, database, measurement, series, equation, t0=0,
+                       t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        return ComputeOP(self, CT_COMPUTE_POINTS_LIMIT, database, measurement,
+                         series, equation, t0, t1, N)
+
+    def compute_last_points(self, database, measurement, series, equation,
+                            t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
+        return ComputeOP(self, CT_COMPUTE_POINTS_LAST, database, measurement,
+                         series, equation, t0, t1, N)
+
+    def sum_compute_points(self, database, measurement, series, equation, t0,
+                           t1, window_ns):
+        return SumComputeOP(self, database, measurement, series, equation, t0,
+                            t1, window_ns)
+
+    def count_points(self, database, measurement, series, t0=0,
+                     t1=0xFFFFFFFFFFFFFFFF):
         database = database.encode()
         measurement = measurement.encode()
         series = series.encode()
@@ -901,8 +1148,19 @@ class GetAllPointsMeanResult:
         self.columns = {name : [] for name in fields}
 
 
-class Client:
+# Fake pylint into thinking that Client has all the methods of Connection since
+# we will be generating them all dynamically.
+if TYPE_CHECKING:
+    class ClientBase(Connection):
+        pass
+else:
+    class ClientBase:
+        pass
+
+
+class Client(ClientBase):
     def __init__(self, host='127.0.0.1', port=4000, credentials=None):
+        super().__init__()
         self.host        = host
         self.port        = port
         self.credentials = credentials
@@ -916,192 +1174,37 @@ class Client:
     def close(self):
         if self.conn is not None:
             try:
-                self.conn.close()
+                self.conn._close()
             finally:
                 self.conn = None
 
-    def create_database(self, database):
+    def get_version_info(self):
         if self.conn is None:
             self.connect()
 
         try:
-            return self.conn.create_database(database)
-        except ProtocolException:
-            self.close()
-            raise
-
-    def create_measurement(self, database, measurement, typed_fields):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.create_measurement(database, measurement,
-                                                typed_fields)
+            return self.conn._get_version_info()
+        except ConnectionClosedException:
+            # Versions before 1.1 don't handle CT_GET_VERSION and shut down the
+            # connection immediately.
+            self.conn = None
+            return VersionInfo(0x100)
         except StatusException:
             raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def list_databases(self):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.list_databases()
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def list_measurements(self, database):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.list_measurements(database)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def list_series(self, database, measurement):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.list_series(database, measurement)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def list_active_series(self, database, measurement, t0, t1):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.list_active_series(database, measurement, t0, t1)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def get_schema(self, database, measurement):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.get_schema(database, measurement)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def write_points(self, database, measurement, series, schema, points):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.write_points(database, measurement, series,
-                                          schema, points)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def delete_points(self, database, measurement, series, t):
-        '''
-        Deletes all points up to and including t.
-        '''
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.delete_points(database, measurement, series, t)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def select_points(self, database, measurement, series, schema, fields=None,
-                      t0=0, t1=0xFFFFFFFFFFFFFFFF, N=0xFFFFFFFFFFFFFFFF):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.select_points(database, measurement, series,
-                                           schema, fields, t0, t1, N)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def select_last_points(self, database, measurement, series, schema,
-                           fields=None, t0=0, t1=0xFFFFFFFFFFFFFFFF,
-                           N=0xFFFFFFFFFFFFFFFF):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.select_last_points(database, measurement, series,
-                                                schema, fields, t0, t1, N)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def count_points(self, database, measurement, series, t0=0,
-                     t1=0xFFFFFFFFFFFFFFFF):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.count_points(database, measurement, series, t0, t1)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def sum_points(self, database, measurement, series, fields, t0, t1,
-                   window_ns):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.sum_points(database, measurement, series, fields,
-                                        t0, t1, window_ns)
-        except StatusException:
-            raise
-        except:  # noqa: E722
-            self.close()
-            raise
-
-    def integrate_points(self, database, measurement, series, fields, t0, t1):
-        if self.conn is None:
-            self.connect()
-
-        try:
-            return self.conn.integrate_points(database, measurement, series,
-                                              fields, t0, t1)
-        except StatusException:
-            raise
-        except:  # noqa: E722
+        except:     # noqa: E722
             self.close()
             raise
 
     def get_all_points_mean(self, database, measurement, series, fields, t0, t1,
                             window_ns):
+        '''
+        Computes the arithmetic mean of the points in each window_ns-sized
+        window and returns the result as a GetAllPointsMeanResult object.  The
+        arithmetic mean of the points is not the same as the average value of
+        the points in each window (which would require the integral of each
+        window instead), but if the points are evenly-spaced then it is a good
+        approximation.
+        '''
         t0 = timestamp_to_int(t0)
         t1 = timestamp_to_int(t1)
         op = self.sum_points(database, measurement, series, fields, t0, t1,
@@ -1118,3 +1221,45 @@ class Client:
                 for i, f in enumerate(op.fields):
                     results.columns[f] = np.concatenate(
                         (results.columns[f], chunk.sums[i] / chunk.npoints[i]))
+
+
+# Dynamically generate proxy methods in the Client class that call all the
+# public methods in the Connection class.  The proxy methods check for an
+# existing connection and use it if possible.  Otherwise, a new connection is
+# created.  A status error (such as "No such field") generates a normal
+# exception.  Any other error (such as a protocol error - expected a certain
+# token but got a different one, for instance) closes the connection and then
+# propagates the exception.
+
+def _make_proxy_method(method_name, target_method):
+    def proxy_method(self, *args, **kwargs):
+        if self.conn is None:
+            self.connect()
+
+        try:
+            bound_method = getattr(self.conn, method_name)
+            return bound_method(*args, **kwargs)
+        except StatusException:
+            raise
+        except:     # noqa: E722
+            self.close()
+            raise
+
+    proxy_method.__name__ = str(method_name)
+    proxy_method.__qualname__ = f"Client.{method_name}"
+
+    if target_method.__doc__:
+        proxy_method.__doc__ = target_method.__doc__
+
+    try:
+        proxy_method.__signature__ = inspect.signature(target_method)
+    except ValueError:
+        pass
+
+    return proxy_method
+
+
+for _name, _method in inspect.getmembers(Connection,
+                                         predicate=inspect.isfunction):
+    if not _name.startswith('_'):
+        setattr(Client, _name, _make_proxy_method(_name, _method))
