@@ -30,6 +30,7 @@ get_command_token_str(command_token ct)
         case CT_COMPUTE_POINTS_LIMIT: return "COMPUTE POINTS LIMIT";
         case CT_COMPUTE_POINTS_LAST:  return "COMPUTE POINTS LAST";
         case CT_SUM_COMPUTE_POINTS:   return "SUM_COMPUTE_POINTS";
+        case CT_GET_VERSION:          return "GET VERSION";
     }
     return "?";
 }

@@ -37,6 +37,11 @@ struct server_config
     uint16_t        info_port = 4001;
 };
 
+static const _version_info version_info =
+{
+    SIMPLE_TSDB_VERSION,
+};
+
 static std::mutex connection_lock;
 static kernel::kdlist<connection> connection_list;
 
@@ -213,6 +218,8 @@ struct connection
     }
 };
 
+static void handle_get_version_info(
+    connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_create_database(
     connection& conn, const std::vector<parsed_data_token>& tokens);
 static void handle_list_databases(
@@ -252,6 +259,11 @@ static void handle_sum_compute_points(
 
 static const command_syntax<connection&> commands[] =
 {
+    {
+        func_delegate(handle_get_version_info),
+        CT_GET_VERSION,
+        {DT_END},
+    },
     {
         func_delegate(handle_create_database),
         CT_CREATE_DATABASE,
@@ -381,6 +393,17 @@ sleep_for_ns(uint64_t nsec)
     rqtp.tv_nsec = (nsec % 1000000000);
     while (nanosleep(&rqtp,&rmtp) != 0)
         rqtp = rmtp;
+}
+
+static void
+handle_get_version_info(connection& conn,
+    const std::vector<parsed_data_token>& tokens)
+{
+    uint32_t dt = DT_VERSION_INFO;
+    uint16_t len = sizeof(version_info);
+    conn.s.send_all(&dt,sizeof(dt));
+    conn.s.send_all(&len,sizeof(len));
+    conn.s.send_all(&version_info,sizeof(version_info));
 }
 
 static void

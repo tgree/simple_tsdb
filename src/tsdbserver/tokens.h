@@ -31,6 +31,7 @@ enum command_token : uint32_t
     CT_COMPUTE_POINTS_LIMIT = 0x1FFF763F,
     CT_COMPUTE_POINTS_LAST  = 0xE3D1252C,
     CT_SUM_COMPUTE_POINTS   = 0xBF6322ED,
+    CT_GET_VERSION          = 0x3BF8F894,
 };
 
 const char* get_command_token_str(command_token ct);
@@ -62,6 +63,7 @@ enum data_token : uint32_t
     DT_COMPUTE_FORMULA   = 0x29C662C7,  // <formula>
     DT_COMPUTE_CHUNK     = 0x12FF8CB9,  // <chunk header>, then data
     DT_SUM_COMPUTE_CHUNK = 0x5C9E1B82,  // <chunk header>, then data
+    DT_VERSION_INFO      = 0x2F7C3968,  // <version info>
 };
 
 struct chunk_header
@@ -71,6 +73,12 @@ struct chunk_header
     uint32_t    data_len;
     uint8_t     data[];
 };
+
+struct _version_info
+{
+    uint16_t    version;
+};
+KASSERT(sizeof(_version_info) == 2);
 
 struct parsed_data_token
 {
@@ -148,10 +156,11 @@ parse_cmd(Conn& conn, const command_syntax<Conn&, Args...>& cs,
             case DT_USERNAME:
             case DT_PASSWORD:
             case DT_COMPUTE_FORMULA:
+            case DT_VERSION_INFO:
                 pdt.len = conn.s.template pop<uint16_t>();
                 if (pdt.len >= 1024)
                 {
-                    printf("String length %zu too long.\n",pdt.len);
+                    printf("Data length %zu too long.\n",pdt.len);
                     throw futil::errno_exception(EINVAL);
                 }
                 pdt.data = (char*)malloc(pdt.len);
