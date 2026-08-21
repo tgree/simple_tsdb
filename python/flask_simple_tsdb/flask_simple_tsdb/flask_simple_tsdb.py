@@ -1,14 +1,13 @@
 # Copyright (c) 2025 by Terry Greeniaus.
 # All rights reserved.
 import simple_tsdb
-from flask import current_app, _app_ctx_stack
-from flask.globals import _app_ctx_err_msg
+from flask import current_app, g
 
 
 _no_stsdb_msg = '''\
 No SimpleTSDB connection is present.
 
-This means that something has overwritten _app_ctx_stack.top.stsdb_client.
+This means that something has overwritten g._stsdb_client.
 '''
 
 
@@ -31,20 +30,16 @@ class SimpleTSDB:
 
     @staticmethod
     def teardown(_exc):
-        db = getattr(_app_ctx_stack.top, 'stsdb_client', None)
-        if db is not None:
-            db.close()
+        c = g.pop('_stsdb_client', None)
+        if c is not None:
+            c.close()
 
     @property
     def client(self):
-        ctx = _app_ctx_stack.top
-        if ctx is None:
-            raise RuntimeError(_app_ctx_err_msg)
+        if '_stsdb_client' not in g:
+            g._stsdb_client = SimpleTSDB.connect()
 
-        if not hasattr(ctx, 'stsdb_client'):
-            ctx.stsdb_client = SimpleTSDB.connect()
-
-        if ctx.stsdb_client is None:
+        if g._stsdb_client is None:
             raise RuntimeError(_no_stsdb_msg)
 
-        return ctx.stsdb_client
+        return g._stsdb_client
