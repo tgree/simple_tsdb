@@ -34,31 +34,31 @@ class tmock_test
             "VARIABLE(a)",
             "+",
         };
-        tmock::assert_equiv(sys.tokens.size(),NELEMS(tokens));
+        TASSERT_EQUIV(sys.tokens.size(),NELEMS(tokens));
         for (size_t i=0; i<NELEMS(tokens); ++i)
-            tmock::assert_equiv(sys.tokens[i].to_string(),tokens[i]);
+            TASSERT_EQUIV(sys.tokens[i].to_string(),tokens[i]);
 
         const std::string variables[] =
         {
             "a",
             "y",
         };
-        tmock::assert_equiv(sys.variables.size(),NELEMS(variables));
+        TASSERT_EQUIV(sys.variables.size(),NELEMS(variables));
         for (size_t i=0; i<NELEMS(variables); ++i)
-            tmock::assert_equiv(sys.variables[i].name,variables[i]);
+            TASSERT_EQUIV(sys.variables[i].name,variables[i]);
 
         const std::string functions[] =
         {
             "sin",
         };
-        tmock::assert_equiv(sys.functions.size(),NELEMS(functions));
+        TASSERT_EQUIV(sys.functions.size(),NELEMS(functions));
         for (size_t i=0; i<NELEMS(functions); ++i)
-            tmock::assert_equiv(sys.functions[i].name,functions[i]);
+            TASSERT_EQUIV(sys.functions[i].name,functions[i]);
 
         sys.variables[0].value = 1.23;
         sys.variables[1].value = 3.45;
         sys.functions[0].func = shunt_sin;
-        tmock::assert_equiv(sys.evaluate(),-4.9519158547031115);
+        TASSERT_EQUIV(sys.evaluate(),-4.9519158547031115);
     }
 };
 

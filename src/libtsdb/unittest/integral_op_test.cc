@@ -48,9 +48,9 @@ class tmock_test
                                (double)dps[i].field3) * dt;
         }
 
-        tmock::assert_equiv(op.t0_ns,100);
-        tmock::assert_equiv(op.t1_ns,620);
-        tmock::assert_equiv(op.integral[0],integral);
+        TASSERT_EQUIV(op.t0_ns,100);
+        TASSERT_EQUIV(op.t1_ns,620);
+        TASSERT_EQUIV(op.integral[0],integral);
     }
 
     TMOCK_TEST(test_integral_gaps)
@@ -91,9 +91,9 @@ class tmock_test
             TASSERT(op.is_null[0] == !dp->is_non_null[0]);
             TASSERT(op.is_null[1] == !dp->is_non_null[1]);
             TASSERT(op.is_null[2] == !dp->is_non_null[2]);
-            tmock::assert_equiv(op.integral[0],(double)dp->field1);
-            tmock::assert_equiv(op.integral[1],(double)dp->field2);
-            tmock::assert_equiv(op.integral[2],(double)dp->field3);
+            TASSERT_EQUIV(op.integral[0],(double)dp->field1);
+            TASSERT_EQUIV(op.integral[1],(double)dp->field2);
+            TASSERT_EQUIV(op.integral[2],(double)dp->field3);
             ++dp;
         }
     }
@@ -119,11 +119,11 @@ class tmock_test
                                        dp[1].is_non_null[1]));
             TASSERT(op.is_null[2] == !(dp[0].is_non_null[2] &&
                                        dp[1].is_non_null[2]));
-            tmock::assert_equiv(op.integral[0],
+            TASSERT_EQUIV(op.integral[0],
                 ((double)dp[0].field1 + (double)dp[1].field1) * (10. / 2e9));
-            tmock::assert_equiv(op.integral[1],
+            TASSERT_EQUIV(op.integral[1],
                 ((double)dp[0].field2 + (double)dp[1].field2) * (10. / 2e9));
-            tmock::assert_equiv(op.integral[2],
+            TASSERT_EQUIV(op.integral[2],
                 ((double)dp[0].field3 + (double)dp[1].field3) * (10. / 2e9));
             ++dp;
         }

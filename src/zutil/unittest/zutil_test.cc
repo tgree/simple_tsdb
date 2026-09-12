@@ -11,7 +11,7 @@ slow_get_max_gzipped_size(size_t src_len)
     // the result for a given size.
     zng_stream zs = {};
 
-    tmock::assert_equiv(
+    TASSERT_EQUIV(
         zng_deflateInit2(&zs,9,Z_DEFLATED,16 + MAX_WBITS,9,Z_DEFAULT_STRATEGY),
         Z_OK);
 
@@ -32,7 +32,7 @@ class tmock_test
         for (uint32_t v = 16; v; v <<= 1)
         {
             size_t size = zutil::max_gzipped_size(v);
-            tmock::assert_equiv(size,slow_get_max_gzipped_size(v));
+            TASSERT_EQUIV(size,slow_get_max_gzipped_size(v));
             TASSERT(size >= prev_size);
             prev_size = size;
         }
@@ -47,7 +47,7 @@ class tmock_test
         size_t size = zutil::gzip_compress(comp_data,sizeof(comp_data),
                                            data,sizeof(data));
         zutil::gzip_decompress(decomp_data,sizeof(decomp_data),comp_data,size);
-        tmock::assert_mem_same(data,decomp_data);
+        TASSERT_MEM_SAME(data,decomp_data);
     }
 };
 

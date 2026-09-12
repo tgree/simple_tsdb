@@ -66,8 +66,8 @@ class tmock_test
         tsdb::wal_query wq(srl2,0,-1);
         if (wq.nentries)
             t_last = wq.back()->time_ns;
-        tmock::assert_equiv(t_first,100ULL);
-        tmock::assert_equiv(t_last,t - 10);
+        TASSERT_EQUIV(t_first,100ULL);
+        TASSERT_EQUIV(t_last,t - 10);
         TASSERT(t > 630);
     }
 
@@ -94,7 +94,7 @@ class tmock_test
                                      {"field1","field2","field3"},0,-1,-1);
             tsdb::wal_query wq(srl,0,-1);
             TASSERT(op.npoints != 0);
-            tmock::assert_equiv(*op.timestamps_begin,100UL);
+            TASSERT_EQUIV(*op.timestamps_begin,100UL);
             uint64_t t_last;
             while (op.npoints)
             {
@@ -116,7 +116,7 @@ class tmock_test
         // Disable the write hook.
         futil::hook_func = NULL;
 
-        tmock::assert_equiv(t,950UL);
+        TASSERT_EQUIV(t,950UL);
     }
 };
 

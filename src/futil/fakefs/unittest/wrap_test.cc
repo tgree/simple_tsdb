@@ -13,8 +13,8 @@ class tmock_test
         try
         {
             futil::file(cwd,"fd0",O_CREAT | O_EXCL,0777);
-            tmock::abort("Expected exception trying to create exclusive file "
-                         "that already exists!");
+            TABORT("Expected exception trying to create exclusive file that "
+                   "already exists!");
         }
         catch (const futil::errno_exception& e)
         {
@@ -68,8 +68,8 @@ class tmock_test
         try
         {
             futil::unlink(cwd,"dir1");
-            tmock::abort("Expected exception trying to unlink a directory "
-                         "without specifying AT_REMOVEDIR.");
+            TABORT("Expected exception trying to unlink a directory without "
+                   "specifying AT_REMOVEDIR.");
         }
         catch (const futil::errno_exception& e)
         {
@@ -82,8 +82,7 @@ class tmock_test
         try
         {
             futil::unlinkat(cwd.fd,"dir1",AT_REMOVEDIR);
-            tmock::abort("Expected exception trying to unlink non-empty "
-                         "directory!");
+            TABORT("Expected exception trying to unlink non-empty directory!");
         }
         catch (const futil::errno_exception& e)
         {
@@ -96,8 +95,8 @@ class tmock_test
         try
         {
             futil::unlinkat(cwd.fd,"fd0",AT_REMOVEDIR);
-            tmock::abort("Expected exception trying to unlink a file while "
-                         "specifying AT_REMOVEDIR.");
+            TABORT("Expected exception trying to unlink a file while "
+                   "specifying AT_REMOVEDIR.");
         }
         catch (const futil::errno_exception& e)
         {
@@ -110,8 +109,7 @@ class tmock_test
         try
         {
             futil::unlink(cwd,"fd1");
-            tmock::abort("Expected exception trying to delete non-existent "
-                         "file!");
+            TABORT("Expected exception trying to delete non-existent file!");
         }
         catch (const futil::errno_exception& e)
         {
@@ -133,14 +131,14 @@ class tmock_test
         futil::unlinkat(cwd.fd,"dir1",AT_REMOVEDIR);
         TASSERT(!fs_root->subdirs.count("dir1"));
 
-        tmock::assert_equiv(live_files.size(),2UL);
-        tmock::assert_equiv(live_dirs.size(),1UL);
+        TASSERT_EQUIV(live_files.size(),2UL);
+        TASSERT_EQUIV(live_dirs.size(),1UL);
 
         fd1.close();
         fd0.close();
 
-        tmock::assert_equiv(live_files.size(),0UL);
-        tmock::assert_equiv(live_dirs.size(),1UL);
+        TASSERT_EQUIV(live_files.size(),0UL);
+        TASSERT_EQUIV(live_dirs.size(),1UL);
     }
 
     TMOCK_TEST(test_readdir_empty)
@@ -151,12 +149,12 @@ class tmock_test
 
         auto* dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,".");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,".");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"..");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,"..");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp == NULL);
 
@@ -183,48 +181,48 @@ class tmock_test
         // sorted order according to std::less<std::string>.
         auto* dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0004");
-        tmock::assert_equiv(dp->d_type,DT_REG);
+        TASSERT_EQUIV(dp->d_name,"0004");
+        TASSERT_EQUIV(dp->d_type,DT_REG);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0006");
-        tmock::assert_equiv(dp->d_type,DT_REG);
+        TASSERT_EQUIV(dp->d_name,"0006");
+        TASSERT_EQUIV(dp->d_type,DT_REG);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0008");
-        tmock::assert_equiv(dp->d_type,DT_REG);
+        TASSERT_EQUIV(dp->d_name,"0008");
+        TASSERT_EQUIV(dp->d_type,DT_REG);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0010");
-        tmock::assert_equiv(dp->d_type,DT_REG);
+        TASSERT_EQUIV(dp->d_name,"0010");
+        TASSERT_EQUIV(dp->d_type,DT_REG);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,".");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,".");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"..");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,"..");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0001");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,"0001");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0003");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,"0003");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0005");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,"0005");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0007");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,"0007");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp != NULL);
-        tmock::assert_equiv(dp->d_name,"0009");
-        tmock::assert_equiv(dp->d_type,DT_DIR);
+        TASSERT_EQUIV(dp->d_name,"0009");
+        TASSERT_EQUIV(dp->d_type,DT_DIR);
         dp = futil::readdir(dirp);
         TASSERT(dp == NULL);
 
@@ -236,90 +234,90 @@ class tmock_test
         auto fd   = futil::openat(AT_FDCWD,"fd",O_CREAT | O_EXCL,0777);
         auto& fde = fd_table[fd];
 
-        tmock::assert_equiv(fde.pos,(off_t)0);
+        TASSERT_EQUIV(fde.pos,(off_t)0);
         futil::write(fd,"1234567890",10);
-        tmock::assert_equiv(fde.pos,(off_t)10);
+        TASSERT_EQUIV(fde.pos,(off_t)10);
         try
         {
             futil::lseek(fd,-1,SEEK_SET);
-            tmock::abort("Expected invalid negative offset exception!");
+            TABORT("Expected invalid negative offset exception!");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,EINVAL);
+            TASSERT_EQUIV(e.errnov,EINVAL);
         }
-        tmock::assert_equiv(fde.pos,(off_t)10);
+        TASSERT_EQUIV(fde.pos,(off_t)10);
         futil::lseek(fd,0,SEEK_SET);
-        tmock::assert_equiv(fde.pos,(off_t)0);
+        TASSERT_EQUIV(fde.pos,(off_t)0);
         futil::lseek(fd,15,SEEK_SET);
-        tmock::assert_equiv(fde.pos,(off_t)15);
+        TASSERT_EQUIV(fde.pos,(off_t)15);
 
         futil::lseek(fd,8,SEEK_CUR);
-        tmock::assert_equiv(fde.pos,(off_t)23);
+        TASSERT_EQUIV(fde.pos,(off_t)23);
         futil::lseek(fd,-3,SEEK_CUR);
-        tmock::assert_equiv(fde.pos,(off_t)20);
+        TASSERT_EQUIV(fde.pos,(off_t)20);
         futil::lseek(fd,-20,SEEK_CUR);
-        tmock::assert_equiv(fde.pos,(off_t)0);
+        TASSERT_EQUIV(fde.pos,(off_t)0);
         try
         {
             futil::lseek(fd,-1,SEEK_CUR);
-            tmock::abort("Expected invalid negative offset exception!");
+            TABORT("Expected invalid negative offset exception!");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,EINVAL);
+            TASSERT_EQUIV(e.errnov,EINVAL);
         }
-        tmock::assert_equiv(fde.pos,(off_t)0);
+        TASSERT_EQUIV(fde.pos,(off_t)0);
         futil::lseek(fd,8,SEEK_CUR);
-        tmock::assert_equiv(fde.pos,(off_t)8);
+        TASSERT_EQUIV(fde.pos,(off_t)8);
 
         futil::lseek(fd,0,SEEK_END);
-        tmock::assert_equiv(fde.pos,(off_t)10);
+        TASSERT_EQUIV(fde.pos,(off_t)10);
         futil::lseek(fd,10,SEEK_END);
-        tmock::assert_equiv(fde.pos,(off_t)20);
+        TASSERT_EQUIV(fde.pos,(off_t)20);
         futil::lseek(fd,-10,SEEK_END);
-        tmock::assert_equiv(fde.pos,(off_t)0);
+        TASSERT_EQUIV(fde.pos,(off_t)0);
         try
         {
             futil::lseek(fd,-11,SEEK_END);
-            tmock::abort("Expected invalid negative offset exception!");
+            TABORT("Expected invalid negative offset exception!");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,EINVAL);
+            TASSERT_EQUIV(e.errnov,EINVAL);
         }
     }
 
     TMOCK_TEST(test_mkdirat_if_not_exists)
     {
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir",0777),
             true);
         TASSERT(fs_root->subdirs.count("test_dir"));
 
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir2",0777),
             true);
         TASSERT(fs_root->subdirs.count("test_dir2"));
 
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir2/test_dir3",0777),
             true);
         TASSERT(fs_root->subdirs["test_dir2"]->subdirs.count("test_dir3"));
 
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir",0777),
             false);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir2",0777),
             false);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir2/test_dir3",0777),
             false);
 
         futil::unlinkat(AT_FDCWD,"test_dir",AT_REMOVEDIR);
         TASSERT(!fs_root->subdirs.count("test_dir"));
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir",0777),
             true);
         TASSERT(fs_root->subdirs.count("test_dir"));
@@ -339,31 +337,31 @@ class tmock_test
         try
         {
             futil::renameat(fromfd,"blah",AT_FDCWD,"dir3");
-            tmock::abort("Expected exception renaming nonexistent file!");
+            TABORT("Expected exception renaming nonexistent file!");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,ENOENT);
+            TASSERT_EQUIV(e.errnov,ENOENT);
         }
 
         try
         {
             futil::renameat(fromfd,"blah",AT_FDCWD,"fd");
-            tmock::abort("Expected exception renaming nonexistent file!");
+            TABORT("Expected exception renaming nonexistent file!");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,ENOENT);
+            TASSERT_EQUIV(e.errnov,ENOENT);
         }
 
         try
         {
             futil::renameat(fromfd,"fd",AT_FDCWD,"dir3");
-            tmock::abort("Expected exception renaming file over directory!");
+            TABORT("Expected exception renaming file over directory!");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,EISDIR);
+            TASSERT_EQUIV(e.errnov,EISDIR);
         }
 
         auto tofd = futil::openat(AT_FDCWD,"dir3",O_DIRECTORY);
@@ -391,8 +389,8 @@ class tmock_test
 
         char buf[11] = {};
         fd = futil::openat(AT_FDCWD,"dir1/fd2",O_RDONLY);
-        tmock::assert_equiv(futil::read(fd,buf,10),(ssize_t)10);
-        tmock::assert_equiv(buf,"1234567890");
+        TASSERT_EQUIV(futil::read(fd,buf,10),(ssize_t)10);
+        TASSERT_EQUIV(buf,"1234567890");
     }
 
     TMOCK_TEST(test_renameat_dir)
@@ -410,39 +408,39 @@ class tmock_test
         futil::close(futil::openat(AT_FDCWD,"dir1/dir2/fd1",O_CREAT | O_EXCL,
                                    0777));
         futil::close(futil::openat(AT_FDCWD,"dir1/fd2",O_CREAT | O_EXCL,0777));
-        tmock::assert_equiv(live_dirs.size(),4UL);
+        TASSERT_EQUIV(live_dirs.size(),4UL);
 
         auto fromfd = futil::openat(AT_FDCWD,"dir1/",O_DIRECTORY);
         try
         {
             futil::renameat(fromfd,"blah",AT_FDCWD,"dir1/dir2/dirX");
-            tmock::abort("Expected exception trying to rename nonexistent "
-                         "directory.");
+            TABORT("Expected exception trying to rename nonexistent "
+                   "directory.");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,ENOENT);
+            TASSERT_EQUIV(e.errnov,ENOENT);
         }
 
         try
         {
             futil::renameat(fromfd,"blah",AT_FDCWD,"dir1/dir2");
-            tmock::abort("Expected exception trying to rename nonexistent "
-                         "directory.");
+            TABORT("Expected exception trying to rename nonexistent "
+                   "directory.");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,ENOENT);
+            TASSERT_EQUIV(e.errnov,ENOENT);
         }
 
         try
         {
             futil::renameat(fromfd,"dir2",AT_FDCWD,"dir1/dir2/dirX");
-            tmock::abort("Expected exception trying to rename into a child.");
+            TABORT("Expected exception trying to rename into a child.");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,EINVAL);
+            TASSERT_EQUIV(e.errnov,EINVAL);
         }
 
         // Rename: dir1/dir2 -> dir3/dirX
@@ -463,7 +461,7 @@ class tmock_test
         TASSERT(live_dirs.count(dn2));
         TASSERT(live_dirs.count(dn3));
         futil::close(fromfd);
-        tmock::assert_equiv(live_dirs.size(),4UL);
+        TASSERT_EQUIV(live_dirs.size(),4UL);
 
         // Try to rename: dir3/dirX -> dir1
         // Should fail because dir1 is not empty.
@@ -472,11 +470,11 @@ class tmock_test
         try
         {
             futil::renameat(fromfd,"dirX",AT_FDCWD,"dir1");
-            tmock::abort("Expected directory-not-empty exception!");
+            TABORT("Expected directory-not-empty exception!");
         }
         catch (const futil::errno_exception& e)
         {
-            tmock::assert_equiv(e.errnov,ENOTEMPTY);
+            TASSERT_EQUIV(e.errnov,ENOTEMPTY);
         }
 
         // Delete fd2 and try again.
@@ -488,7 +486,7 @@ class tmock_test
         //  dir1/
         //  dir1/fd1
         //  dir3/
-        tmock::assert_equiv(live_dirs.size(),3UL);
+        TASSERT_EQUIV(live_dirs.size(),3UL);
         TASSERT(fs_root->subdirs.count("dir1"));
         TASSERT(fs_root->subdirs.count("dir3"));
         TASSERT(!fs_root->subdirs["dir3"]->subdirs.count("dirX"));
@@ -507,7 +505,7 @@ class tmock_test
         //  dir3/
         //  dir3/fd1
         //  [dir3/]
-        tmock::assert_equiv(live_dirs.size(),3UL);
+        TASSERT_EQUIV(live_dirs.size(),3UL);
         TASSERT(!fs_root->subdirs.count("dir1"));
         TASSERT(fs_root->subdirs.count("dir3"));
         TASSERT(fs_root->subdirs["dir3"] == dn2);
@@ -521,13 +519,13 @@ class tmock_test
         //  /
         //  dir3/
         //  dir3/fd1
-        tmock::assert_equiv(live_dirs.size(),2UL);
+        TASSERT_EQUIV(live_dirs.size(),2UL);
         TASSERT(!live_dirs.count(dn1));
         TASSERT(live_dirs.count(dn2));
         TASSERT(!live_dirs.count(dn3));
 
-        tmock::assert_equiv(fs_root->refcount,2UL);
-        tmock::assert_equiv(fs_root->subdirs["dir3"]->refcount,2UL);
+        TASSERT_EQUIV(fs_root->refcount,2UL);
+        TASSERT_EQUIV(fs_root->subdirs["dir3"]->refcount,2UL);
     }
 
     TMOCK_TEST(test_renameat_if_not_exists)
@@ -545,23 +543,23 @@ class tmock_test
         futil::close(futil::openat(AT_FDCWD,"dir1/dir2/fd1",O_CREAT | O_EXCL,
                                    0777));
         futil::close(futil::openat(AT_FDCWD,"dir1/fd2",O_CREAT | O_EXCL,0777));
-        tmock::assert_equiv(live_dirs.size(),4UL);
-        tmock::assert_equiv(live_files.size(),2UL);
+        TASSERT_EQUIV(live_dirs.size(),4UL);
+        TASSERT_EQUIV(live_files.size(),2UL);
 
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::renameat_if_not_exists(AT_FDCWD,"dir1",AT_FDCWD,"dir1"),
             false);
-        tmock::assert_equiv(live_dirs.size(),4UL);
+        TASSERT_EQUIV(live_dirs.size(),4UL);
 
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::renameat_if_not_exists(AT_FDCWD,"dir1",AT_FDCWD,"dir3"),
             false);
-        tmock::assert_equiv(live_dirs.size(),4UL);
+        TASSERT_EQUIV(live_dirs.size(),4UL);
 
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::renameat_if_not_exists(AT_FDCWD,"dir1",AT_FDCWD,"dir4"),
             true);
-        tmock::assert_equiv(live_dirs.size(),4UL);
+        TASSERT_EQUIV(live_dirs.size(),4UL);
         TASSERT(!fs_root->subdirs.count("dir1"));
         TASSERT(fs_root->subdirs.count("dir4"));
 
@@ -572,23 +570,23 @@ class tmock_test
         //  dir4/fd2
         //  dir4/dir2/
         //  dir4/dir2/fd1
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::renameat_if_not_exists(AT_FDCWD,"dir4/fd2",
                                           AT_FDCWD,"dir4/fd2"),
             false);
-        tmock::assert_equiv(live_files.size(),2UL);
+        TASSERT_EQUIV(live_files.size(),2UL);
 
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::renameat_if_not_exists(AT_FDCWD,"dir4/fd2",
                                           AT_FDCWD,"dir4/dir2/fd1"),
             false);
-        tmock::assert_equiv(live_files.size(),2UL);
+        TASSERT_EQUIV(live_files.size(),2UL);
 
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             futil::renameat_if_not_exists(AT_FDCWD,"dir4/fd2",
                                           AT_FDCWD,"dir4/dir2/fdX"),
             true);
-        tmock::assert_equiv(live_files.size(),2UL);
+        TASSERT_EQUIV(live_files.size(),2UL);
         TASSERT(!fs_root->subdirs["dir4"]->files.count("fd2"));
         TASSERT(fs_root->subdirs["dir4"]->subdirs["dir2"]->files.
                     count("fd1"));

@@ -44,11 +44,11 @@ generate_db()
         ->get_dir("measurement1")
         ->get_dir("series1");
     auto* index_fn = sdn->get_file("index");
-    tmock::assert_equiv(index_fn->data.size(),3*sizeof(tsdb::index_entry));
+    TASSERT_EQUIV(index_fn->data.size(),3*sizeof(tsdb::index_entry));
     auto* ies = index_fn->as_array<tsdb::index_entry>();
-    tmock::assert_equiv(ies[0].time_ns,100UL);
-    tmock::assert_equiv(ies[1].time_ns,260UL);
-    tmock::assert_equiv(ies[2].time_ns,420UL);
+    TASSERT_EQUIV(ies[0].time_ns,100UL);
+    TASSERT_EQUIV(ies[1].time_ns,260UL);
+    TASSERT_EQUIV(ies[2].time_ns,420UL);
 }
 
 class tmock_test
@@ -69,9 +69,9 @@ class tmock_test
             for (size_t t = 81; t <= 631; t += 10)
             {
                 auto cr = tsdb::count_points(srl,t,t+8);
-                tmock::assert_equiv(cr.npoints,0UL);
-                tmock::assert_equiv(cr.time_first,t);
-                tmock::assert_equiv(cr.time_last,t+8);
+                TASSERT_EQUIV(cr.npoints,0UL);
+                TASSERT_EQUIV(cr.time_first,t);
+                TASSERT_EQUIV(cr.time_last,t+8);
             }
         }
     }
@@ -88,17 +88,17 @@ class tmock_test
         for (size_t t = 91; t <= 611; t += 10)
         {
             auto cr = tsdb::count_points(srl,t,t+9);
-            tmock::assert_equiv(cr.npoints,1UL);
-            tmock::assert_equiv(cr.time_first,t+9);
-            tmock::assert_equiv(cr.time_last,t+9);
+            TASSERT_EQUIV(cr.npoints,1UL);
+            TASSERT_EQUIV(cr.time_first,t+9);
+            TASSERT_EQUIV(cr.time_last,t+9);
         }
 
         for (size_t t = 100; t <= 620; t += 10)
         {
             auto cr = tsdb::count_points(srl,t,t+9);
-            tmock::assert_equiv(cr.npoints,1UL);
-            tmock::assert_equiv(cr.time_first,t);
-            tmock::assert_equiv(cr.time_last,t);
+            TASSERT_EQUIV(cr.npoints,1UL);
+            TASSERT_EQUIV(cr.time_first,t);
+            TASSERT_EQUIV(cr.time_last,t);
         }
     }
 
@@ -120,7 +120,7 @@ class tmock_test
             TASSERT(cr.npoints == 0 || cr.npoints == 8);
             last_npoints = cr.npoints;
         }
-        tmock::assert_equiv(last_npoints,8UL);
+        TASSERT_EQUIV(last_npoints,8UL);
     }
 
     TMOCK_TEST(test_count_honors_time_last)
@@ -152,7 +152,7 @@ class tmock_test
             TASSERT(live_indices < NELEMS(expected_npoints));
 
             auto cr = tsdb::count_points(srl,0,545);
-            tmock::assert_equiv(cr.npoints,expected_npoints[live_indices]);
+            TASSERT_EQUIV(cr.npoints,expected_npoints[live_indices]);
         }
         TASSERT(found_extra);
     }
@@ -178,46 +178,46 @@ class tmock_test
                     N += ((t % 10) == 0);
                 }
                 auto cr = tsdb::count_points(srl,t0,t1);
-                tmock::assert_equiv(cr.npoints,N);
+                TASSERT_EQUIV(cr.npoints,N);
 
                 if (t0 <= 100)
                 {
                     if (cr.npoints)
-                        tmock::assert_equiv(cr.time_first,100UL);
+                        TASSERT_EQUIV(cr.time_first,100UL);
                     else
-                        tmock::assert_equiv(cr.time_first,t0);
+                        TASSERT_EQUIV(cr.time_first,t0);
                 }
                 else if (t0 > 620)
-                    tmock::assert_equiv(cr.time_first,t0);
+                    TASSERT_EQUIV(cr.time_first,t0);
                 else
                 {
                     if (cr.npoints)
                     {
-                        tmock::assert_equiv(cr.time_first,
+                        TASSERT_EQUIV(cr.time_first,
                             round_up_to_nearest_multiple<uint64_t>(t0,10));
                     }
                     else
-                        tmock::assert_equiv(cr.time_first,t0);
+                        TASSERT_EQUIV(cr.time_first,t0);
                 }
 
                 if (t1 <= 100)
-                    tmock::assert_equiv(cr.time_last,t1);
+                    TASSERT_EQUIV(cr.time_last,t1);
                 else if (t1 > 620)
                 {
                     if (cr.npoints)
-                        tmock::assert_equiv(cr.time_last,620UL);
+                        TASSERT_EQUIV(cr.time_last,620UL);
                     else
-                        tmock::assert_equiv(cr.time_last,t1);
+                        TASSERT_EQUIV(cr.time_last,t1);
                 }
                 else
                 {
                     if (cr.npoints)
                     {
-                        tmock::assert_equiv(cr.time_last,
+                        TASSERT_EQUIV(cr.time_last,
                             round_down_to_nearest_multiple<uint64_t>(t1,10));
                     }
                     else
-                        tmock::assert_equiv(cr.time_last,t1);
+                        TASSERT_EQUIV(cr.time_last,t1);
                 }
             }
         }
