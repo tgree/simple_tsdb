@@ -215,7 +215,7 @@ futil::close(int fd)
         fd_table[fd].exclusive_locks = 0;
         if (!--fd_table[fd].file->refcount && !fd_table[fd].file->mmap_count)
         {
-            kassert(live_files.contains(fd_table[fd].file));
+            kassert(live_files.count(fd_table[fd].file));
             delete fd_table[fd].file;
             live_files.erase(fd_table[fd].file);
         }
@@ -225,7 +225,7 @@ futil::close(int fd)
     {
         if (!--fd_table[fd].directory->refcount)
         {
-            kassert(live_dirs.contains(fd_table[fd].directory));
+            kassert(live_dirs.count(fd_table[fd].directory));
             delete fd_table[fd].directory;
             live_dirs.erase(fd_table[fd].directory);
         }
@@ -375,7 +375,7 @@ futil::openat(int at_fd, const char* path, int oflag, mode_t mode)
     auto rp = resolve_path(at_dir,path);
 
     // What does it mean to O_CREAT an existing directory?
-    kassert(!rp.directory->subdirs.contains(rp.name));
+    kassert(!rp.directory->subdirs.count(rp.name));
 
     // Find it if it exists, create it if it doesn't.
     file_node* fn;
@@ -659,8 +659,8 @@ futil::mkdirat(int at_fd, const char* path, mode_t mode)
 
     if (rp.name.empty())
         throw futil::errno_exception(EISDIR);
-    if (rp.directory->subdirs.contains(rp.name) ||
-        rp.directory->files.contains(rp.name))
+    if (rp.directory->subdirs.count(rp.name) ||
+        rp.directory->files.count(rp.name))
     {
         throw futil::errno_exception(EEXIST);
     }
@@ -706,9 +706,9 @@ futil::unlinkat(int at_fd, const char* path, int flag)
         dir_node* rem_dir;
         if (rp.name.empty())
             rem_dir = rp.directory;
-        else if (rp.directory->subdirs.contains(rp.name))
+        else if (rp.directory->subdirs.count(rp.name))
             rem_dir = rp.directory->subdirs[rp.name];
-        else if (rp.directory->files.contains(rp.name))
+        else if (rp.directory->files.count(rp.name))
             throw futil::errno_exception(ENOTDIR);
         else
             throw futil::errno_exception(ENOENT);
@@ -724,7 +724,7 @@ futil::unlinkat(int at_fd, const char* path, int flag)
         auto_snapshot_fs();
         if (!--rem_dir->refcount)
         {
-            kassert(live_dirs.contains(rem_dir));
+            kassert(live_dirs.count(rem_dir));
             live_dirs.erase(rem_dir);
             delete rem_dir;
         }
@@ -747,7 +747,7 @@ futil::unlinkat(int at_fd, const char* path, int flag)
         auto_snapshot_fs();
         if (!--rem_file->refcount && !rem_file->mmap_count)
         {
-            kassert(live_files.contains(rem_file));
+            kassert(live_files.count(rem_file));
             live_files.erase(rem_file);
             delete rem_file;
         }
@@ -778,10 +778,10 @@ futil::renameat(int fromfd, const char* from, int tofd, const char* to)
     kassert(!fromrp.name.empty());
     kassert(!torp.name.empty());
 
-    if (fromrp.directory->subdirs.contains(fromrp.name))
+    if (fromrp.directory->subdirs.count(fromrp.name))
     {
         // Moving a directory.
-        if (torp.directory->files.contains(torp.name))
+        if (torp.directory->files.count(torp.name))
             throw futil::errno_exception(ENOTDIR);
         auto dn = fromrp.directory->subdirs[fromrp.name];
 
@@ -810,7 +810,7 @@ futil::renameat(int fromfd, const char* from, int tofd, const char* to)
             rem_dir->meta_fsynced = false;
             if (!--rem_dir->refcount)
             {
-                kassert(live_dirs.contains(rem_dir));
+                kassert(live_dirs.count(rem_dir));
                 live_dirs.erase(rem_dir);
                 delete rem_dir;
             }
@@ -826,10 +826,10 @@ futil::renameat(int fromfd, const char* from, int tofd, const char* to)
         torp.directory->subdirs.insert(std::make_pair(dn->name,dn));
         ++torp.directory->refcount;
     }
-    else if (fromrp.directory->files.contains(fromrp.name))
+    else if (fromrp.directory->files.count(fromrp.name))
     {
         // Moving a file.
-        if (torp.directory->subdirs.contains(torp.name))
+        if (torp.directory->subdirs.count(torp.name))
             throw futil::errno_exception(EISDIR);
         auto fn = fromrp.directory->files[fromrp.name];
 
@@ -847,7 +847,7 @@ futil::renameat(int fromfd, const char* from, int tofd, const char* to)
             rem_file->meta_fsynced = false;
             if (!--rem_file->refcount && !rem_file->mmap_count)
             {
-                kassert(live_files.contains(rem_file));
+                kassert(live_files.count(rem_file));
                 live_files.erase(rem_file);
                 delete rem_file;
             }
@@ -879,8 +879,8 @@ futil::renameat_if_not_exists(int fromfd, const char* from, int tofd,
     auto todn = find_at_fd_dir_node(tofd);
     auto torp = resolve_path(todn,to);
     kassert(!torp.name.empty());
-    if (torp.directory->files.contains(torp.name) ||
-        torp.directory->subdirs.contains(torp.name))
+    if (torp.directory->files.count(torp.name) ||
+        torp.directory->subdirs.count(torp.name))
     {
         return false;
     }
@@ -903,7 +903,7 @@ delete_tree(dir_node* dn)
         kassert(--dn->refcount);
         if (!--fn->refcount && !fn->mmap_count)
         {
-            kassert(live_files.contains(fn));
+            kassert(live_files.count(fn));
             live_files.erase(fn);
             delete fn;
         }
@@ -917,7 +917,7 @@ delete_tree(dir_node* dn)
 
     if (!--dn->refcount)
     {
-        kassert(live_dirs.contains(dn));
+        kassert(live_dirs.count(dn));
         live_dirs.erase(dn);
         delete dn;
     }

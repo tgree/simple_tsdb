@@ -140,13 +140,13 @@ get_dangling_chunk_files(dir_node* sdn)
         dir_node* field_dir = fields_dir->get_dir(f);
         for (auto iter : field_dir->files)
         {
-            if (!field_chunk_names.contains(iter.first))
+            if (!field_chunk_names.count(iter.first))
                 dangling_files.push_back(iter.second);
         }
         dir_node* bitmap_dir = bitmaps_dir->get_dir(f);
         for (auto iter : bitmap_dir->files)
         {
-            if (!bitmap_chunk_names.contains(iter.first))
+            if (!bitmap_chunk_names.count(iter.first))
                 dangling_files.push_back(iter.second);
         }
     }
@@ -293,9 +293,9 @@ class tmock_test
         tmock::assert_equiv(time_first_fn->get_data<uint64_t>(),1000UL);
         tmock::assert_equiv(time_last_fn->get_data<uint64_t>(),16900UL);
         tmock::assert_equiv(time_1000_fn->data.size(),1024UL);
-        TASSERT(!field1_dn->files.contains("1000"));
-        TASSERT(!field2_dn->files.contains("1000"));
-        TASSERT(!field3_dn->files.contains("1000"));
+        TASSERT(!field1_dn->files.count("1000"));
+        TASSERT(!field2_dn->files.count("1000"));
+        TASSERT(!field3_dn->files.count("1000"));
         auto field1_1000_gz_fn = field1_dn->get_file("1000.gz");
         auto field2_1000_gz_fn = field2_dn->get_file("1000.gz");
         auto field3_1000_gz_fn = field3_dn->get_file("1000.gz");
@@ -592,7 +592,7 @@ class tmock_test
             for (size_t i=0; i<nindices; ++i)
             {
                 if (ies[i].time_ns <= time_last)
-                    TASSERT(time_ns_dn->files.contains(ies[i].timestamp_file));
+                    TASSERT(time_ns_dn->files.count(ies[i].timestamp_file));
             }
         }
     }
