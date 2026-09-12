@@ -108,6 +108,7 @@ ITEST_LDFLAGS :=
 # OS-specific include directories.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
+	HOMEBREW_PREFIX ?= $(shell brew --prefix)
 	COMMON_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	TEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	ITEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
