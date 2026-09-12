@@ -17,51 +17,52 @@
 namespace tmock
 {
     // Dump a region of memory.
-    void mem_dump(const void* v, size_t len,
-                  const char* file = __builtin_FILE(),
-                  unsigned int l = __builtin_LINE());
+    void mem_dump(const char* file, unsigned int l, const void* v, size_t len);
+#define TMOCK_MEM_DUMP(...) tmock::mem_dump(__FILE__,__LINE__,__VA_ARGS__)
 
     // Abort with an error message.
-    void abort(const char* s, const char* f = __builtin_FILE(),
-               unsigned int l = __builtin_LINE()) __attribute__((noreturn));
-#define TASSERT(expr) do {if (!(expr)) tmock::abort(#expr);} while(0)
+    void abort(const char* s, const char* f,
+               unsigned int l) __attribute__((noreturn));
+#define TABORT(s) tmock::abort((s),__FILE__,__LINE__)
+#define TASSERT(...) \
+    do {if (!(__VA_ARGS__)) tmock::abort(#__VA_ARGS__,__FILE__,__LINE__);} while(0)
 
-    void abort_mem_dump(const void* v, const void* expected, size_t len,
-                        const char* file, size_t line) __NORETURN__;
+    void abort_mem_dump(const char* file, size_t line, const void* v,
+                        const void* expected, size_t len) __NORETURN__;
 
     // Assert that memory contents are the same.
-    inline void assert_mem_same(const void* v, const void* expected, size_t len,
-                                const char* file = __builtin_FILE(),
-                                size_t line = __builtin_LINE())
+    inline void assert_mem_same(const char* file, size_t line, const void* v,
+                                const void* expected, size_t len)
     {
         if (!memcmp(v,expected,len))
             return;
-        abort_mem_dump(v,expected,len,file,line);
+        abort_mem_dump(file,line,v,expected,len);
     }
     template<typename T>
-    inline void assert_mem_same(const T& v, const T& expected,
-                                const char* file = __builtin_FILE(),
-                                size_t line = __builtin_LINE())
+    inline void assert_mem_same(const char* file, size_t line,
+                                const T& v, const T& expected)
     {
-        assert_mem_same(&v,&expected,sizeof(T),file,line);
+        assert_mem_same(file,line,&v,&expected,sizeof(T));
     }
+#define TASSERT_MEM_SAME(...) \
+    tmock::assert_mem_same(__FILE__,__LINE__,__VA_ARGS__)
 
     // Assert that two objects are equivalent.  For values it is just a simple
     // comparison with ==.  For things like const char* it will do a string
     // comparison.
-    void abort_not_equiv(const char* v, const char* expected, const char* file,
-                         size_t line) __NORETURN__;
-    void abort_not_equiv(long long v, long long expected, const char* file,
-                         size_t line) __NORETURN__;
-    void abort_not_equiv(unsigned long long v, unsigned long long expected,
-                         const char* file, size_t line) __NORETURN__;
-    void abort_not_equiv(double v, double expected,
-                         const char* file, size_t line) __NORETURN__;
+    void abort_not_equiv(const char* file, size_t line, const char* v,
+                         const char* expected) __NORETURN__;
+    void abort_not_equiv(const char* file, size_t line, long long v,
+                         long long expected) __NORETURN__;
+    void abort_not_equiv(const char* file, size_t line, unsigned long long v,
+                         unsigned long long expected) __NORETURN__;
+    void abort_not_equiv(const char* file, size_t line, double v,
+                         double expected) __NORETURN__;
 #define ABORT_NOT_EQUIV_FUNC(T,U) \
-    inline void abort_not_equiv(T v, T expected, const char* file, \
-                                size_t line) \
+    inline void abort_not_equiv(const char* file, size_t line, \
+                                T v, T expected) \
     { \
-        abort_not_equiv((U)v,(U)expected,file,line); \
+        abort_not_equiv(file,line,(U)v,(U)expected); \
     }
     ABORT_NOT_EQUIV_FUNC(char,long long);
     ABORT_NOT_EQUIV_FUNC(signed char,long long);
@@ -74,52 +75,49 @@ namespace tmock
     ABORT_NOT_EQUIV_FUNC(unsigned long,unsigned long long);
     ABORT_NOT_EQUIV_FUNC(float,double);
     template<typename T> __NORETURN__
-    void abort_not_equiv(const T& v, const T& expected, const char* file,
-                         size_t line)
+    void abort_not_equiv(const char* file, size_t line, const T& v,
+                         const T& expected)
     {
-        abort_mem_dump(&v,&expected,sizeof(T),file,line);
+        abort_mem_dump(file,line,&v,&expected,sizeof(T));
     }
-    inline void assert_equiv(const char* s, const char* expected,
-                             const char* file = __builtin_FILE(),
-                             size_t line = __builtin_LINE())
+    inline void assert_equiv(const char* file, size_t line,
+                             const char* s, const char* expected)
     {
         if (!strcmp(s,expected))
             return;
-        abort_not_equiv(s,expected,file,line);
+        abort_not_equiv(file,line,s,expected);
     }
-    inline void assert_equiv(char* s, const char* expected,
-                             const char* file = __builtin_FILE(),
-                             size_t line = __builtin_LINE())
+    inline void assert_equiv(const char* file, size_t line,
+                             char* s, const char* expected)
     {
-        assert_equiv((const char*)s,(const char*)expected,file,line);
+        assert_equiv(file,line,(const char*)s,(const char*)expected);
     }
-    inline void assert_equiv(const std::string& s, const char* expected,
-                             const char* file = __builtin_FILE(),
-                             size_t line = __builtin_LINE())
+    inline void assert_equiv(const char* file, size_t line,
+                             const std::string& s, const char* expected)
     {
-        assert_equiv(s.c_str(),(const char*)expected,file,line);
+        assert_equiv(file,line,s.c_str(),(const char*)expected);
     }
-    void assert_equiv(const char* s, char* expected,
-                      const char* file = __builtin_FILE(),
-                      size_t line = __builtin_LINE()) = delete;
+    void assert_equiv(const char* file, size_t line,
+                      const char* s, char* expected) = delete;
     template<typename T, typename U>
-    inline void assert_equiv(const T& v, const U& expected,
-                             const char* file = __builtin_FILE(),
-                             size_t line = __builtin_LINE())
+    inline void assert_equiv(const char* file, size_t line,
+                             const T& v, const U& expected)
     {
         if (v == (T)expected)
             return;
-        abort_not_equiv(v,(T)expected,file,line);
+        abort_not_equiv(file,line,v,(T)expected);
     }
+#define TASSERT_EQUIV(...) tmock::assert_equiv(__FILE__,__LINE__,__VA_ARGS__)
 
-    void assert_float_similar(float v, float expected,
-                              float tolerance = 0.00000001,
-                              const char* file = __builtin_FILE(),
-                              size_t line = __builtin_LINE());
-    void assert_double_similar(double v, double expected,
-                               double tolerance = 0.00000001,
-                               const char* file = __builtin_FILE(),
-                               size_t line = __builtin_LINE());
+    void assert_float_similar(const char* file, size_t line, float v,
+                              float expected, float tolerance);
+#define TASSERT_FLOAT_SIMILAR(...) \
+    tmock::assert_float_similar(__FILE__,__LINE__,__VA_ARGS__)
+
+    void assert_double_similar(const char* file, size_t line, double v,
+                               double expected, double tolerance);
+#define TASSERT_DOUBLE_SIMILAR(...) \
+    tmock::assert_double_similar(__FILE__,__LINE__,__VA_ARGS__)
 
     void vprintf(const char* fmt, va_list ap);
     inline void printf(const char* fmt, ...)

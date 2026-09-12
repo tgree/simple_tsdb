@@ -38,13 +38,13 @@ validate_timestamp_inodes(dir_node* series_dn, uint64_t* timestamps, size_t N)
         TASSERT(field2_dn->files.count(s));
         TASSERT(field3_dn->files.count(s));
     }
-    tmock::assert_equiv(time_ns_dn->files.size(),N);
-    tmock::assert_equiv(field1_dn->files.size(),N);
-    tmock::assert_equiv(field2_dn->files.size(),N);
-    tmock::assert_equiv(field3_dn->files.size(),N);
-    tmock::assert_equiv(bitmap1_dn->files.size(),N);
-    tmock::assert_equiv(bitmap2_dn->files.size(),N);
-    tmock::assert_equiv(bitmap3_dn->files.size(),N);
+    TASSERT_EQUIV(time_ns_dn->files.size(),N);
+    TASSERT_EQUIV(field1_dn->files.size(),N);
+    TASSERT_EQUIV(field2_dn->files.size(),N);
+    TASSERT_EQUIV(field3_dn->files.size(),N);
+    TASSERT_EQUIV(bitmap1_dn->files.size(),N);
+    TASSERT_EQUIV(bitmap2_dn->files.size(),N);
+    TASSERT_EQUIV(bitmap3_dn->files.size(),N);
 }
 
 class tmock_test
@@ -61,15 +61,15 @@ class tmock_test
 
         tsdb::delete_points(stl,1000);
         assert_tree_fsynced(fs_root);
-        tmock::assert_equiv(time_first_fn->get_data<uint64_t>(),1001UL);
+        TASSERT_EQUIV(time_first_fn->get_data<uint64_t>(),1001UL);
 
         tsdb::delete_points(stl,500);
         assert_tree_fsynced(fs_root);
-        tmock::assert_equiv(time_first_fn->get_data<uint64_t>(),1001UL);
+        TASSERT_EQUIV(time_first_fn->get_data<uint64_t>(),1001UL);
 
         tsdb::delete_points(stl,1500);
         assert_tree_fsynced(fs_root);
-        tmock::assert_equiv(time_first_fn->get_data<uint64_t>(),1501UL);
+        TASSERT_EQUIV(time_first_fn->get_data<uint64_t>(),1501UL);
     }
 
     TMOCK_TEST(test_delete_chunks_inodes)
@@ -98,9 +98,9 @@ class tmock_test
             auto series_dn = fd_table[stl.series_dir.fd].directory;
             validate_timestamp_inodes(series_dn,timestamps,NELEMS(timestamps));
             prev_cr = tsdb::count_points(stl,0,-1);
-            tmock::assert_equiv(prev_cr.npoints,813UL);
-            tmock::assert_equiv(prev_cr.time_first,100UL);
-            tmock::assert_equiv(prev_cr.time_last,8220UL);
+            TASSERT_EQUIV(prev_cr.npoints,813UL);
+            TASSERT_EQUIV(prev_cr.time_first,100UL);
+            TASSERT_EQUIV(prev_cr.time_last,8220UL);
 
             snapshot_fs();
             snapshot_auto_begin();
@@ -112,9 +112,9 @@ class tmock_test
                                       NELEMS(timestamps)-4);
 
             auto cr = tsdb::count_points(stl,0,-1);
-            tmock::assert_equiv(cr.npoints,813UL - 128UL*4UL - 2UL);
-            tmock::assert_equiv(cr.time_first,5240UL);
-            tmock::assert_equiv(cr.time_last,8220UL);
+            TASSERT_EQUIV(cr.npoints,813UL - 128UL*4UL - 2UL);
+            TASSERT_EQUIV(cr.time_first,5240UL);
+            TASSERT_EQUIV(cr.time_last,8220UL);
         }
 
         for (auto* dn : snapshots)
@@ -129,7 +129,7 @@ class tmock_test
             auto cr = tsdb::count_points(srl,0,-1);
             TASSERT(cr.npoints <= prev_cr.npoints);
             TASSERT(cr.time_first >= prev_cr.time_first);
-            tmock::assert_equiv(cr.time_last,8220UL);
+            TASSERT_EQUIV(cr.time_last,8220UL);
             prev_cr = cr;
         }
     }
@@ -149,9 +149,9 @@ class tmock_test
             tsdb::measurement m1(db1,"measurement1");
             tsdb::series_total_lock stl(m1,"series1");
             prev_cr = tsdb::count_points(stl,0,-1);
-            tmock::assert_equiv(prev_cr.npoints,45UL);
-            tmock::assert_equiv(prev_cr.time_first,99UL);
-            tmock::assert_equiv(prev_cr.time_last,231UL);
+            TASSERT_EQUIV(prev_cr.npoints,45UL);
+            TASSERT_EQUIV(prev_cr.time_first,99UL);
+            TASSERT_EQUIV(prev_cr.time_last,231UL);
 
             snapshot_fs();
             snapshot_auto_begin();
@@ -163,22 +163,22 @@ class tmock_test
                 auto cr = tsdb::count_points(stl,0,-1);
                 if (t < 99)
                 {
-                    tmock::assert_equiv(cr.npoints,45UL);
-                    tmock::assert_equiv(cr.time_first,99UL);
-                    tmock::assert_equiv(cr.time_last,231UL);
+                    TASSERT_EQUIV(cr.npoints,45UL);
+                    TASSERT_EQUIV(cr.time_first,99UL);
+                    TASSERT_EQUIV(cr.time_last,231UL);
                 }
                 else if (t < 231)
                 {
-                    tmock::assert_equiv(cr.npoints,45 - ((t - 99)/3 + 1));
-                    tmock::assert_equiv(
+                    TASSERT_EQUIV(cr.npoints,45 - ((t - 99)/3 + 1));
+                    TASSERT_EQUIV(
                         cr.time_first,round_up_to_nearest_multiple(t + 1,3UL));
-                    tmock::assert_equiv(cr.time_last,231UL);
+                    TASSERT_EQUIV(cr.time_last,231UL);
                 }
                 else
                 {
-                    tmock::assert_equiv(cr.npoints,0UL);
-                    tmock::assert_equiv(cr.time_first,0UL); // Want t+1 instead
-                    tmock::assert_equiv(cr.time_last,-1UL); // Want 840 instead
+                    TASSERT_EQUIV(cr.npoints,0UL);
+                    TASSERT_EQUIV(cr.time_first,0UL); // Want t+1 instead
+                    TASSERT_EQUIV(cr.time_last,-1UL); // Want 840 instead
                 }
             }
             snapshot_auto_end();
@@ -198,12 +198,12 @@ class tmock_test
                 if (cr.npoints)
                 {
                     TASSERT(cr.time_first >= prev_cr.time_first);
-                    tmock::assert_equiv(cr.time_last,231UL);
+                    TASSERT_EQUIV(cr.time_last,231UL);
                 }
                 else
                 {
-                    tmock::assert_equiv(cr.time_first,0UL); // Want t+1 instead
-                    tmock::assert_equiv(cr.time_last,-1UL); // Want 840 instead
+                    TASSERT_EQUIV(cr.time_first,0UL); // Want t+1 instead
+                    TASSERT_EQUIV(cr.time_last,-1UL); // Want 840 instead
                 }
                 prev_cr = cr;
             }
@@ -214,7 +214,7 @@ class tmock_test
             {
                 tsdb::series_read_lock srl(m1,"series1");
                 auto cr = tsdb::count_points(srl,0,-1);
-                tmock::assert_equiv(cr.npoints,prev_cr.npoints + 20);
+                TASSERT_EQUIV(cr.npoints,prev_cr.npoints + 20);
             }
         }
     }
@@ -257,12 +257,12 @@ class tmock_test
                 if (cr.npoints)
                 {
                     TASSERT(cr.time_first >= prev_cr.time_first);
-                    tmock::assert_equiv(cr.time_last,540UL);
+                    TASSERT_EQUIV(cr.time_last,540UL);
                 }
                 else
                 {
-                    tmock::assert_equiv(cr.time_first,0UL); // Want t+1 instead
-                    tmock::assert_equiv(cr.time_last,-1UL); // Want 840 instead
+                    TASSERT_EQUIV(cr.time_first,0UL); // Want t+1 instead
+                    TASSERT_EQUIV(cr.time_last,-1UL); // Want 840 instead
                 }
                 prev_cr = cr;
             }
@@ -273,16 +273,16 @@ class tmock_test
             {
                 tsdb::series_read_lock srl(m1,"series1");
                 auto cr = tsdb::count_points(srl,0,-1);
-                tmock::assert_equiv(cr.npoints,prev_cr.npoints + 20);
+                TASSERT_EQUIV(cr.npoints,prev_cr.npoints + 20);
             }
 
             {
                 tsdb::series_total_lock stl(m1,"series1");
                 tsdb::delete_points(stl,1039);
                 auto cr = tsdb::count_points(stl,0,-1);
-                tmock::assert_equiv(cr.npoints,1UL);
-                tmock::assert_equiv(cr.time_first,1040UL);
-                tmock::assert_equiv(cr.time_last,1040UL);
+                TASSERT_EQUIV(cr.npoints,1UL);
+                TASSERT_EQUIV(cr.time_first,1040UL);
+                TASSERT_EQUIV(cr.time_last,1040UL);
             }
         }
     }
@@ -353,13 +353,13 @@ class tmock_test
             // There should be two entries in the index file since the chunk
             // size is set to 128 bytes which only holds 16 entries.
             index_fn = sdn->get_file("index");
-            tmock::assert_equiv((uint64_t)index_fn->data.size(),
-                                (uint64_t)2*sizeof(tsdb::index_entry));
+            TASSERT_EQUIV((uint64_t)index_fn->data.size(),
+                          (uint64_t)2*sizeof(tsdb::index_entry));
             ies = index_fn->as_array<tsdb::index_entry>();
             TASSERT(time_ns_dn->files.count(ies[0].timestamp_file));
             TASSERT(time_ns_dn->files.count(ies[1].timestamp_file));
-            tmock::assert_equiv(ies[0].time_ns,100000UL);
-            tmock::assert_equiv(ies[1].time_ns,101600UL);
+            TASSERT_EQUIV(ies[0].time_ns,100000UL);
+            TASSERT_EQUIV(ies[1].time_ns,101600UL);
         }
         TASSERT(n_bad_indices > 0);
     }
@@ -445,7 +445,7 @@ class tmock_test
 
                 // The bad entries should not affect any operations.
                 auto cr = tsdb::count_points(swl,0,-1);
-                tmock::assert_equiv(cr.npoints,159UL + 17UL);
+                TASSERT_EQUIV(cr.npoints,159UL + 17UL);
             }
 
             // If we perform any delete operation, even one which doesn't
@@ -463,9 +463,9 @@ class tmock_test
 
             // The bad entries should not affect any operations.
             auto cr = tsdb::count_points(stl,0,-1);
-            tmock::assert_equiv(cr.npoints,159UL + 17UL);
-            tmock::assert_equiv(cr.time_first,1510UL);
-            tmock::assert_equiv(cr.time_last,101600UL);
+            TASSERT_EQUIV(cr.npoints,159UL + 17UL);
+            TASSERT_EQUIV(cr.time_first,1510UL);
+            TASSERT_EQUIV(cr.time_last,101600UL);
         }
         TASSERT(n_bad_indices > 0);
     }

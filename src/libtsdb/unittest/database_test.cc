@@ -19,7 +19,7 @@ class tmock_test
         try
         {
             tsdb::database db(root,"db1");
-            tmock::abort("Expected no such database exception!");
+            TABORT("Expected no such database exception!");
         }
         catch (const tsdb::no_such_database_exception&)
         {
@@ -35,7 +35,7 @@ class tmock_test
         try
         {
             tsdb::database db(root,"db");
-            tmock::abort("Expected no such database exception!");
+            TABORT("Expected no such database exception!");
         }
         catch (const tsdb::no_such_database_exception&)
         {

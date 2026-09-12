@@ -43,17 +43,15 @@ class tmock_test
         TASSERT(!snapshots[0]->subdirs.count("dir3"));
         TASSERT(snapshots[1]->subdirs.count("dir3"));
         TASSERT(!snapshots[2]->subdirs.count("dir3"));
-        tmock::assert_equiv(snapshots[0]->files["fd0"]->data_as_string(),"");
-        tmock::assert_equiv(snapshots[1]->files["fd0"]->data_as_string(),
-                            "12345");
-        tmock::assert_equiv(snapshots[2]->files["fd0"]->data_as_string(),
-                            "123456789");
+        TASSERT_EQUIV(snapshots[0]->files["fd0"]->data_as_string(),"");
+        TASSERT_EQUIV(snapshots[1]->files["fd0"]->data_as_string(),"12345");
+        TASSERT_EQUIV(snapshots[2]->files["fd0"]->data_as_string(),"123456789");
 
         snapshot_reset();
 
         TASSERT(snapshots.empty());
-        tmock::assert_equiv(live_dirs.size(),6UL);
-        tmock::assert_equiv(live_files.size(),1UL);
+        TASSERT_EQUIV(live_dirs.size(),6UL);
+        TASSERT_EQUIV(live_files.size(),1UL);
     }
 
     TMOCK_TEST(test_auto_snapshot)
@@ -61,32 +59,32 @@ class tmock_test
         snapshot_auto_begin();
 
         auto cwd = futil::directory(AT_FDCWD,"./");
-        tmock::assert_equiv(snapshots.size(),0UL);
+        TASSERT_EQUIV(snapshots.size(),0UL);
         futil::mkdir(cwd,"dir1",0777);
-        tmock::assert_equiv(snapshots.size(),1UL);
+        TASSERT_EQUIV(snapshots.size(),1UL);
         futil::mkdir(cwd,"dir2",0777);
-        tmock::assert_equiv(snapshots.size(),2UL);
+        TASSERT_EQUIV(snapshots.size(),2UL);
         futil::mkdir(cwd,"dir1/subdir1",0777);
-        tmock::assert_equiv(snapshots.size(),3UL);
+        TASSERT_EQUIV(snapshots.size(),3UL);
         futil::mkdir(cwd,"dir2/subdir2",0777);
-        tmock::assert_equiv(snapshots.size(),4UL);
+        TASSERT_EQUIV(snapshots.size(),4UL);
         futil::mkdir(cwd,"dir1/subdir1/subdir3",0777);
-        tmock::assert_equiv(snapshots.size(),5UL);
+        TASSERT_EQUIV(snapshots.size(),5UL);
 
         auto fd0 = futil::file(cwd,"fd0",O_CREAT | O_EXCL,0777);
-        tmock::assert_equiv(snapshots.size(),6UL);
+        TASSERT_EQUIV(snapshots.size(),6UL);
         fd0.write_all("12345",5);
-        tmock::assert_equiv(snapshots.size(),7UL);
+        TASSERT_EQUIV(snapshots.size(),7UL);
         futil::mkdir(cwd,"dir3",0777);
-        tmock::assert_equiv(snapshots.size(),8UL);
+        TASSERT_EQUIV(snapshots.size(),8UL);
         fd0.write_all("6789",0);
-        tmock::assert_equiv(snapshots.size(),8UL);  // 0-length: No snap!
+        TASSERT_EQUIV(snapshots.size(),8UL);  // 0-length: No snap!
         fd0.write_all("6789",4);
-        tmock::assert_equiv(snapshots.size(),9UL);
+        TASSERT_EQUIV(snapshots.size(),9UL);
         futil::unlinkat(cwd.fd,"dir3",AT_REMOVEDIR);
-        tmock::assert_equiv(snapshots.size(),10UL);
+        TASSERT_EQUIV(snapshots.size(),10UL);
         futil::unlink(cwd,"fd0");
-        tmock::assert_equiv(snapshots.size(),11UL);
+        TASSERT_EQUIV(snapshots.size(),11UL);
 
         for (size_t i=0; i<snapshots.size(); ++i)
         {
@@ -139,11 +137,11 @@ class tmock_test
                 TASSERT(ss->files.count("fd0"));
                 auto data = ss->files["fd0"]->data_as_string();
                 if (i == 5)
-                    tmock::assert_equiv(data,"");
+                    TASSERT_EQUIV(data,"");
                 if (i == 6 || i == 7)
-                    tmock::assert_equiv(data,"12345");
+                    TASSERT_EQUIV(data,"12345");
                 if (i == 8 || i == 9)
-                    tmock::assert_equiv(data,"123456789");
+                    TASSERT_EQUIV(data,"123456789");
             }                       
             else
                 TASSERT(!ss->files.count("fd0"));

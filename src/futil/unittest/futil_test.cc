@@ -7,73 +7,72 @@ class tmock_test
 {
     TMOCK_TEST(test_constructor)
     {
-        tmock::assert_equiv((futil::path("a/b/","c/d/"))._path,"a/b/c/d/");
+        TASSERT_EQUIV((futil::path("a/b/","c/d/"))._path,"a/b/c/d/");
     }
 
     TMOCK_TEST(test_path_count_components)
     {
-        tmock::assert_equiv(futil::path("////a///b/c///").count_components(),
-                            (size_t)3);
-        tmock::assert_equiv(futil::path("aaa/bb/cccc").count_components(),
-                            (size_t)3);
-        tmock::assert_equiv(futil::path("aaa/bb/").count_components(),
-                            (size_t)2);
-        tmock::assert_equiv(futil::path("/aaa/bb/").count_components(),
-                            (size_t)2);
-        tmock::assert_equiv(futil::path("/aaa/bb").count_components(),
-                            (size_t)2);
-        tmock::assert_equiv(futil::path("/aaa/b").count_components(),(size_t)2);
-        tmock::assert_equiv(futil::path("/a/").count_components(),(size_t)1);
-        tmock::assert_equiv(futil::path("/aa/").count_components(),(size_t)1);
-        tmock::assert_equiv(futil::path("a/").count_components(),(size_t)1);
-        tmock::assert_equiv(futil::path("aa/").count_components(),(size_t)1);
-        tmock::assert_equiv(futil::path("aa").count_components(),(size_t)1);
-        tmock::assert_equiv(futil::path("a").count_components(),(size_t)1);
+        TASSERT_EQUIV(futil::path("////a///b/c///").count_components(),
+                      (size_t)3);
+        TASSERT_EQUIV(futil::path("aaa/bb/cccc").count_components(),
+                      (size_t)3);
+        TASSERT_EQUIV(futil::path("aaa/bb/").count_components(),
+                      (size_t)2);
+        TASSERT_EQUIV(futil::path("/aaa/bb/").count_components(),
+                      (size_t)2);
+        TASSERT_EQUIV(futil::path("/aaa/bb").count_components(),
+                      (size_t)2);
+        TASSERT_EQUIV(futil::path("/aaa/b").count_components(),(size_t)2);
+        TASSERT_EQUIV(futil::path("/a/").count_components(),(size_t)1);
+        TASSERT_EQUIV(futil::path("/aa/").count_components(),(size_t)1);
+        TASSERT_EQUIV(futil::path("a/").count_components(),(size_t)1);
+        TASSERT_EQUIV(futil::path("aa/").count_components(),(size_t)1);
+        TASSERT_EQUIV(futil::path("aa").count_components(),(size_t)1);
+        TASSERT_EQUIV(futil::path("a").count_components(),(size_t)1);
     }
 
     TMOCK_TEST(test_path_join)
     {
-        tmock::assert_equiv((futil::path("a/b/") + futil::path("c/d/"))._path,
-                            "a/b/c/d/");
-        tmock::assert_equiv((futil::path("a/b") + futil::path("c/d/"))._path,
-                            "a/b/c/d/");
+        TASSERT_EQUIV((futil::path("a/b/") + futil::path("c/d/"))._path,
+                      "a/b/c/d/");
+        TASSERT_EQUIV((futil::path("a/b") + futil::path("c/d/"))._path,
+                      "a/b/c/d/");
         try
         {
-            tmock::assert_equiv((futil::path("a/b/") +
-                                 futil::path("/c/d/"))._path,
-                                "a/b/c/d/");
-            tmock::abort("Expected exception!");
+            TASSERT_EQUIV((futil::path("a/b/") + futil::path("/c/d/"))._path,
+                          "a/b/c/d/");
+            TABORT("Expected exception!");
         }
         catch (const futil::invalid_join_exception&)
         {
         }
-        tmock::assert_equiv((futil::path("/a/b") + futil::path("c/d/"))._path,
-                            "/a/b/c/d/");
+        TASSERT_EQUIV((futil::path("/a/b") + futil::path("c/d/"))._path,
+                      "/a/b/c/d/");
     }
 
     TMOCK_TEST(test_decompose)
     {
         auto p = futil::path("aaa/bb/cccc");
         auto v = p.decompose();
-        tmock::assert_equiv(v.size(),(size_t)3);
-        tmock::assert_equiv(v[0],"aaa");
-        tmock::assert_equiv(v[1],"bb");
-        tmock::assert_equiv(v[2],"cccc");
+        TASSERT_EQUIV(v.size(),(size_t)3);
+        TASSERT_EQUIV(v[0],"aaa");
+        TASSERT_EQUIV(v[1],"bb");
+        TASSERT_EQUIV(v[2],"cccc");
 
         p = futil::path("/aaa/bb/");
         v = p.decompose();
-        tmock::assert_equiv(v.size(),(size_t)3);
-        tmock::assert_equiv(v[0],"/");
-        tmock::assert_equiv(v[1],"aaa");
-        tmock::assert_equiv(v[2],"bb");
+        TASSERT_EQUIV(v.size(),(size_t)3);
+        TASSERT_EQUIV(v[0],"/");
+        TASSERT_EQUIV(v[1],"aaa");
+        TASSERT_EQUIV(v[2],"bb");
 
         p = futil::path("////a///b/c///");
         v = p.decompose();
-        tmock::assert_equiv(v.size(),(size_t)4);
-        tmock::assert_equiv(v[0],"/");
-        tmock::assert_equiv(v[1],"a");
-        tmock::assert_equiv(v[2],"b");
-        tmock::assert_equiv(v[3],"c");
+        TASSERT_EQUIV(v.size(),(size_t)4);
+        TASSERT_EQUIV(v[0],"/");
+        TASSERT_EQUIV(v[1],"a");
+        TASSERT_EQUIV(v[2],"b");
+        TASSERT_EQUIV(v[3],"c");
     }
 };
 

@@ -91,26 +91,26 @@ validate_points()
         TASSERT(rem_points >= op.npoints);
         for (size_t i=0; i<op.npoints; ++i)
         {
-            tmock::assert_equiv(op.timestamps_begin[i],
-                                1000 + (i + offset)*100);
-            tmock::assert_equiv(!op.is_field_null(0,i),
-                                dps[i + offset].is_non_null[0]);
-            tmock::assert_equiv(!op.is_field_null(1,i),
-                                dps[i + offset].is_non_null[1]);
-            tmock::assert_equiv(!op.is_field_null(2,i),
-                                dps[i + offset].is_non_null[2]);
-            tmock::assert_equiv(op.get_field<uint32_t,0>(i),
-                                dps[i + offset].field1);
-            tmock::assert_equiv(op.get_field<double,1>(i),
-                                dps[i + offset].field2);
-            tmock::assert_equiv(op.get_field<float,2>(i),
-                                dps[i + offset].field3);
+            TASSERT_EQUIV(op.timestamps_begin[i],
+                          1000 + (i + offset)*100);
+            TASSERT_EQUIV(!op.is_field_null(0,i),
+                          dps[i + offset].is_non_null[0]);
+            TASSERT_EQUIV(!op.is_field_null(1,i),
+                          dps[i + offset].is_non_null[1]);
+            TASSERT_EQUIV(!op.is_field_null(2,i),
+                          dps[i + offset].is_non_null[2]);
+            TASSERT_EQUIV(op.get_field<uint32_t,0>(i),
+                          dps[i + offset].field1);
+            TASSERT_EQUIV(op.get_field<double,1>(i),
+                          dps[i + offset].field2);
+            TASSERT_EQUIV(op.get_field<float,2>(i),
+                          dps[i + offset].field3);
         }
         offset += op.npoints;
         rem_points -= op.npoints;
         op.next();
     }
-    tmock::assert_equiv(offset,cr.npoints);
+    TASSERT_EQUIV(offset,cr.npoints);
 
     return cr;
 }
@@ -186,7 +186,7 @@ class tmock_test
         try
         {
             tsdb::write_chunk_index wci(m1,15,0,chunk_len-4,(const void*)NULL);
-            tmock::abort("Expected incorrect write chunk len exception!");
+            TABORT("Expected incorrect write chunk len exception!");
         }
         catch (const tsdb::incorrect_write_chunk_len_exception&)
         {
@@ -195,31 +195,31 @@ class tmock_test
         try
         {
             tsdb::write_chunk_index wci(m1,15,0,chunk_len+4,(const void*)NULL);
-            tmock::abort("Expected incorrect write chunk len exception!");
+            TABORT("Expected incorrect write chunk len exception!");
         }
         catch (const tsdb::incorrect_write_chunk_len_exception&)
         {
         }
 
         tsdb::write_chunk_index wci(m1,15,0,chunk_len,(const void*)NULL);
-        tmock::assert_equiv(wci.npoints,15UL);
-        tmock::assert_equiv(wci.bitmap_offset,0UL);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(wci.npoints,15UL);
+        TASSERT_EQUIV(wci.bitmap_offset,0UL);
+        TASSERT_EQUIV(
             (uintptr_t)wci.timestamps,(uintptr_t)0x00000000);
-        tmock::assert_equiv(wci.fields.size(),3UL);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(wci.fields.size(),3UL);
+        TASSERT_EQUIV(
             (uintptr_t)wci.fields[0].bitmap_ptr,(uintptr_t)0x00000078);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             (uintptr_t)wci.fields[0].data_ptr,(uintptr_t)0x00000080);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             (uintptr_t)wci.fields[1].bitmap_ptr,(uintptr_t)0x000000C0);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             (uintptr_t)wci.fields[1].data_ptr,(uintptr_t)0x000000C8);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             (uintptr_t)wci.fields[2].bitmap_ptr,(uintptr_t)0x00000140);
-        tmock::assert_equiv(
+        TASSERT_EQUIV(
             (uintptr_t)wci.fields[2].data_ptr,(uintptr_t)0x00000148);
-        tmock::assert_equiv(chunk_len,392UL);
+        TASSERT_EQUIV(chunk_len,392UL);
     }
 
     TMOCK_TEST(test_write_few)
@@ -260,27 +260,27 @@ class tmock_test
         auto bitmap1_1000_fn = bitmap1_dn->get_file("1000");
         auto bitmap2_1000_fn = bitmap2_dn->get_file("1000");
         auto bitmap3_1000_fn = bitmap3_dn->get_file("1000");
-        tmock::assert_equiv(index_fn->data.size(),sizeof(tsdb::index_entry));
-        tmock::assert_equiv(time_first_fn->get_data<uint64_t>(),1000UL);
-        tmock::assert_equiv(time_last_fn->get_data<uint64_t>(),4100UL);
-        tmock::assert_equiv(time_1000_fn->data.size(),32UL*8UL);
+        TASSERT_EQUIV(index_fn->data.size(),sizeof(tsdb::index_entry));
+        TASSERT_EQUIV(time_first_fn->get_data<uint64_t>(),1000UL);
+        TASSERT_EQUIV(time_last_fn->get_data<uint64_t>(),4100UL);
+        TASSERT_EQUIV(time_1000_fn->data.size(),32UL*8UL);
         for (size_t i=0; i<32; ++i)
         {
-            tmock::assert_equiv(time_1000_fn->get_data<uint64_t>(i*8),
-                                1000 + 100*i);
-            tmock::assert_equiv(field1_1000_fn->get_data<uint32_t>(i*4),
-                                dps[i].field1);
-            tmock::assert_equiv(field2_1000_fn->get_data<double>(i*8),
-                                dps[i].field2);
-            tmock::assert_equiv(field3_1000_fn->get_data<float>(i*4),
-                                dps[i].field3);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(time_1000_fn->get_data<uint64_t>(i*8),
+                          1000 + 100*i);
+            TASSERT_EQUIV(field1_1000_fn->get_data<uint32_t>(i*4),
+                          dps[i].field1);
+            TASSERT_EQUIV(field2_1000_fn->get_data<double>(i*8),
+                          dps[i].field2);
+            TASSERT_EQUIV(field3_1000_fn->get_data<float>(i*4),
+                          dps[i].field3);
+            TASSERT_EQUIV(
                 (bitmap1_1000_fn->get_data<uint64_t>(i/64) >> (i % 64)) & 1,
                 (uint64_t)dps[i].is_non_null[0]);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(
                 (bitmap2_1000_fn->get_data<uint64_t>(i/64) >> (i % 64)) & 1,
                 (uint64_t)dps[i].is_non_null[1]);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(
                 (bitmap3_1000_fn->get_data<uint64_t>(i/64) >> (i % 64)) & 1,
                 (uint64_t)dps[i].is_non_null[2]);
         }
@@ -289,10 +289,10 @@ class tmock_test
         // trigger a compression.
         write_points(swl,128,4200,100,32);
         index_fn = sdn->get_file("index");
-        tmock::assert_equiv(index_fn->data.size(),2*sizeof(tsdb::index_entry));
-        tmock::assert_equiv(time_first_fn->get_data<uint64_t>(),1000UL);
-        tmock::assert_equiv(time_last_fn->get_data<uint64_t>(),16900UL);
-        tmock::assert_equiv(time_1000_fn->data.size(),1024UL);
+        TASSERT_EQUIV(index_fn->data.size(),2*sizeof(tsdb::index_entry));
+        TASSERT_EQUIV(time_first_fn->get_data<uint64_t>(),1000UL);
+        TASSERT_EQUIV(time_last_fn->get_data<uint64_t>(),16900UL);
+        TASSERT_EQUIV(time_1000_fn->data.size(),1024UL);
         TASSERT(!field1_dn->files.count("1000"));
         TASSERT(!field2_dn->files.count("1000"));
         TASSERT(!field3_dn->files.count("1000"));
@@ -313,15 +313,15 @@ class tmock_test
                                field3_1000_gz_fn->data.size());
         for (size_t i=0; i<128; ++i)
         {
-            tmock::assert_equiv(time_1000_fn->get_data<uint64_t>(i*8),
+            TASSERT_EQUIV(time_1000_fn->get_data<uint64_t>(i*8),
                                 1000 + 100*i);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(
                 (bitmap1_1000_fn->get_data<uint64_t>((i/64)*8) >> (i % 64)) & 1,
                 (uint64_t)dps[i].is_non_null[0]);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(
                 (bitmap2_1000_fn->get_data<uint64_t>((i/64)*8) >> (i % 64)) & 1,
                 (uint64_t)dps[i].is_non_null[1]);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(
                 (bitmap3_1000_fn->get_data<uint64_t>((i/64)*8) >> (i % 64)) & 1,
                 (uint64_t)dps[i].is_non_null[2]);
         }
@@ -334,33 +334,33 @@ class tmock_test
         auto bitmap1_13800_fn = bitmap1_dn->get_file("13800");
         auto bitmap2_13800_fn = bitmap2_dn->get_file("13800");
         auto bitmap3_13800_fn = bitmap3_dn->get_file("13800");
-        tmock::assert_equiv(time_13800_fn->data.size(),32UL*8UL);
+        TASSERT_EQUIV(time_13800_fn->data.size(),32UL*8UL);
         for (size_t i=0; i<32; ++i)
         {
-            tmock::assert_equiv(time_13800_fn->get_data<uint64_t>(i*8),
-                                13800 + 100*i);
-            tmock::assert_equiv(field1_13800_fn->get_data<uint32_t>(i*4),
-                                dps[i+128].field1);
-            tmock::assert_equiv(field2_13800_fn->get_data<double>(i*8),
-                                dps[i+128].field2);
-            tmock::assert_equiv(field3_13800_fn->get_data<float>(i*4),
-                                dps[i+128].field3);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(time_13800_fn->get_data<uint64_t>(i*8),
+                          13800 + 100*i);
+            TASSERT_EQUIV(field1_13800_fn->get_data<uint32_t>(i*4),
+                          dps[i+128].field1);
+            TASSERT_EQUIV(field2_13800_fn->get_data<double>(i*8),
+                          dps[i+128].field2);
+            TASSERT_EQUIV(field3_13800_fn->get_data<float>(i*4),
+                          dps[i+128].field3);
+            TASSERT_EQUIV(
                 (bitmap1_13800_fn->get_data<uint64_t>(i/64) >> (i % 64)) & 1,
                 (uint64_t)dps[i+128].is_non_null[0]);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(
                 (bitmap2_13800_fn->get_data<uint64_t>(i/64) >> (i % 64)) & 1,
                 (uint64_t)dps[i+128].is_non_null[1]);
-            tmock::assert_equiv(
+            TASSERT_EQUIV(
                 (bitmap3_13800_fn->get_data<uint64_t>(i/64) >> (i % 64)) & 1,
                 (uint64_t)dps[i+128].is_non_null[2]);
         }
 
         // Everything seems in order.  Let's do a count_op.
         auto cr = tsdb::count_committed_points(swl,0,-1);
-        tmock::assert_equiv(cr.npoints,128UL + 32UL);
-        tmock::assert_equiv(cr.time_first,1000UL);
-        tmock::assert_equiv(cr.time_last,16900UL);
+        TASSERT_EQUIV(cr.npoints,128UL + 32UL);
+        TASSERT_EQUIV(cr.time_first,1000UL);
+        TASSERT_EQUIV(cr.time_last,16900UL);
 
         // Try a select op.  Mix up the order of the fields.
         tsdb::select_op_first op(swl,"series1",{"field3","field2","field1"},0,
@@ -372,20 +372,20 @@ class tmock_test
             TASSERT(rem_points >= op.npoints);
             for (size_t i=0; i<op.npoints; ++i)
             {
-                tmock::assert_equiv(op.timestamps_begin[i],
-                                    1000 + (i + offset)*100);
-                tmock::assert_equiv(!op.is_field_null(0,i),
-                                    dps[i + offset].is_non_null[2]);
-                tmock::assert_equiv(!op.is_field_null(1,i),
-                                    dps[i + offset].is_non_null[1]);
-                tmock::assert_equiv(!op.is_field_null(2,i),
-                                    dps[i + offset].is_non_null[0]);
-                tmock::assert_equiv(op.get_field<float,0>(i),
-                                    dps[i + offset].field3);
-                tmock::assert_equiv(op.get_field<double,1>(i),
-                                    dps[i + offset].field2);
-                tmock::assert_equiv(op.get_field<uint32_t,2>(i),
-                                    dps[i + offset].field1);
+                TASSERT_EQUIV(op.timestamps_begin[i],
+                              1000 + (i + offset)*100);
+                TASSERT_EQUIV(!op.is_field_null(0,i),
+                              dps[i + offset].is_non_null[2]);
+                TASSERT_EQUIV(!op.is_field_null(1,i),
+                              dps[i + offset].is_non_null[1]);
+                TASSERT_EQUIV(!op.is_field_null(2,i),
+                              dps[i + offset].is_non_null[0]);
+                TASSERT_EQUIV(op.get_field<float,0>(i),
+                              dps[i + offset].field3);
+                TASSERT_EQUIV(op.get_field<double,1>(i),
+                              dps[i + offset].field2);
+                TASSERT_EQUIV(op.get_field<uint32_t,2>(i),
+                              dps[i + offset].field1);
             }
             offset += op.npoints;
             rem_points -= op.npoints;
@@ -420,7 +420,7 @@ class tmock_test
                 offset += n;
             }
             snapshot_auto_end();
-            tmock::assert_equiv(offset,NELEMS(dps));
+            TASSERT_EQUIV(offset,NELEMS(dps));
         }
 
         auto dn_final __UNUSED__ = fs_root;
@@ -454,7 +454,7 @@ class tmock_test
             }
 
             // Validate it all again to make sure it is sane.
-            tmock::assert_equiv(validate_points().npoints,NELEMS(dps));
+            TASSERT_EQUIV(validate_points().npoints,NELEMS(dps));
         }
     }
 
@@ -514,7 +514,7 @@ class tmock_test
             }
 
             // Validate it all again to make sure it is sane.
-            tmock::assert_equiv(validate_points().npoints,73UL);
+            TASSERT_EQUIV(validate_points().npoints,73UL);
         }
     }
 
@@ -641,9 +641,9 @@ class tmock_test
             // Start a select op.
             auto srl = tsdb::series_read_lock(m1,"series1");
             tsdb::select_op_first op(srl,"series1",{"field1"},0,-1,-1);
-            tmock::assert_equiv(op.npoints,16UL);
-            tmock::assert_equiv(op.timestamps_begin[0],1000UL);
-            tmock::assert_equiv(op.timestamps_end[-1],2500UL);
+            TASSERT_EQUIV(op.npoints,16UL);
+            TASSERT_EQUIV(op.timestamps_begin[0],1000UL);
+            TASSERT_EQUIV(op.timestamps_end[-1],2500UL);
 
             // Start a write.
             write_points(swl,45,100000,100,0);

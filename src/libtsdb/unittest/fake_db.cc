@@ -125,20 +125,20 @@ validate_points(uint64_t t0, uint64_t dt)
         TASSERT(offset + op.npoints <= NELEMS(dps));
         for (size_t i=0; i<op.npoints; ++i)
         {
-            tmock::assert_equiv(op.timestamps_begin[i],
-                                t0 + (i + offset)*dt);
-            tmock::assert_equiv(!op.is_field_null(0,i),
-                                dps[i + offset].is_non_null[0]);
-            tmock::assert_equiv(!op.is_field_null(1,i),
-                                dps[i + offset].is_non_null[1]);
-            tmock::assert_equiv(!op.is_field_null(2,i),
-                                dps[i + offset].is_non_null[2]);
-            tmock::assert_equiv(op.get_field<uint32_t,0>(i),
-                                dps[i + offset].field1);
-            tmock::assert_equiv(op.get_field<double,1>(i),
-                                dps[i + offset].field2);
-            tmock::assert_equiv(op.get_field<float,2>(i),
-                                dps[i + offset].field3);
+            TASSERT_EQUIV(op.timestamps_begin[i],
+                          t0 + (i + offset)*dt);
+            TASSERT_EQUIV(!op.is_field_null(0,i),
+                          dps[i + offset].is_non_null[0]);
+            TASSERT_EQUIV(!op.is_field_null(1,i),
+                          dps[i + offset].is_non_null[1]);
+            TASSERT_EQUIV(!op.is_field_null(2,i),
+                          dps[i + offset].is_non_null[2]);
+            TASSERT_EQUIV(op.get_field<uint32_t,0>(i),
+                          dps[i + offset].field1);
+            TASSERT_EQUIV(op.get_field<double,1>(i),
+                          dps[i + offset].field2);
+            TASSERT_EQUIV(op.get_field<float,2>(i),
+                          dps[i + offset].field3);
         }
         offset += op.npoints;
         op.next();
@@ -147,19 +147,13 @@ validate_points(uint64_t t0, uint64_t dt)
     for (auto i = wq.begin(); i != wq.end(); ++i)
     {
         TASSERT(offset < NELEMS(dps));
-        tmock::assert_equiv(i->time_ns,t0 + offset*dt);
-        tmock::assert_equiv(!i->is_field_null(0),
-                            dps[offset].is_non_null[0]);
-        tmock::assert_equiv(!i->is_field_null(1),
-                            dps[offset].is_non_null[1]);
-        tmock::assert_equiv(!i->is_field_null(2),
-                            dps[offset].is_non_null[2]);
-        tmock::assert_equiv(i->get_field<uint32_t>(0),
-                            dps[offset].field1);
-        tmock::assert_equiv(i->get_field<double>(1),
-                            dps[offset].field2);
-        tmock::assert_equiv(i->get_field<float>(2),
-                            dps[offset].field3);
+        TASSERT_EQUIV(i->time_ns,t0 + offset*dt);
+        TASSERT_EQUIV(!i->is_field_null(0),dps[offset].is_non_null[0]);
+        TASSERT_EQUIV(!i->is_field_null(1),dps[offset].is_non_null[1]);
+        TASSERT_EQUIV(!i->is_field_null(2),dps[offset].is_non_null[2]);
+        TASSERT_EQUIV(i->get_field<uint32_t>(0),dps[offset].field1);
+        TASSERT_EQUIV(i->get_field<double>(1),dps[offset].field2);
+        TASSERT_EQUIV(i->get_field<float>(2),dps[offset].field3);
         ++offset;
     }
 
