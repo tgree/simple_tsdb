@@ -90,7 +90,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
         // Select all data points from the overlap.
         uint64_t overlap_time_last = MIN(wci.timestamps[wci.npoints-1],
                                          write_lock.time_last);
-        select_op_first op(write_lock,"<overwrite>",{},wci.timestamps[0],
+        select_op_first op(write_lock,"<overwrite>",{"*"},wci.timestamps[0],
                            overlap_time_last,-1);
         kassert(op.npoints);
 

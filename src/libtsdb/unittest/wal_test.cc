@@ -133,7 +133,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_wal_overwrite)
+    TMOCK_TEST(test_wal_overwrite)
     {
         init_db(512);
 
