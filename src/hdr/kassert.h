@@ -10,15 +10,14 @@
 // Compile-time assertion.
 #define KASSERT(exp) static_assert(exp, #exp)
 
-void kabort(const char* f = __builtin_FILE(),
-            unsigned int l = __builtin_LINE()) noexcept __NORETURN__;
+void _kabort(const char* f, unsigned int l) noexcept __NORETURN__;
+#define kabort() _kabort(__FILE__,__LINE__)
 
-inline void kassert(bool expr,
-                     const char* f = __builtin_FILE(),
-                     unsigned int l = __builtin_LINE())
+inline void _kassert(const char* f, unsigned int l, bool expr)
 {
     if (!expr)
-        kabort(f,l);
+        _kabort(f,l);
 }
+#define kassert(...) _kassert(__FILE__,__LINE__,__VA_ARGS__)
 
 #endif /* __KERNEL_ASSERT_H */
