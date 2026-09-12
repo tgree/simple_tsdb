@@ -149,6 +149,32 @@ class tmock_test
         }
     }
 
+    TMOCK_TEST(test_wal_prewrite)
+    {
+        init_db(512);
+
+        snapshot_fs();
+        snapshot_auto_begin();
+        populate_db(1000,100,{76, 128, 93, 1, 1, 2, 700, 12});
+        snapshot_auto_end();
+
+        size_t n_tests = 0;
+        for (auto* dn : snapshots)
+        {
+            activate_and_fsync_snapshot(dn);
+
+            tsdb::root root(".",false);
+            tsdb::database db1(root,"db1");
+            tsdb::measurement m1(db1,"measurement1");
+            auto swl = tsdb::open_or_create_and_lock_series(m1,"series1");
+            if (swl.time_first != 1000)
+                continue;
+
+            write_points(swl,25,10,2,0);
+            ++n_tests;
+        }
+        TASSERT(n_tests > 0);
+    }
 };
 
 TMOCK_MAIN();
