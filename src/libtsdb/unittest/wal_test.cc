@@ -132,6 +132,23 @@ class tmock_test
             tmock::assert_equiv(validate_points(1,1),pop_points);
         }
     }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_wal_overwrite)
+    {
+        init_db(512);
+
+        snapshot_fs();
+        snapshot_auto_begin();
+        populate_db(1000,100,{76, 128, 93, 1, 1, 2, 700, 12});
+        snapshot_auto_end();
+
+        for (auto* dn : snapshots)
+        {
+            activate_and_fsync_snapshot(dn);
+            populate_db(1000,100,{12, 700, 2, 1, 1, 93, 128, 76});
+        }
+    }
+
 };
 
 TMOCK_MAIN();
