@@ -29,11 +29,11 @@ class tmock_test
 
         tmock::assert_equiv(fs_root->subdirs.size(),2UL);
         tmock::assert_equiv(fs_root->files.size(),3UL);
-        TASSERT(fs_root->subdirs.contains("databases"));
-        TASSERT(fs_root->subdirs.contains("tmp"));
-        TASSERT(fs_root->files.contains("passwd.lock"));
-        TASSERT(fs_root->files.contains("passwd"));
-        TASSERT(fs_root->files.contains("config.txt"));
+        TASSERT(fs_root->subdirs.count("databases"));
+        TASSERT(fs_root->subdirs.count("tmp"));
+        TASSERT(fs_root->files.count("passwd.lock"));
+        TASSERT(fs_root->files.count("passwd"));
+        TASSERT(fs_root->files.count("config.txt"));
         TASSERT(fs_root->subdirs["databases"]->subdirs.empty());
         TASSERT(fs_root->subdirs["databases"]->files.empty());
         TASSERT(fs_root->subdirs["tmp"]->subdirs.empty());
@@ -199,9 +199,9 @@ class tmock_test
         assert_tree_fsynced(fs_root);
         root.create_database("db3");
         assert_tree_fsynced(fs_root);
-        TASSERT(fs_root->subdirs["databases"]->subdirs.contains("db1"));
-        TASSERT(fs_root->subdirs["databases"]->subdirs.contains("db2"));
-        TASSERT(fs_root->subdirs["databases"]->subdirs.contains("db3"));
+        TASSERT(fs_root->subdirs["databases"]->subdirs.count("db1"));
+        TASSERT(fs_root->subdirs["databases"]->subdirs.count("db2"));
+        TASSERT(fs_root->subdirs["databases"]->subdirs.count("db3"));
 
         TASSERT(root.database_exists("db1"));
         TASSERT(root.database_exists("db2"));

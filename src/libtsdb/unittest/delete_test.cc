@@ -26,17 +26,17 @@ validate_timestamp_inodes(dir_node* series_dn, uint64_t* timestamps, size_t N)
     {
         std::string s = std::to_string(timestamps[i]);
 
-        TASSERT(time_ns_dn->files.contains(s));
-        TASSERT(bitmap1_dn->files.contains(s));
-        TASSERT(bitmap2_dn->files.contains(s));
-        TASSERT(bitmap3_dn->files.contains(s));
+        TASSERT(time_ns_dn->files.count(s));
+        TASSERT(bitmap1_dn->files.count(s));
+        TASSERT(bitmap2_dn->files.count(s));
+        TASSERT(bitmap3_dn->files.count(s));
 
         if (i < N - 1)
             s += ".gz";
 
-        TASSERT(field1_dn->files.contains(s));
-        TASSERT(field2_dn->files.contains(s));
-        TASSERT(field3_dn->files.contains(s));
+        TASSERT(field1_dn->files.count(s));
+        TASSERT(field2_dn->files.count(s));
+        TASSERT(field3_dn->files.count(s));
     }
     tmock::assert_equiv(time_ns_dn->files.size(),N);
     tmock::assert_equiv(field1_dn->files.size(),N);
@@ -325,7 +325,7 @@ class tmock_test
             bool bad_index = false;
             for (size_t i=0; i<nindices; ++i)
             {
-                if (!time_ns_dn->files.contains(ies[i].timestamp_file))
+                if (!time_ns_dn->files.count(ies[i].timestamp_file))
                 {
                     bad_index = true;
                     break;
@@ -356,8 +356,8 @@ class tmock_test
             tmock::assert_equiv((uint64_t)index_fn->data.size(),
                                 (uint64_t)2*sizeof(tsdb::index_entry));
             ies = index_fn->as_array<tsdb::index_entry>();
-            TASSERT(time_ns_dn->files.contains(ies[0].timestamp_file));
-            TASSERT(time_ns_dn->files.contains(ies[1].timestamp_file));
+            TASSERT(time_ns_dn->files.count(ies[0].timestamp_file));
+            TASSERT(time_ns_dn->files.count(ies[1].timestamp_file));
             tmock::assert_equiv(ies[0].time_ns,100000UL);
             tmock::assert_equiv(ies[1].time_ns,101600UL);
         }
@@ -402,7 +402,7 @@ class tmock_test
             bool bad_index = false;
             for (size_t i=0; i<nindices; ++i)
             {
-                if (!time_ns_dn->files.contains(ies[i].timestamp_file))
+                if (!time_ns_dn->files.count(ies[i].timestamp_file))
                 {
                     bad_index = true;
                     break;
@@ -434,7 +434,7 @@ class tmock_test
                 bad_index = true;
                 for (size_t i=0; i<nindices; ++i)
                 {
-                    if (!time_ns_dn->files.contains(ies[i].timestamp_file))
+                    if (!time_ns_dn->files.count(ies[i].timestamp_file))
                     {
                         bad_index = true;
                         break;
@@ -459,7 +459,7 @@ class tmock_test
             nindices = index_fn->data.size() / sizeof(tsdb::index_entry);
             ies = index_fn->as_array<tsdb::index_entry>();
             for (size_t i=0; i<nindices; ++i)
-                TASSERT(time_ns_dn->files.contains(ies[i].timestamp_file));
+                TASSERT(time_ns_dn->files.count(ies[i].timestamp_file));
 
             // The bad entries should not affect any operations.
             auto cr = tsdb::count_points(stl,0,-1);

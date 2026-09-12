@@ -31,18 +31,18 @@ class tmock_test
 
         for (auto* dn : snapshots)
         {
-            TASSERT(dn->subdirs.contains("dir1"));
-            TASSERT(dn->subdirs.contains("dir2"));
-            TASSERT(dn->subdirs["dir1"]->subdirs.contains("subdir1"));
-            TASSERT(dn->subdirs["dir2"]->subdirs.contains("subdir2"));
+            TASSERT(dn->subdirs.count("dir1"));
+            TASSERT(dn->subdirs.count("dir2"));
+            TASSERT(dn->subdirs["dir1"]->subdirs.count("subdir1"));
+            TASSERT(dn->subdirs["dir2"]->subdirs.count("subdir2"));
             TASSERT(dn->subdirs["dir1"]->subdirs["subdir1"]->subdirs.
-                    contains("subdir3"));
-            TASSERT(dn->files.contains("fd0"));
+                    count("subdir3"));
+            TASSERT(dn->files.count("fd0"));
         }
 
-        TASSERT(!snapshots[0]->subdirs.contains("dir3"));
-        TASSERT(snapshots[1]->subdirs.contains("dir3"));
-        TASSERT(!snapshots[2]->subdirs.contains("dir3"));
+        TASSERT(!snapshots[0]->subdirs.count("dir3"));
+        TASSERT(snapshots[1]->subdirs.count("dir3"));
+        TASSERT(!snapshots[2]->subdirs.count("dir3"));
         tmock::assert_equiv(snapshots[0]->files["fd0"]->data_as_string(),"");
         tmock::assert_equiv(snapshots[1]->files["fd0"]->data_as_string(),
                             "12345");
@@ -93,50 +93,50 @@ class tmock_test
             auto* ss = snapshots[i];
 
             // dir1
-            TASSERT(ss->subdirs.contains("dir1"));
+            TASSERT(ss->subdirs.count("dir1"));
 
             // dir2
             if (1 <= i && i < snapshots.size())
-                TASSERT(ss->subdirs.contains("dir2"));
+                TASSERT(ss->subdirs.count("dir2"));
             else
-                TASSERT(!ss->subdirs.contains("dir2"));
+                TASSERT(!ss->subdirs.count("dir2"));
 
             // subdir1
             if (2 <= i && i < snapshots.size())
-                TASSERT(ss->subdirs["dir1"]->subdirs.contains("subdir1"));
+                TASSERT(ss->subdirs["dir1"]->subdirs.count("subdir1"));
             else
             {
-                TASSERT(!ss->subdirs.contains("dir1") ||
-                        !ss->subdirs["dir1"]->subdirs.contains("subdir1"));
+                TASSERT(!ss->subdirs.count("dir1") ||
+                        !ss->subdirs["dir1"]->subdirs.count("subdir1"));
             }
 
             // subdir2
             if (3 <= i && i < snapshots.size())
-                TASSERT(ss->subdirs["dir2"]->subdirs.contains("subdir2"));
+                TASSERT(ss->subdirs["dir2"]->subdirs.count("subdir2"));
             else
             {
-                TASSERT(!ss->subdirs.contains("dir2") ||
-                        !ss->subdirs["dir2"]->subdirs.contains("subdir2"));
+                TASSERT(!ss->subdirs.count("dir2") ||
+                        !ss->subdirs["dir2"]->subdirs.count("subdir2"));
             }
 
             // subdir3
             if (4 <= i && i < snapshots.size())
             {
                 TASSERT(ss->subdirs["dir1"]->subdirs["subdir1"]->
-                        subdirs.contains("subdir3"));
+                        subdirs.count("subdir3"));
             }
             else
             {
-                TASSERT(!ss->subdirs.contains("dir1") ||
-                        !ss->subdirs["dir1"]->subdirs.contains("subdir1") ||
+                TASSERT(!ss->subdirs.count("dir1") ||
+                        !ss->subdirs["dir1"]->subdirs.count("subdir1") ||
                         !ss->subdirs["dir1"]->subdirs["subdir1"]->
-                         subdirs.contains("subdir3"));
+                         subdirs.count("subdir3"));
             }
 
             // fd0
             if (5 <= i && i < 10)
             {
-                TASSERT(ss->files.contains("fd0"));
+                TASSERT(ss->files.count("fd0"));
                 auto data = ss->files["fd0"]->data_as_string();
                 if (i == 5)
                     tmock::assert_equiv(data,"");
@@ -146,13 +146,13 @@ class tmock_test
                     tmock::assert_equiv(data,"123456789");
             }                       
             else
-                TASSERT(!ss->files.contains("fd0"));
+                TASSERT(!ss->files.count("fd0"));
 
             // dir3
             if (7 <= i && i < 9)
-                TASSERT(ss->subdirs.contains("dir3"));
+                TASSERT(ss->subdirs.count("dir3"));
             else
-                TASSERT(!ss->subdirs.contains("dir3"));
+                TASSERT(!ss->subdirs.count("dir3"));
         }
     }
 };

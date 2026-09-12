@@ -17,17 +17,17 @@ const std::vector<tsdb::schema_entry> test_fields =
 static void
 validate_series_inodes(dir_node* dn)
 {
-    TASSERT(dn->subdirs.contains("time_ns"));
-    TASSERT(dn->subdirs.contains("fields"));
-    TASSERT(dn->subdirs.contains("bitmaps"));
-    TASSERT(dn->files.contains("time_first"));
-    TASSERT(dn->files.contains("time_last"));
-    TASSERT(dn->files.contains("index"));
-    TASSERT(dn->files.contains("wal"));
+    TASSERT(dn->subdirs.count("time_ns"));
+    TASSERT(dn->subdirs.count("fields"));
+    TASSERT(dn->subdirs.count("bitmaps"));
+    TASSERT(dn->files.count("time_first"));
+    TASSERT(dn->files.count("time_last"));
+    TASSERT(dn->files.count("index"));
+    TASSERT(dn->files.count("wal"));
     for (const auto& se : test_fields)
     {
-        TASSERT(dn->subdirs["fields"]->subdirs.contains(se.name));
-        TASSERT(dn->subdirs["bitmaps"]->subdirs.contains(se.name));
+        TASSERT(dn->subdirs["fields"]->subdirs.count(se.name));
+        TASSERT(dn->subdirs["bitmaps"]->subdirs.count(se.name));
     }
 }
 
@@ -124,7 +124,7 @@ class tmock_test
             tsdb::measurement m1(db1,"measurement1");
             auto* mdn = fd_table[m1.dir.fd].directory;
 
-            if (!mdn->subdirs.contains("series1"))
+            if (!mdn->subdirs.count("series1"))
             {
                 try
                 {

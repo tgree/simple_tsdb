@@ -270,7 +270,7 @@ create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
 {
     for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
     {
-        if (validated_dbs.contains(local_db_path))
+        if (validated_dbs.count(local_db_path))
             continue;
         if (!root->database_exists(local_db_path))
             continue;
@@ -452,7 +452,7 @@ flush_workloop()
         // Iterate over all mapped databases, flushing as we go.
         for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
         {
-            if (!validated_dbs.contains(local_db_path))
+            if (!validated_dbs.count(local_db_path))
                 continue;
 
             tsdb::database local_db(*root,local_db_path);

@@ -75,9 +75,9 @@ class tmock_test
         {
             TASSERT(e.errnov == ENOENT);
         }
-        TASSERT(fs_root->files.contains("fd0"));
-        TASSERT(fs_root->subdirs.contains("dir1"));
-        TASSERT(fs_root->subdirs["dir1"]->files.contains("fd1"));
+        TASSERT(fs_root->files.count("fd0"));
+        TASSERT(fs_root->subdirs.count("dir1"));
+        TASSERT(fs_root->subdirs["dir1"]->files.count("fd1"));
 
         try
         {
@@ -89,9 +89,9 @@ class tmock_test
         {
             TASSERT(e.errnov == ENOTEMPTY);
         }
-        TASSERT(fs_root->files.contains("fd0"));
-        TASSERT(fs_root->subdirs.contains("dir1"));
-        TASSERT(fs_root->subdirs["dir1"]->files.contains("fd1"));
+        TASSERT(fs_root->files.count("fd0"));
+        TASSERT(fs_root->subdirs.count("dir1"));
+        TASSERT(fs_root->subdirs["dir1"]->files.count("fd1"));
 
         try
         {
@@ -103,9 +103,9 @@ class tmock_test
         {
             TASSERT(e.errnov == ENOTDIR);
         }
-        TASSERT(fs_root->files.contains("fd0"));
-        TASSERT(fs_root->subdirs.contains("dir1"));
-        TASSERT(fs_root->subdirs["dir1"]->files.contains("fd1"));
+        TASSERT(fs_root->files.count("fd0"));
+        TASSERT(fs_root->subdirs.count("dir1"));
+        TASSERT(fs_root->subdirs["dir1"]->files.count("fd1"));
 
         try
         {
@@ -117,21 +117,21 @@ class tmock_test
         {
             TASSERT(e.errnov == ENOENT);
         }
-        TASSERT(fs_root->files.contains("fd0"));
-        TASSERT(fs_root->subdirs.contains("dir1"));
-        TASSERT(fs_root->subdirs["dir1"]->files.contains("fd1"));
+        TASSERT(fs_root->files.count("fd0"));
+        TASSERT(fs_root->subdirs.count("dir1"));
+        TASSERT(fs_root->subdirs["dir1"]->files.count("fd1"));
         
         futil::unlink(cwd,"fd0");
-        TASSERT(!fs_root->files.contains("fd0"));
-        TASSERT(fs_root->subdirs.contains("dir1"));
-        TASSERT(fs_root->subdirs["dir1"]->files.contains("fd1"));
+        TASSERT(!fs_root->files.count("fd0"));
+        TASSERT(fs_root->subdirs.count("dir1"));
+        TASSERT(fs_root->subdirs["dir1"]->files.count("fd1"));
 
         futil::unlink(cwd,"dir1/fd1");
-        TASSERT(fs_root->subdirs.contains("dir1"));
-        TASSERT(!fs_root->subdirs["dir1"]->files.contains("fd1"));
+        TASSERT(fs_root->subdirs.count("dir1"));
+        TASSERT(!fs_root->subdirs["dir1"]->files.count("fd1"));
 
         futil::unlinkat(cwd.fd,"dir1",AT_REMOVEDIR);
-        TASSERT(!fs_root->subdirs.contains("dir1"));
+        TASSERT(!fs_root->subdirs.count("dir1"));
 
         tmock::assert_equiv(live_files.size(),2UL);
         tmock::assert_equiv(live_dirs.size(),1UL);
@@ -295,17 +295,17 @@ class tmock_test
         tmock::assert_equiv(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir",0777),
             true);
-        TASSERT(fs_root->subdirs.contains("test_dir"));
+        TASSERT(fs_root->subdirs.count("test_dir"));
 
         tmock::assert_equiv(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir2",0777),
             true);
-        TASSERT(fs_root->subdirs.contains("test_dir2"));
+        TASSERT(fs_root->subdirs.count("test_dir2"));
 
         tmock::assert_equiv(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir2/test_dir3",0777),
             true);
-        TASSERT(fs_root->subdirs["test_dir2"]->subdirs.contains("test_dir3"));
+        TASSERT(fs_root->subdirs["test_dir2"]->subdirs.count("test_dir3"));
 
         tmock::assert_equiv(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir",0777),
@@ -318,11 +318,11 @@ class tmock_test
             false);
 
         futil::unlinkat(AT_FDCWD,"test_dir",AT_REMOVEDIR);
-        TASSERT(!fs_root->subdirs.contains("test_dir"));
+        TASSERT(!fs_root->subdirs.count("test_dir"));
         tmock::assert_equiv(
             futil::mkdirat_if_not_exists(AT_FDCWD,"test_dir",0777),
             true);
-        TASSERT(fs_root->subdirs.contains("test_dir"));
+        TASSERT(fs_root->subdirs.count("test_dir"));
     }
 
     TMOCK_TEST(test_renameat_file)
@@ -369,13 +369,13 @@ class tmock_test
         auto tofd = futil::openat(AT_FDCWD,"dir3",O_DIRECTORY);
         futil::renameat(fromfd,"fd",tofd,"fd_renamed");
         TASSERT(!fs_root->subdirs["dir1"]->subdirs["dir2"]->
-                    files.contains("fd"));
+                    files.count("fd"));
         TASSERT(fs_root->subdirs["dir3"]->files["fd_renamed"] == fn);
 
         auto fd2 = futil::openat(AT_FDCWD,"dir1/fd2",O_CREAT | O_EXCL,0777);
         auto fn2 = fd_table[fd2].file;
-        TASSERT(live_files.contains(fn));
-        TASSERT(live_files.contains(fn2));
+        TASSERT(live_files.count(fn));
+        TASSERT(live_files.count(fn2));
         futil::write(fd2,"abcdefg",7);
 
         futil::close(fromfd);
@@ -385,9 +385,9 @@ class tmock_test
         futil::renameat(fromfd,"fd_renamed",tofd,"fd2");
         TASSERT(fs_root->subdirs["dir1"]->files["fd2"] == fn);
 
-        TASSERT(live_files.contains(fn2));
+        TASSERT(live_files.count(fn2));
         futil::close(fd2);
-        TASSERT(!live_files.contains(fn2));
+        TASSERT(!live_files.count(fn2));
 
         char buf[11] = {};
         fd = futil::openat(AT_FDCWD,"dir1/fd2",O_RDONLY);
@@ -457,18 +457,18 @@ class tmock_test
         //  dir1/fd2
         //  dir3/dirX/
         //  dir3/dirX/fd1
-        TASSERT(!fs_root->subdirs["dir1"]->subdirs.contains("dir2"));
+        TASSERT(!fs_root->subdirs["dir1"]->subdirs.count("dir2"));
         TASSERT(fs_root->subdirs["dir3"]->subdirs["dirX"] == dn2);
-        TASSERT(live_dirs.contains(dn1));
-        TASSERT(live_dirs.contains(dn2));
-        TASSERT(live_dirs.contains(dn3));
+        TASSERT(live_dirs.count(dn1));
+        TASSERT(live_dirs.count(dn2));
+        TASSERT(live_dirs.count(dn3));
         futil::close(fromfd);
         tmock::assert_equiv(live_dirs.size(),4UL);
 
         // Try to rename: dir3/dirX -> dir1
         // Should fail because dir1 is not empty.
         fromfd = futil::openat(AT_FDCWD,"dir3",O_DIRECTORY);
-        TASSERT(fs_root->subdirs["dir3"]->subdirs.contains("dirX"));
+        TASSERT(fs_root->subdirs["dir3"]->subdirs.count("dirX"));
         try
         {
             futil::renameat(fromfd,"dirX",AT_FDCWD,"dir1");
@@ -489,14 +489,14 @@ class tmock_test
         //  dir1/fd1
         //  dir3/
         tmock::assert_equiv(live_dirs.size(),3UL);
-        TASSERT(fs_root->subdirs.contains("dir1"));
-        TASSERT(fs_root->subdirs.contains("dir3"));
-        TASSERT(!fs_root->subdirs["dir3"]->subdirs.contains("dirX"));
+        TASSERT(fs_root->subdirs.count("dir1"));
+        TASSERT(fs_root->subdirs.count("dir3"));
+        TASSERT(!fs_root->subdirs["dir3"]->subdirs.count("dirX"));
         TASSERT(fs_root->subdirs["dir1"] == dn2);
         TASSERT(fs_root->subdirs["dir3"] == dn3);
-        TASSERT(!live_dirs.contains(dn1));
-        TASSERT(live_dirs.contains(dn2));
-        TASSERT(live_dirs.contains(dn3));
+        TASSERT(!live_dirs.count(dn1));
+        TASSERT(live_dirs.count(dn2));
+        TASSERT(live_dirs.count(dn3));
 
         // Rename: dir1 -> dir3
         // We still have dir3 open in fromfd.
@@ -508,12 +508,12 @@ class tmock_test
         //  dir3/fd1
         //  [dir3/]
         tmock::assert_equiv(live_dirs.size(),3UL);
-        TASSERT(!fs_root->subdirs.contains("dir1"));
-        TASSERT(fs_root->subdirs.contains("dir3"));
+        TASSERT(!fs_root->subdirs.count("dir1"));
+        TASSERT(fs_root->subdirs.count("dir3"));
         TASSERT(fs_root->subdirs["dir3"] == dn2);
-        TASSERT(!live_dirs.contains(dn1));
-        TASSERT(live_dirs.contains(dn2));
-        TASSERT(live_dirs.contains(dn3));
+        TASSERT(!live_dirs.count(dn1));
+        TASSERT(live_dirs.count(dn2));
+        TASSERT(live_dirs.count(dn3));
 
         futil::close(fromfd);
 
@@ -522,9 +522,9 @@ class tmock_test
         //  dir3/
         //  dir3/fd1
         tmock::assert_equiv(live_dirs.size(),2UL);
-        TASSERT(!live_dirs.contains(dn1));
-        TASSERT(live_dirs.contains(dn2));
-        TASSERT(!live_dirs.contains(dn3));
+        TASSERT(!live_dirs.count(dn1));
+        TASSERT(live_dirs.count(dn2));
+        TASSERT(!live_dirs.count(dn3));
 
         tmock::assert_equiv(fs_root->refcount,2UL);
         tmock::assert_equiv(fs_root->subdirs["dir3"]->refcount,2UL);
@@ -562,8 +562,8 @@ class tmock_test
             futil::renameat_if_not_exists(AT_FDCWD,"dir1",AT_FDCWD,"dir4"),
             true);
         tmock::assert_equiv(live_dirs.size(),4UL);
-        TASSERT(!fs_root->subdirs.contains("dir1"));
-        TASSERT(fs_root->subdirs.contains("dir4"));
+        TASSERT(!fs_root->subdirs.count("dir1"));
+        TASSERT(fs_root->subdirs.count("dir4"));
 
         // Hierarchy:
         //  /
@@ -589,11 +589,11 @@ class tmock_test
                                           AT_FDCWD,"dir4/dir2/fdX"),
             true);
         tmock::assert_equiv(live_files.size(),2UL);
-        TASSERT(!fs_root->subdirs["dir4"]->files.contains("fd2"));
+        TASSERT(!fs_root->subdirs["dir4"]->files.count("fd2"));
         TASSERT(fs_root->subdirs["dir4"]->subdirs["dir2"]->files.
-                    contains("fd1"));
+                    count("fd1"));
         TASSERT(fs_root->subdirs["dir4"]->subdirs["dir2"]->files.
-                    contains("fdX"));
+                    count("fdX"));
     }
 };
 
