@@ -484,9 +484,9 @@ namespace futil
                     return *this;
                 }
 
-                constexpr bool operator==(const lines_sentinel&)
+                constexpr bool operator!=(const lines_sentinel&)
                 {
-                    return at_eof;
+                    return !at_eof;
                 }
 
                 lines_iterator(const lines_range& lr):
