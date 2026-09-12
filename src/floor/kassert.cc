@@ -10,7 +10,7 @@ struct
 } static volatile abort_info;
 
 void
-kabort(const char* f, unsigned int l) noexcept
+_kabort(const char* f, unsigned int l) noexcept
 {
     abort_info.file = f;
     abort_info.line = l;
