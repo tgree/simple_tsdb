@@ -4,6 +4,7 @@
 #define __SRC_FUTIL_FUTIL_H
 
 #include "futil_wrap.h"
+#include <strutil/strutil.h>
 #include <hdr/kassert.h>
 #include <string>
 #include <vector>
@@ -48,7 +49,7 @@ namespace futil
 
         bool ends_with(const char* s) const
         {
-            return _path.ends_with(s);
+            return str::ends_with(_path,s);
         }
 
         // Returns the number of components in the path.  For instance, the

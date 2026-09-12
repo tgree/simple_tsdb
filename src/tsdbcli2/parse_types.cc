@@ -20,11 +20,11 @@ parse_type<fields_list>(
         while (begin != end)
         {
             auto v = str::split(*begin,",");
-            size_t n = begin->ends_with(",") ? v.size() - 1 : v.size();
+            size_t n = str::ends_with(*begin,",") ? v.size() - 1 : v.size();
             for (size_t i=0; i<n; ++i)
                 fields.emplace_back(std::move(v[i]));
             
-            if (!(*begin++).ends_with(","))
+            if (!str::ends_with(*begin++,","))
                 break;
         }
         if (fields.empty())
