@@ -20,7 +20,7 @@ const std::vector<tsdb::schema_entry> test_fields =
     {tsdb::FT_F32,SCHEMA_VERSION,2,12,"field3"},
 };
 
-static constexpr std::array<data_point,1024>
+static std::array<data_point,1024>
 gen_random_points()
 {
     std::array<data_point,1024> arr;
@@ -37,7 +37,7 @@ gen_random_points()
     return arr;
 }
 
-constexpr const std::array<data_point,1024> dps = gen_random_points();
+const std::array<data_point,1024> dps = gen_random_points();
 
 void
 write_points(tsdb::series_write_lock& write_lock, size_t npoints, uint64_t t0,

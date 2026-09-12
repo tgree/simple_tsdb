@@ -26,7 +26,7 @@ struct data_point
     bool        is_non_null[3];
 };
 
-static constexpr std::array<data_point,1024>
+static std::array<data_point,1024>
 gen_random_points()
 {
     std::array<data_point,1024> arr;
@@ -43,7 +43,7 @@ gen_random_points()
     return arr;
 }
 
-static constexpr const auto dps = gen_random_points();
+static const auto dps = gen_random_points();
 
 static void
 write_points(tsdb::series_write_lock& write_lock, size_t npoints, uint64_t t0,
