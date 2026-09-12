@@ -6,11 +6,11 @@
 #include "exception.h"
 #include "constants.h"
 #include <futil/futil.h>
-#include <span>
 #include <algorithm>
 #include <hdr/kassert.h>
 #include <hdr/kmath.h>
 #include <hdr/static_vector.h>
+#include <hdr/span.h>
 
 namespace tsdb
 {
@@ -67,7 +67,7 @@ namespace tsdb
         futil::directory                dir;
         futil::file                     schema_fd;
         futil::mapping                  schema_mapping;
-        std::span<const schema_entry>   fields;
+        span<const schema_entry>        fields;
 
         std::vector<std::string> list_series() const
         {

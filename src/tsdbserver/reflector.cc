@@ -542,8 +542,8 @@ parse_reflector_config(const char* path, reflector_config* rc)
                 "expected 'map <local_db> <remote_db>'");
             auto remote_db = get_part(parts,2,line_num,
                 "expected 'map <local_db> <remote_db>'");
-            auto [iter, ok] = rc->db_map.try_emplace(local_db,remote_db);
-            if (!ok)
+            auto result = rc->db_map.try_emplace(local_db,remote_db);
+            if (!result.second)
             {
                 throw std::invalid_argument(str::printf(
                     "Line %zu: local database '%s' already mapped'",

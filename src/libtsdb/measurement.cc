@@ -23,7 +23,6 @@ tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     schema_mapping(0,schema_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                    schema_fd.fd,0),
     fields((const schema_entry*)schema_mapping.addr,
-           (const schema_entry*)schema_mapping.addr +
            schema_mapping.len / sizeof(schema_entry))
 {
     size_t offset = 0;

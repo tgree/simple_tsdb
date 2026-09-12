@@ -6,6 +6,7 @@
 #include <hdr/compiler.h>
 #include <string.h>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <ctype.h>
 #include <stdarg.h>
@@ -14,6 +15,12 @@
 
 namespace str
 {
+    inline bool ends_with(std::string_view str, std::string_view suffix)
+    {
+        return str.size() >= suffix.size() && 
+               str.compare(str.size()-suffix.size(),suffix.size(),suffix) == 0;
+    }
+
     struct slice_indices
     {
         size_t i;

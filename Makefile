@@ -52,7 +52,7 @@ GNU20_SUPPORTED := $(shell $(CXX) -std=gnu++20 -E -x c++ - < /dev/null >/dev/nul
 ifeq ($(GNU20_SUPPORTED),yes)
     CXX_STD_FLAG := -std=gnu++20
 else
-    CXX_STD_FLAG := -std=gnu++2a
+    CXX_STD_FLAG := -std=gnu++17
 endif
 
 HAS_C99_DESIGNATOR_FLAG := $(shell $(CXX) -Werror -Wno-c99-designator -E -x c++ - < /dev/null >/dev/null 2>&1 && echo yes || echo no)
@@ -84,7 +84,8 @@ COMMON_CXXFLAGS := \
 	-I$(SRC_DIR) \
 	-I$(INCLUDE_DIR) \
 	-I$(THIRD_PARTY)
-COMMON_LDFLAGS :=
+COMMON_LDFLAGS := \
+	-pthread
 
 # Unittest C++ flags.
 TEST_CXXFLAGS := \

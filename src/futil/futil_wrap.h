@@ -22,6 +22,26 @@
 
 #define FUTIL_WRAP_TRACE    0
 
+#if IS_LINUX
+
+// Define renameat2 for older systems.
+#if !defined(__GLIBC__) || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 28)
+
+#include <sys/syscall.h>
+inline int renameat2(int olddirfd, const char *oldpath, int newdirfd,
+                     const char *newpath, unsigned int flags)
+{
+    return syscall(SYS_renameat2, olddirfd, oldpath, newdirfd, newpath, flags);
+}
+
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif
+
+#endif /* __GLIBC__ check */
+
+#endif /* IS_LINUX */
+
 namespace futil
 {
     enum hook_id
