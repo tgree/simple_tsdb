@@ -262,12 +262,16 @@ futil::openat(int at_fd, const char* path, int oflag)
     kassert(!(oflag & O_NONBLOCK));
     kassert(!(oflag & O_TRUNC));
 #if IS_MACOS
+#ifdef O_EXEC
     kassert(!(oflag & O_EXEC));
+#endif
     kassert(!(oflag & O_SHLOCK));
     kassert(!(oflag & O_EXLOCK));
     kassert(!(oflag & O_SYMLINK));
     kassert(!(oflag & O_EVTONLY));
+#ifdef O_NOFOLLOW_ANY
     kassert(!(oflag & O_NOFOLLOW_ANY));
+#endif
 #if 0
     kassert(!(oflag & O_RESOLVE_BENEATH));
 #endif
@@ -345,13 +349,17 @@ futil::openat(int at_fd, const char* path, int oflag, mode_t mode)
     kassert(!(oflag & O_NOFOLLOW));
     kassert(!(oflag & O_NONBLOCK));
 #if IS_MACOS
+#ifdef O_EXEC
     kassert(!(oflag & O_EXEC));
+#endif
     kassert(!(oflag & O_SHLOCK));
     kassert(!(oflag & O_EXLOCK));
     kassert(!(oflag & O_DIRECTORY));
     kassert(!(oflag & O_SYMLINK));
     kassert(!(oflag & O_EVTONLY));
+#ifdef O_NOFOLLOW_ANY
     kassert(!(oflag & O_NOFOLLOW_ANY));
+#endif
 #if 0
     kassert(!(oflag & O_RESOLVE_BENEATH));
 #endif
@@ -692,7 +700,9 @@ futil::unlinkat(int at_fd, const char* path, int flag)
 {
     FW_PROBE(HI_UNLINKAT,"unlinkat(%d,\"%s\",%d)",at_fd,path,flag);
 #if IS_MACOS
+#ifdef AT_SYMLINK_NOFOLLOW_ANY
     kassert(!(flag & AT_SYMLINK_NOFOLLOW_ANY));
+#endif
 #endif
 
     dir_node* at_dir __UNUSED__ = find_at_fd_dir_node(at_fd);
