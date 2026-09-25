@@ -270,7 +270,7 @@ create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
 {
     for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
     {
-        if (validated_dbs.contains(local_db_path))
+        if (validated_dbs.count(local_db_path))
             continue;
         if (!root->database_exists(local_db_path))
             continue;
@@ -314,8 +314,7 @@ flush_series(client& c, tsdb::measurement& local_m,
     auto stl = tsdb::series_total_lock(local_m,s_path);
     size_t max_chunk_points = local_m.max_points_for_data_len(10*1024*1024);
     auto series_id = local_db_path + "/" + m_path + "/" + s_path;
-    tsdb::select_op_first op(stl,series_id,std::vector<std::string>(),
-                             0,(uint64_t)-1,(uint64_t)-1);
+    tsdb::select_op_first op(stl,series_id,{"*"},0,(uint64_t)-1,(uint64_t)-1);
     while (op.npoints)
     {
         size_t op_rem_points = op.npoints;
@@ -453,7 +452,7 @@ flush_workloop()
         // Iterate over all mapped databases, flushing as we go.
         for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
         {
-            if (!validated_dbs.contains(local_db_path))
+            if (!validated_dbs.count(local_db_path))
                 continue;
 
             tsdb::database local_db(*root,local_db_path);

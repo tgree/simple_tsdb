@@ -7,7 +7,7 @@
 #include <math.h>
 
 void
-tmock::mem_dump(const void* v, size_t len, const char* file, unsigned int l)
+tmock::mem_dump(const char* file, unsigned int l, const void* v, size_t len)
 {
     if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
@@ -27,8 +27,8 @@ tmock::abort(const char* s, const char* f, unsigned int l)
 }
 
 void
-tmock::abort_mem_dump(const void* v, const void* expected, size_t len,
-    const char* file, size_t line)
+tmock::abort_mem_dump(const char* file, size_t line, const void* v,
+    const void* expected, size_t len)
 {
     if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
@@ -50,8 +50,8 @@ tmock::abort_mem_dump(const void* v, const void* expected, size_t len,
 }
 
 void
-tmock::abort_not_equiv(long long v, long long expected, const char* file,
-    size_t line)
+tmock::abort_not_equiv(const char* file, size_t line, long long v,
+    long long expected)
 {
     if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
@@ -63,8 +63,8 @@ tmock::abort_not_equiv(long long v, long long expected, const char* file,
 }
 
 void
-tmock::abort_not_equiv(unsigned long long v, unsigned long long expected,
-    const char* file, size_t line)
+tmock::abort_not_equiv(const char* file, size_t line, unsigned long long v,
+    unsigned long long expected)
 {
     if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
@@ -76,7 +76,8 @@ tmock::abort_not_equiv(unsigned long long v, unsigned long long expected,
 }
 
 void
-tmock::abort_not_equiv(double v, double expected, const char* file, size_t line)
+tmock::abort_not_equiv(const char* file, size_t line, double v,
+    double expected)
 {
     if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
@@ -88,8 +89,8 @@ tmock::abort_not_equiv(double v, double expected, const char* file, size_t line)
 }
 
 void
-tmock::abort_not_equiv(const char* s, const char* expected, const char* file,
-    size_t line)
+tmock::abort_not_equiv(const char* file, size_t line, const char* s,
+    const char* expected)
 {
     if (!(tmock::internal::mode_flags & TMOCK_MODE_FLAG_SILENT))
     {
@@ -101,8 +102,8 @@ tmock::abort_not_equiv(const char* s, const char* expected, const char* file,
 }
 
 void
-tmock::assert_float_similar(float v, float expected, float tolerance,
-    const char* file, size_t line)
+tmock::assert_float_similar(const char* file, size_t line, float v,
+    float expected, float tolerance)
 {
     if (fabsf(v - expected) > tolerance)
     {
@@ -117,8 +118,8 @@ tmock::assert_float_similar(float v, float expected, float tolerance,
 }
 
 void
-tmock::assert_double_similar(double v, double expected, double tolerance,
-    const char* file, size_t line)
+tmock::assert_double_similar(const char* file, size_t line, double v,
+    double expected, double tolerance)
 {
     if (fabs(v - expected) > tolerance)
     {

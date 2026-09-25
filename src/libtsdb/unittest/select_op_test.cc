@@ -51,11 +51,11 @@ generate_db()
         ->get_dir("measurement1")
         ->get_dir("series1");
     auto* index_fn = sdn->get_file("index");
-    tmock::assert_equiv(index_fn->data.size(),3*sizeof(tsdb::index_entry));
+    TASSERT_EQUIV(index_fn->data.size(),3*sizeof(tsdb::index_entry));
     auto* ies = index_fn->as_array<tsdb::index_entry>();
-    tmock::assert_equiv(ies[0].time_ns,100UL);
-    tmock::assert_equiv(ies[1].time_ns,260UL);
-    tmock::assert_equiv(ies[2].time_ns,420UL);
+    TASSERT_EQUIV(ies[0].time_ns,100UL);
+    TASSERT_EQUIV(ies[1].time_ns,260UL);
+    TASSERT_EQUIV(ies[2].time_ns,420UL);
 }
 
 class tmock_test
@@ -78,7 +78,7 @@ class tmock_test
                 tsdb::select_op_first op(srl,"series1",
                                          {"field1","field2","field3"},
                                          t,t+8,2);
-                tmock::assert_equiv(op.npoints,0UL);
+                TASSERT_EQUIV(op.npoints,0UL);
             }
         }
     }
@@ -101,7 +101,7 @@ class tmock_test
                 tsdb::select_op_last op(srl,"series1",
                                         {"field1","field2","field3"},
                                         t,t+8,2);
-                tmock::assert_equiv(op.npoints,0UL);
+                TASSERT_EQUIV(op.npoints,0UL);
             }
         }
     }
@@ -120,9 +120,9 @@ class tmock_test
             tsdb::select_op_first op(srl,"series1",
                                      {"field1","field2","field3"},
                                      t,t+9,-1);
-            tmock::assert_equiv(op.npoints,1UL);
+            TASSERT_EQUIV(op.npoints,1UL);
             op.next();
-            tmock::assert_equiv(op.npoints,0UL);
+            TASSERT_EQUIV(op.npoints,0UL);
         }
 
         for (size_t t = 100; t <= 540; t += 10)
@@ -130,9 +130,9 @@ class tmock_test
             tsdb::select_op_first op(srl,"series1",
                                      {"field1","field2","field3"},
                                      t,t+9,-1);
-            tmock::assert_equiv(op.npoints,1UL);
+            TASSERT_EQUIV(op.npoints,1UL);
             op.next();
-            tmock::assert_equiv(op.npoints,0UL);
+            TASSERT_EQUIV(op.npoints,0UL);
         }
     }
 
@@ -150,9 +150,9 @@ class tmock_test
             tsdb::select_op_last op(srl,"series1",
                                     {"field1","field2","field3"},
                                     t,t+9,-1);
-            tmock::assert_equiv(op.npoints,1UL);
+            TASSERT_EQUIV(op.npoints,1UL);
             op.next();
-            tmock::assert_equiv(op.npoints,0UL);
+            TASSERT_EQUIV(op.npoints,0UL);
         }
 
         for (size_t t = 100; t <= 540; t += 10)
@@ -160,9 +160,9 @@ class tmock_test
             tsdb::select_op_last op(srl,"series1",
                                     {"field1","field2","field3"},
                                     t,t+9,-1);
-            tmock::assert_equiv(op.npoints,1UL);
+            TASSERT_EQUIV(op.npoints,1UL);
             op.next();
-            tmock::assert_equiv(op.npoints,0UL);
+            TASSERT_EQUIV(op.npoints,0UL);
         }
     }
 
@@ -181,7 +181,7 @@ class tmock_test
             tsdb::select_op_first op(srl,"series1",
                                      {"field1","field2","field3"},
                                      545,-1,-1);
-            tmock::assert_equiv(op.npoints,0UL);
+            TASSERT_EQUIV(op.npoints,0UL);
         }
     }
 
@@ -200,7 +200,7 @@ class tmock_test
             tsdb::select_op_last op(srl,"series1",
                                     {"field1","field2","field3"},
                                     545,-1,5);
-            tmock::assert_equiv(op.npoints,0UL);
+            TASSERT_EQUIV(op.npoints,0UL);
         }
     }
 
@@ -241,7 +241,7 @@ class tmock_test
                 total_points += op.npoints;
                 op.next();
             }
-            tmock::assert_equiv(total_points,expected_npoints[live_indices]);
+            TASSERT_EQUIV(total_points,expected_npoints[live_indices]);
         }
         TASSERT(found_extra);
     }
@@ -279,13 +279,13 @@ class tmock_test
                                     0,-1,5);
             if (op.npoints)
             {
-                tmock::assert_equiv(op.npoints,5UL);
-                tmock::assert_equiv(op.timestamps_begin[0],
+                TASSERT_EQUIV(op.npoints,5UL);
+                TASSERT_EQUIV(op.timestamps_begin[0],
                                     last_timestamp[live_indices] - 40);
-                tmock::assert_equiv(op.timestamps_begin[4],
+                TASSERT_EQUIV(op.timestamps_begin[4],
                                     last_timestamp[live_indices]);
                 op.next();
-                tmock::assert_equiv(op.npoints,0UL);
+                TASSERT_EQUIV(op.npoints,0UL);
             }
         }
         TASSERT(found_extra);
@@ -319,7 +319,7 @@ class tmock_test
 
                     if (N == 0)
                     {
-                        tmock::assert_equiv(op.npoints,0UL);
+                        TASSERT_EQUIV(op.npoints,0UL);
                         continue;
                     }
 
@@ -329,7 +329,7 @@ class tmock_test
                         round_down_to_nearest_multiple<uint64_t>(t1,10ULL);
                     int64_t i0 = MAX(((int64_t)_t0 - 100) / 10,0);
                     int64_t i1 = MIN(((int64_t)_t1 - 100) / 10,44);
-                    tmock::assert_equiv<int64_t>(N,i1 - i0 + 1);
+                    TASSERT_EQUIV((int64_t)N,i1 - i0 + 1);
 
                     size_t total_points = 0;
                     auto* dp = &dps[i0];
@@ -340,17 +340,17 @@ class tmock_test
                         {
                             TASSERT(op.timestamps_begin[i] == timestamp);
 
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.get_field<uint32_t,0>(i),dp->field1);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.get_field<double,1>(i),dp->field2);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.get_field<float,2>(i),dp->field3);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.is_field_null(0,i),!dp->is_non_null[0]);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.is_field_null(1,i),!dp->is_non_null[1]);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.is_field_null(2,i),!dp->is_non_null[2]);
 
                             ++dp;
@@ -359,7 +359,7 @@ class tmock_test
                         }
                         op.next();
                     }
-                    tmock::assert_equiv<uint64_t>(total_points,MIN(N,limit));
+                    TASSERT_EQUIV(total_points,(size_t)MIN(N,limit));
                 }
             }
         }
@@ -393,7 +393,7 @@ class tmock_test
 
                     if (N == 0)
                     {
-                        tmock::assert_equiv(op.npoints,0UL);
+                        TASSERT_EQUIV(op.npoints,0UL);
                         continue;
                     }
 
@@ -403,7 +403,7 @@ class tmock_test
                         round_down_to_nearest_multiple<uint64_t>(t1,10ULL);
                     int64_t i0 = MAX(((int64_t)_t0 - 100) / 10,0);
                     int64_t i1 = MIN(((int64_t)_t1 - 100) / 10,44);
-                    tmock::assert_equiv<int64_t>(N,i1 - i0 + 1);
+                    TASSERT_EQUIV((int64_t)N,i1 - i0 + 1);
                     if (N > limit)
                         i0 += (N - limit);
 
@@ -416,17 +416,17 @@ class tmock_test
                         {
                             TASSERT(op.timestamps_begin[i] == timestamp);
 
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.get_field<uint32_t,0>(i),dp->field1);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.get_field<double,1>(i),dp->field2);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.get_field<float,2>(i),dp->field3);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.is_field_null(0,i),!dp->is_non_null[0]);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.is_field_null(1,i),!dp->is_non_null[1]);
-                            tmock::assert_equiv(
+                            TASSERT_EQUIV(
                                 op.is_field_null(2,i),!dp->is_non_null[2]);
 
                             ++dp;
@@ -435,7 +435,7 @@ class tmock_test
                         }
                         op.next();
                     }
-                    tmock::assert_equiv<uint64_t>(total_points,MIN(N,limit));
+                    TASSERT_EQUIV(total_points,(size_t)MIN(N,limit));
                 }
             }
         }

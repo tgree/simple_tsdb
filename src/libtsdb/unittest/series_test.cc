@@ -17,17 +17,17 @@ const std::vector<tsdb::schema_entry> test_fields =
 static void
 validate_series_inodes(dir_node* dn)
 {
-    TASSERT(dn->subdirs.contains("time_ns"));
-    TASSERT(dn->subdirs.contains("fields"));
-    TASSERT(dn->subdirs.contains("bitmaps"));
-    TASSERT(dn->files.contains("time_first"));
-    TASSERT(dn->files.contains("time_last"));
-    TASSERT(dn->files.contains("index"));
-    TASSERT(dn->files.contains("wal"));
+    TASSERT(dn->subdirs.count("time_ns"));
+    TASSERT(dn->subdirs.count("fields"));
+    TASSERT(dn->subdirs.count("bitmaps"));
+    TASSERT(dn->files.count("time_first"));
+    TASSERT(dn->files.count("time_last"));
+    TASSERT(dn->files.count("index"));
+    TASSERT(dn->files.count("wal"));
     for (const auto& se : test_fields)
     {
-        TASSERT(dn->subdirs["fields"]->subdirs.contains(se.name));
-        TASSERT(dn->subdirs["bitmaps"]->subdirs.contains(se.name));
+        TASSERT(dn->subdirs["fields"]->subdirs.count(se.name));
+        TASSERT(dn->subdirs["bitmaps"]->subdirs.count(se.name));
     }
 }
 
@@ -50,7 +50,7 @@ class tmock_test
         try
         {
             tsdb::open_or_create_and_lock_series(m1,"series1/dumb/name");
-            tmock::abort("Expected invalid series exception.");
+            TABORT("Expected invalid series exception.");
         }
         catch (const tsdb::invalid_series_exception&)
         {
@@ -59,7 +59,7 @@ class tmock_test
         try
         {
             tsdb::open_or_create_and_lock_series(m1,"series1 dumb name");
-            tmock::abort("Expected invalid series exception.");
+            TABORT("Expected invalid series exception.");
         }
         catch (const tsdb::invalid_series_exception&)
         {
@@ -68,7 +68,7 @@ class tmock_test
         try
         {
             tsdb::open_or_create_and_lock_series(m1,"series1\\dumb\\name");
-            tmock::abort("Expected invalid series exception.");
+            TABORT("Expected invalid series exception.");
         }
         catch (const tsdb::invalid_series_exception&)
         {
@@ -103,10 +103,10 @@ class tmock_test
             TASSERT(!dn->files["time_first"]->exclusive_locks);
             TASSERT(!dn->files["time_last"]->shared_locks);
             TASSERT(dn->files["time_last"]->exclusive_locks);
-            tmock::assert_equiv(dn->files["time_first"]->get_data<uint64_t>(),
-                                (uint64_t)1);
-            tmock::assert_equiv(dn->files["time_last"]->get_data<uint64_t>(),
-                                (uint64_t)0);
+            TASSERT_EQUIV(dn->files["time_first"]->get_data<uint64_t>(),
+                          (uint64_t)1);
+            TASSERT_EQUIV(dn->files["time_last"]->get_data<uint64_t>(),
+                          (uint64_t)0);
         }
 
         size_t no_series_count = 0;
@@ -124,12 +124,12 @@ class tmock_test
             tsdb::measurement m1(db1,"measurement1");
             auto* mdn = fd_table[m1.dir.fd].directory;
 
-            if (!mdn->subdirs.contains("series1"))
+            if (!mdn->subdirs.count("series1"))
             {
                 try
                 {
                     tsdb::series_read_lock(m1,"series1");
-                    tmock::abort("Expected no-such-series exception!");
+                    TABORT("Expected no-such-series exception!");
                 }
                 catch (const tsdb::no_such_series_exception&)
                 {
@@ -177,10 +177,10 @@ class tmock_test
         TASSERT(!dn->files["time_first"]->exclusive_locks);
         TASSERT(!dn->files["time_last"]->shared_locks);
         TASSERT(dn->files["time_last"]->exclusive_locks);
-        tmock::assert_equiv(swl.time_first,
-                            dn->files["time_first"]->get_data<uint64_t>());
-        tmock::assert_equiv(swl.time_last,
-                            dn->files["time_last"]->get_data<uint64_t>());
+        TASSERT_EQUIV(swl.time_first,
+                      dn->files["time_first"]->get_data<uint64_t>());
+        TASSERT_EQUIV(swl.time_last,
+                      dn->files["time_last"]->get_data<uint64_t>());
     }
 
     TMOCK_TEST(test_read_lock)
@@ -200,7 +200,7 @@ class tmock_test
         try
         {
             tsdb::series_read_lock(m1,"series1");
-            tmock::abort("Expected no-such-series exception!");
+            TABORT("Expected no-such-series exception!");
         }
         catch (const tsdb::no_such_series_exception&)
         {
@@ -218,10 +218,10 @@ class tmock_test
         TASSERT(!dn->files["time_first"]->exclusive_locks);
         TASSERT(!dn->files["time_last"]->shared_locks);
         TASSERT(!dn->files["time_last"]->exclusive_locks);
-        tmock::assert_equiv(srl.time_first,
-                            dn->files["time_first"]->get_data<uint64_t>());
-        tmock::assert_equiv(srl.time_last,
-                            dn->files["time_last"]->get_data<uint64_t>());
+        TASSERT_EQUIV(srl.time_first,
+                      dn->files["time_first"]->get_data<uint64_t>());
+        TASSERT_EQUIV(srl.time_last,
+                      dn->files["time_last"]->get_data<uint64_t>());
     }
 
     TMOCK_TEST(test_total_lock)
@@ -241,7 +241,7 @@ class tmock_test
         try
         {
             tsdb::series_total_lock(m1,"series1");
-            tmock::abort("Expected no-such-series exception!");
+            TABORT("Expected no-such-series exception!");
         }
         catch (const tsdb::no_such_series_exception&)
         {
@@ -259,10 +259,10 @@ class tmock_test
         TASSERT(dn->files["time_first"]->exclusive_locks);
         TASSERT(!dn->files["time_last"]->shared_locks);
         TASSERT(!dn->files["time_last"]->exclusive_locks);
-        tmock::assert_equiv(stl.time_first,
-                            dn->files["time_first"]->get_data<uint64_t>());
-        tmock::assert_equiv(stl.time_last,
-                            dn->files["time_last"]->get_data<uint64_t>());
+        TASSERT_EQUIV(stl.time_first,
+                      dn->files["time_first"]->get_data<uint64_t>());
+        TASSERT_EQUIV(stl.time_last,
+                      dn->files["time_last"]->get_data<uint64_t>());
     }
 
     TMOCK_TEST(test_get_set_bitmap_bit)
@@ -282,9 +282,9 @@ class tmock_test
         tsdb::set_bitmap_bit(bitmap,77,0);
         tsdb::set_bitmap_bit(bitmap,99,1);
         tsdb::set_bitmap_bit(bitmap,107,0);
-        tmock::assert_equiv(bitmap[0],0x0000000000020000ULL);
-        tmock::assert_equiv(bitmap[1],0x0000100800000000ULL);
-        tmock::assert_equiv(bitmap[2],0x0000000000200000ULL);
+        TASSERT_EQUIV(bitmap[0],0x0000000000020000ULL);
+        TASSERT_EQUIV(bitmap[1],0x0000100800000000ULL);
+        TASSERT_EQUIV(bitmap[2],0x0000000000200000ULL);
     }
 };
 

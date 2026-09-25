@@ -48,10 +48,25 @@ ITESTS_DIR    := $(BUILD_DIR)/integration_tests
 # Architecture flags.
 ARCH_FLAGS :=
 
+GNU20_SUPPORTED := $(shell $(CXX) -std=gnu++20 -E -x c++ - < /dev/null >/dev/null 2>&1 && echo yes || echo no)
+ifeq ($(GNU20_SUPPORTED),yes)
+    CXX_STD_FLAG := -std=gnu++20
+else
+    CXX_STD_FLAG := -std=gnu++2a
+endif
+
+HAS_C99_DESIGNATOR_FLAG := $(shell $(CXX) -Werror -Wno-c99-designator -E -x c++ - < /dev/null >/dev/null 2>&1 && echo yes || echo no)
+ifeq ($(HAS_C99_DESIGNATOR_FLAG),yes)
+    CXX_C99_DESIGNATOR_FLAG := -Wno-c99-designator
+else
+    CXX_C99_DESIGNATOR_FLAG :=
+endif
+
+
 # Target C++ flags.
 COMMON_CXXFLAGS := \
 	$(OPT_LEVEL) \
-	-std=gnu++20 \
+	$(CXX_STD_FLAG) \
 	-ggdb \
 	-gstrict-dwarf \
 	-fno-math-errno \
@@ -61,7 +76,7 @@ COMMON_CXXFLAGS := \
 	-Werror \
 	-Wundef \
 	-Wno-invalid-offsetof \
-	-Wno-c99-designator \
+	$(CXX_C99_DESIGNATOR_FLAG) \
 	-fno-use-cxa-atexit \
 	-ffunction-sections \
 	-fdata-sections \
@@ -74,7 +89,7 @@ COMMON_LDFLAGS :=
 # Unittest C++ flags.
 TEST_CXXFLAGS := \
 	$(OPT_LEVEL) \
-	-std=gnu++20 \
+	$(CXX_STD_FLAG) \
 	-Wall \
 	-Werror \
 	-Wno-invalid-offsetof \
@@ -91,7 +106,7 @@ TEST_LDFLAGS :=
 # Integration test C++ flags.
 ITEST_CXXFLAGS := \
 	$(OPT_LEVEL) \
-	-std=gnu++20 \
+	$(CXX_STD_FLAG) \
 	-Wall \
 	-Werror \
 	-Wno-invalid-offsetof \
@@ -108,6 +123,7 @@ ITEST_LDFLAGS :=
 # OS-specific include directories.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
+	HOMEBREW_PREFIX ?= $(shell brew --prefix)
 	COMMON_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	TEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include
 	ITEST_CXXFLAGS += -I$(HOMEBREW_PREFIX)/opt/openssl/include

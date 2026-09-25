@@ -33,11 +33,11 @@ generate_db()
         ->get_dir("measurement1")
         ->get_dir("series1");
     auto* index_fn = sdn->get_file("index");
-    tmock::assert_equiv(index_fn->data.size(),3*sizeof(tsdb::index_entry));
+    TASSERT_EQUIV(index_fn->data.size(),3*sizeof(tsdb::index_entry));
     auto* ies = index_fn->as_array<tsdb::index_entry>();
-    tmock::assert_equiv(ies[0].time_ns,100UL);
-    tmock::assert_equiv(ies[1].time_ns,260UL);
-    tmock::assert_equiv(ies[2].time_ns,420UL);
+    TASSERT_EQUIV(ies[0].time_ns,100UL);
+    TASSERT_EQUIV(ies[1].time_ns,260UL);
+    TASSERT_EQUIV(ies[2].time_ns,420UL);
 }
 
 class tmock_test
@@ -74,7 +74,7 @@ class tmock_test
         uint64_t t = 100;
         while (op.next())
         {
-            tmock::assert_equiv(op.range_t0,t);
+            TASSERT_EQUIV(op.range_t0,t);
             t += 100;
 
             double sums[3] = {};
@@ -116,18 +116,18 @@ class tmock_test
                 ++dp;
             }
 
-            tmock::assert_equiv(op.sums[0],sums[0]);
-            tmock::assert_equiv(op.sums[1],sums[1]);
-            tmock::assert_equiv(op.sums[2],sums[2]);
-            tmock::assert_equiv(op.mins[0].u32,field1_min);
-            tmock::assert_equiv(op.mins[1].f64,field2_min);
-            tmock::assert_equiv(op.mins[2].f32,field3_min);
-            tmock::assert_equiv(op.maxs[0].u32,field1_max);
-            tmock::assert_equiv(op.maxs[1].f64,field2_max);
-            tmock::assert_equiv(op.maxs[2].f32,field3_max);
-            tmock::assert_equiv(op.npoints[0],npoints[0]);
-            tmock::assert_equiv(op.npoints[1],npoints[1]);
-            tmock::assert_equiv(op.npoints[2],npoints[2]);
+            TASSERT_EQUIV(op.sums[0],sums[0]);
+            TASSERT_EQUIV(op.sums[1],sums[1]);
+            TASSERT_EQUIV(op.sums[2],sums[2]);
+            TASSERT_EQUIV(op.mins[0].u32,field1_min);
+            TASSERT_EQUIV(op.mins[1].f64,field2_min);
+            TASSERT_EQUIV(op.mins[2].f32,field3_min);
+            TASSERT_EQUIV(op.maxs[0].u32,field1_max);
+            TASSERT_EQUIV(op.maxs[1].f64,field2_max);
+            TASSERT_EQUIV(op.maxs[2].f32,field3_max);
+            TASSERT_EQUIV(op.npoints[0],npoints[0]);
+            TASSERT_EQUIV(op.npoints[1],npoints[1]);
+            TASSERT_EQUIV(op.npoints[2],npoints[2]);
         }
     }
 };

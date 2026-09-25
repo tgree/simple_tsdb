@@ -46,7 +46,7 @@ class tmock_test
         try
         {
             tsdb::measurement m(db1,"measurement1");
-            tmock::abort("Expected no-such-measurement exception!");
+            TABORT("Expected no-such-measurement exception!");
         }
         catch (const tsdb::no_such_measurement_exception&)
         {
@@ -60,7 +60,7 @@ class tmock_test
         try
         {
             tsdb::create_measurement(db1,"measurement1",test_fields2);
-            tmock::abort("Expected measurement-exists exception!");
+            TABORT("Expected measurement-exists exception!");
         }
         catch (const tsdb::measurement_exists_exception&)
         {
@@ -70,7 +70,7 @@ class tmock_test
         {
             tsdb::create_measurement(db1,"measurement1",
                                      test_fields_different_name);
-            tmock::abort("Expected measurement-exists exception!");
+            TABORT("Expected measurement-exists exception!");
         }
         catch (const tsdb::measurement_exists_exception&)
         {
@@ -82,7 +82,7 @@ class tmock_test
         try
         {
             tsdb::create_measurement(db1,"measurement3",duped_fields);
-            tmock::abort("Expected duplicate-field exception!");
+            TABORT("Expected duplicate-field exception!");
         }
         catch (const tsdb::duplicate_field_exception&)
         {
@@ -110,8 +110,8 @@ class tmock_test
         TASSERT(m1.schema_mapping.len == schema_fn1->data.size());
         TASSERT(m2.schema_mapping.addr == &schema_fn2->data[0]);
         TASSERT(m2.schema_mapping.len == schema_fn2->data.size());
-        tmock::assert_equiv(m1.fields.size(),test_fields.size());
-        tmock::assert_equiv(m2.fields.size(),test_fields2.size());
+        TASSERT_EQUIV(m1.fields.size(),test_fields.size());
+        TASSERT_EQUIV(m2.fields.size(),test_fields2.size());
         for (size_t i=0; i<m1.fields.size(); ++i)
         {
             TASSERT(!memcmp(&test_fields[i],&m1.fields[i],
@@ -123,11 +123,11 @@ class tmock_test
                             sizeof(tsdb::schema_entry)));
         }
 
-        tmock::assert_equiv(m1.list_series().size(),0UL);
-        tmock::assert_equiv(m2.list_series().size(),0UL);
+        TASSERT_EQUIV(m1.list_series().size(),0UL);
+        TASSERT_EQUIV(m2.list_series().size(),0UL);
 
-        tmock::assert_equiv(fs_root->subdirs["tmp"]->subdirs.size(),0UL);
-        tmock::assert_equiv(fs_root->subdirs["tmp"]->files.size(),0UL);
+        TASSERT_EQUIV(fs_root->subdirs["tmp"]->subdirs.size(),0UL);
+        TASSERT_EQUIV(fs_root->subdirs["tmp"]->files.size(),0UL);
     }
 
 #if 0
@@ -183,14 +183,14 @@ class tmock_test
                 tsdb::measurement m(db1,"measurement1");
                 found_measurement = true;
 
-                tmock::assert_equiv(m.fields.size(),test_fields.size());
+                TASSERT_EQUIV(m.fields.size(),test_fields.size());
                 for (size_t i=0; i<m.fields.size(); ++i)
                 {
                     TASSERT(!memcmp(&test_fields[i],&m.fields[i],
                                     sizeof(tsdb::schema_entry)));
                 }
-                tmock::assert_equiv(m.list_series().size(),0UL);
-                tmock::assert_equiv(dn->subdirs["tmp"]->subdirs.size(),0UL);
+                TASSERT_EQUIV(m.list_series().size(),0UL);
+                TASSERT_EQUIV(dn->subdirs["tmp"]->subdirs.size(),0UL);
             }
             catch (const tsdb::no_such_measurement_exception&)
             {
@@ -221,7 +221,7 @@ class tmock_test
         try
         {
             tsdb::create_measurement(db1,"measurement1",test_fields);
-            tmock::abort("Expected corrupt measurement exception!");
+            TABORT("Expected corrupt measurement exception!");
         }
         catch (const tsdb::corrupt_measurement_exception&)
         {
@@ -251,29 +251,28 @@ class tmock_test
         //          3. Padding to 64 bits
         //      2. Field data, padded to 64 bits
         tsdb::measurement m1(db1,"measurement1");
-        tmock::assert_equiv<size_t>(m1.compute_write_chunk_len(1),
-                                    1*8 + (8 + 8) + (8 + 8) + (8 + 8));
-        tmock::assert_equiv<size_t>(m1.compute_write_chunk_len(1,70),
-                                    1*8 + (16 + 8) + (16 + 8) + (16 + 8));
-        tmock::assert_equiv<size_t>(m1.compute_write_chunk_len(2),
-                                    2*8 + (8 + 8) + (8 + 16) + (8 + 8));
-        tmock::assert_equiv<size_t>(m1.compute_write_chunk_len(3),
-                                    3*8 + (8 + 16) + (8 + 24) + (8 + 16));
-        tmock::assert_equiv<size_t>(m1.compute_write_chunk_len(65),
-                                    65*8 + (16 + 33*8) + (16 + 65*8) +
-                                    (16 + 33*8));
+        TASSERT_EQUIV(m1.compute_write_chunk_len(1),
+                      (size_t)1*8 + (8 + 8) + (8 + 8) + (8 + 8));
+        TASSERT_EQUIV(m1.compute_write_chunk_len(1,70),
+                      (size_t)1*8 + (16 + 8) + (16 + 8) + (16 + 8));
+        TASSERT_EQUIV(m1.compute_write_chunk_len(2),
+                      (size_t)2*8 + (8 + 8) + (8 + 16) + (8 + 8));
+        TASSERT_EQUIV(m1.compute_write_chunk_len(3),
+                      (size_t)3*8 + (8 + 16) + (8 + 24) + (8 + 16));
+        TASSERT_EQUIV(m1.compute_write_chunk_len(65),
+                      (size_t)65*8 + (16 + 33*8) + (16 + 65*8) + (16 + 33*8));
 
         tsdb::measurement m2(db1,"measurement2");
-        tmock::assert_equiv<size_t>(m2.compute_write_chunk_len(1),
-                                    1*8 + (8 + 8) + (8 + 8));
-        tmock::assert_equiv<size_t>(m2.compute_write_chunk_len(1,70),
-                                    1*8 + (16 + 8) + (16 + 8));
-        tmock::assert_equiv<size_t>(m2.compute_write_chunk_len(2),
-                                    2*8 + (8 + 8) + (8 + 8));
-        tmock::assert_equiv<size_t>(m2.compute_write_chunk_len(3),
-                                    3*8 + (8 + 16) + (8 + 8));
-        tmock::assert_equiv<size_t>(m2.compute_write_chunk_len(65),
-                                    65*8 + (16 + 33*8) + (16 + 9*8));
+        TASSERT_EQUIV(m2.compute_write_chunk_len(1),
+                      (size_t)1*8 + (8 + 8) + (8 + 8));
+        TASSERT_EQUIV(m2.compute_write_chunk_len(1,70),
+                      (size_t)1*8 + (16 + 8) + (16 + 8));
+        TASSERT_EQUIV(m2.compute_write_chunk_len(2),
+                      (size_t)2*8 + (8 + 8) + (8 + 8));
+        TASSERT_EQUIV(m2.compute_write_chunk_len(3),
+                      (size_t)3*8 + (8 + 16) + (8 + 8));
+        TASSERT_EQUIV(m2.compute_write_chunk_len(65),
+                      (size_t)65*8 + (16 + 33*8) + (16 + 9*8));
     }
 
     TMOCK_TEST(test_max_points_for_data_len)
@@ -292,16 +291,16 @@ class tmock_test
 
         // Given data length X, how many points can we stuff inside it?
         tsdb::measurement m1(db1,"measurement1");
-        tmock::assert_equiv(m1.max_points_for_data_len(1559),0UL);
-        tmock::assert_equiv(m1.max_points_for_data_len(1560),64UL);
-        tmock::assert_equiv(m1.max_points_for_data_len(3119),64UL);
-        tmock::assert_equiv(m1.max_points_for_data_len(3120),128UL);
+        TASSERT_EQUIV(m1.max_points_for_data_len(1559),0UL);
+        TASSERT_EQUIV(m1.max_points_for_data_len(1560),64UL);
+        TASSERT_EQUIV(m1.max_points_for_data_len(3119),64UL);
+        TASSERT_EQUIV(m1.max_points_for_data_len(3120),128UL);
 
         tsdb::measurement m2(db1,"measurement2");
-        tmock::assert_equiv(m2.max_points_for_data_len(847),0UL);
-        tmock::assert_equiv(m2.max_points_for_data_len(848),64UL);
-        tmock::assert_equiv(m2.max_points_for_data_len(1695),64UL);
-        tmock::assert_equiv(m2.max_points_for_data_len(1696),128UL);
+        TASSERT_EQUIV(m2.max_points_for_data_len(847),0UL);
+        TASSERT_EQUIV(m2.max_points_for_data_len(848),64UL);
+        TASSERT_EQUIV(m2.max_points_for_data_len(1695),64UL);
+        TASSERT_EQUIV(m2.max_points_for_data_len(1696),128UL);
     }
 
     TMOCK_TEST(test_gen_entries)
@@ -323,7 +322,7 @@ class tmock_test
         try
         {
             m1.gen_entries({"field1","alpha"});
-            tmock::abort("Expected no such field exception!");
+            TABORT("Expected no such field exception!");
         }
         catch (const tsdb::no_such_field_exception&)
         {
@@ -332,33 +331,33 @@ class tmock_test
         try
         {
             m1.gen_entries({"field1","field2","field1","field3"});
-            tmock::abort("Expected duplicate field exception!");
+            TABORT("Expected duplicate field exception!");
         }
         catch (const tsdb::duplicate_field_exception&)
         {
         }
 
         auto entries = m1.gen_all_entries();
-        tmock::assert_equiv(entries.size(),test_fields.size());
+        TASSERT_EQUIV(entries.size(),test_fields.size());
         for (size_t i=0; i<entries.size(); ++i)
-            tmock::assert_mem_same(*entries[i],test_fields[i]);
+            TASSERT_MEM_SAME(*entries[i],test_fields[i]);
 
         entries = m1.gen_entries({"*"});
-        tmock::assert_equiv(entries.size(),test_fields.size());
+        TASSERT_EQUIV(entries.size(),test_fields.size());
         for (size_t i=0; i<entries.size(); ++i)
-            tmock::assert_mem_same(*entries[i],test_fields[i]);
+            TASSERT_MEM_SAME(*entries[i],test_fields[i]);
 
         entries = m1.gen_entries({});
-        tmock::assert_equiv(entries.size(),0);
+        TASSERT_EQUIV(entries.size(),0);
 
         entries = m1.gen_entries({"field3","field1"});
-        tmock::assert_equiv(entries.size(),2UL);
-        tmock::assert_mem_same(*entries[0],test_fields[2]);
-        tmock::assert_mem_same(*entries[1],test_fields[0]);
+        TASSERT_EQUIV(entries.size(),2UL);
+        TASSERT_MEM_SAME(*entries[0],test_fields[2]);
+        TASSERT_MEM_SAME(*entries[1],test_fields[0]);
 
         entries = m2.gen_entries({"2field2"});
-        tmock::assert_equiv(entries.size(),1UL);
-        tmock::assert_mem_same(*entries[0],test_fields2[1]);
+        TASSERT_EQUIV(entries.size(),1UL);
+        TASSERT_MEM_SAME(*entries[0],test_fields2[1]);
     }
 };
 

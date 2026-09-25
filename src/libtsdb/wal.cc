@@ -71,10 +71,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
     while (wci.timestamps[0] < write_lock.time_first)
     {
         if (!--wci.npoints)
-        {
-            printf("100%% previously deleted, abandoning write op.\n");
             return;
-        }
 
         ++wci.bitmap_offset;
         for (size_t i=0; i<write_lock.m.fields.size(); ++i)
@@ -93,7 +90,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
         // Select all data points from the overlap.
         uint64_t overlap_time_last = MIN(wci.timestamps[wci.npoints-1],
                                          write_lock.time_last);
-        select_op_first op(write_lock,"<overwrite>",{},wci.timestamps[0],
+        select_op_first op(write_lock,"<overwrite>",{"*"},wci.timestamps[0],
                            overlap_time_last,-1);
         kassert(op.npoints);
 
@@ -144,10 +141,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
         }
 
         if (!wci.npoints)
-        {
-            printf("100%% main store overwrite, abandoning write op.\n");
             return;
-        }
     }
 
     // Map the WAL file.
@@ -239,10 +233,7 @@ tsdb::write_wal(series_write_lock& write_lock, size_t npoints,
         }
 
         if (!wci.npoints)
-        {
-            printf("100%% WAL overwrite, abandoning write op.\n");
             return;
-        }
     }
 
     // See if we need to commit.
