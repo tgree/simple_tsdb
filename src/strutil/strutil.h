@@ -39,7 +39,8 @@ namespace str
     // Negative indices are measured from the end of the string with index -1
     // being the last character, -2 the second-last character, etc.
     inline std::string
-    slice(const std::string& s, ssize_t i = 0, ssize_t j = 0x7FFFFFFFFFFFFFFFLL)
+    slice(const std::string& s, ssize_t i = 0,
+          ssize_t j = std::numeric_limits<ssize_t>::max())
     {
         slice_indices si(s.size(),i,j);
         return (si.j <= si.i ? "" : std::string(s,si.i,si.j-si.i));

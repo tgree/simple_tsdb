@@ -62,11 +62,16 @@ else
     CXX_C99_DESIGNATOR_FLAG :=
 endif
 
+# Check if the compilation target environment is 32-bit
+ifeq ($(shell getconf LONG_BIT), 32)
+    CXX_FILE_OFFSET_FLAG := -D_FILE_OFFSET_BITS=64
+endif
 
 # Target C++ flags.
 COMMON_CXXFLAGS := \
 	$(OPT_LEVEL) \
 	$(CXX_STD_FLAG) \
+	$(CXX_FILE_OFFSET_FLAG) \
 	-ggdb \
 	-gstrict-dwarf \
 	-fno-math-errno \
@@ -90,6 +95,7 @@ COMMON_LDFLAGS :=
 TEST_CXXFLAGS := \
 	$(OPT_LEVEL) \
 	$(CXX_STD_FLAG) \
+	$(CXX_FILE_OFFSET_FLAG) \
 	-Wall \
 	-Werror \
 	-Wno-invalid-offsetof \
@@ -107,6 +113,7 @@ TEST_LDFLAGS :=
 ITEST_CXXFLAGS := \
 	$(OPT_LEVEL) \
 	$(CXX_STD_FLAG) \
+	$(CXX_FILE_OFFSET_FLAG) \
 	-Wall \
 	-Werror \
 	-Wno-invalid-offsetof \
