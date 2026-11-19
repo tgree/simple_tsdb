@@ -271,6 +271,15 @@ client::connect() try
     auto cs = std::make_unique<tcp::client_socket>(addrs[0]);
     cs->enable_keepalive();
     cs->set_user_timeout_secs(30);
+
+    // Bound every blocking send or receive, including the SSL handshake.
+    // Keepalive and the user timeout only detect a dead network path; if
+    // the remote host is reachable but the tsdbserver never answers (for
+    // instance, it is blocked on a series lock), this is what breaks us out
+    // so that the caller can fall back to its local database.
+    cs->set_send_timeout_us(60*1000000ULL);
+    cs->set_recv_timeout_us(60*1000000ULL);
+
     s = ssl_context.wrap(std::move(cs),remote_hostname.c_str());
     s->push(CT_AUTHENTICATE);
     push_string(DT_USERNAME,remote_user);
