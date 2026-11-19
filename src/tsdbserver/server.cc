@@ -1273,6 +1273,7 @@ static void
 request_handler(std::unique_ptr<tcp::socket> sock)
 {
     sock->enable_keepalive();
+    sock->set_user_timeout_secs(30);
     sock->nodelay();
 
     std::unique_ptr<tcp::stream> stream(std::move(sock));
@@ -1295,6 +1296,7 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     // an SSL stream.  The timeout should handle the case where the remote
     // just doesn't send anything.
     sock->enable_keepalive();
+    sock->set_user_timeout_secs(30);
     sock->nodelay();
     sock->set_send_timeout_us(3*1000000);
     sock->set_recv_timeout_us(3*1000000);
