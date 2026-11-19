@@ -15,6 +15,9 @@ main(int argc, const char* argv[])
     tcp::client_socket cs(ssa);
     auto s = ss.accept();
 
+    cs.set_user_timeout_secs(30);
+    s->set_user_timeout_secs(30);
+
     cs.send_all(buf,sizeof(buf));
 
     char rcv[sizeof(buf)] = {};

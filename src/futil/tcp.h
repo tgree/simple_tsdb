@@ -241,6 +241,30 @@ namespace tcp
                 throw futil::errno_exception(errno);
         }
 
+        void set_user_timeout_secs(unsigned int secs)
+        {
+            // Drops the connection if transmitted data (including zero-window
+            // probes) remains unacknowledged for this long.  Keepalive only
+            // probes an idle connection, so without this a connection with
+            // unacknowledged data in flight is only dropped after the
+            // kernel's retransmission limit (~15 minutes or more on Linux).
+            // A value of 0 restores the system default.
+#if IS_MACOS
+            int val = secs;
+            if (setsockopt(fd,IPPROTO_TCP,TCP_RXT_CONNDROPTIME,&val,
+                           sizeof(val)))
+            {
+                throw futil::errno_exception(errno);
+            }
+#elif IS_LINUX
+            unsigned int ms = secs*1000;
+            if (setsockopt(fd,IPPROTO_TCP,TCP_USER_TIMEOUT,&ms,sizeof(ms)))
+                throw futil::errno_exception(errno);
+#else
+#warning Unknown system, user timeout not supported.
+#endif
+        }
+
         constexpr socket(int fd, const net::addr& local_addr,
                          const net::addr& remote_addr):
             futil::file_descriptor(fd),
