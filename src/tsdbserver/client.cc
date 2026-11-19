@@ -270,6 +270,7 @@ client::connect() try
 
     auto cs = std::make_unique<tcp::client_socket>(addrs[0]);
     cs->enable_keepalive();
+    cs->set_user_timeout_secs(30);
     s = ssl_context.wrap(std::move(cs),remote_hostname.c_str());
     s->push(CT_AUTHENTICATE);
     push_string(DT_USERNAME,remote_user);
