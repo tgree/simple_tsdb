@@ -144,8 +144,11 @@ namespace tcp::ssl
             if (err == SSL_ERROR_ZERO_RETURN)
                 return 0;
 
-            if (err == SSL_ERROR_SYSCALL || err == SSL_ERROR_SSL)
-                should_shutdown = false;
+            // SYSCALL and SSL errors are fatal; WANT_READ and WANT_WRITE
+            // on our blocking socket mean SO_RCVTIMEO or SO_SNDTIMEO
+            // expired, possibly mid-record.  Either way, don't try to send
+            // a close_notify on a stream we are abandoning.
+            should_shutdown = false;
             throw ssl_error_exception(err);
         }
 
@@ -159,8 +162,11 @@ namespace tcp::ssl
             if (err == SSL_ERROR_ZERO_RETURN)
                 return 0;
 
-            if (err == SSL_ERROR_SYSCALL || err == SSL_ERROR_SSL)
-                should_shutdown = false;
+            // SYSCALL and SSL errors are fatal; WANT_READ and WANT_WRITE
+            // on our blocking socket mean SO_RCVTIMEO or SO_SNDTIMEO
+            // expired, possibly mid-record.  Either way, don't try to send
+            // a close_notify on a stream we are abandoning.
+            should_shutdown = false;
             throw ssl_error_exception(err);
         }
 
