@@ -268,7 +268,9 @@ client::connect() try
     if (addrs.empty())
         return;
 
-    auto cs = std::make_unique<tcp::client_socket>(addrs[0]);
+    // Fail fast if the remote host is unreachable rather than waiting
+    // out the kernel's SYN retries (over 2 minutes on Linux).
+    auto cs = std::make_unique<tcp::client_socket>(addrs[0],10000);
     cs->enable_keepalive();
     cs->set_user_timeout_secs(30);
 
