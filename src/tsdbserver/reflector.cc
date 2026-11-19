@@ -311,6 +311,11 @@ flush_series(client& c, tsdb::measurement& local_m,
     const std::string& s_path, const std::string& remote_db_path,
     auto_buf& chunk_storage) try
 {
+    // Connect before taking the series lock.  Sensor writes to this series
+    // block on the lock, so they shouldn't also wait on a DNS lookup or a
+    // connection attempt to a remote host that may be unreachable.
+    c.connect();
+
     auto stl = tsdb::series_total_lock(local_m,s_path);
     size_t max_chunk_points = local_m.max_points_for_data_len(10*1024*1024);
     auto series_id = local_db_path + "/" + m_path + "/" + s_path;
