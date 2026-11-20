@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <memory>
 
 namespace tcp
@@ -302,19 +303,50 @@ namespace tcp
 
     struct client_socket : public socket
     {
-        static int _connect(const net::addr& remote_addr)
+        static int _connect(const net::addr& remote_addr, int timeout_ms)
         {
-            // The file_descriptor closes the socket if connect() fails.
+            // Connects with a non-blocking connect() and a poll() for
+            // completion, so that the wait can be bounded.  A negative
+            // timeout_ms waits until the system's connect timeout expires.
+            // The file_descriptor closes the socket if anything fails.
             futil::file_descriptor fd(_socket(remote_addr.sa.sa_family));
-            // futil::connect() returns false instead of throwing on
-            // EINPROGRESS, but that can't happen because the socket is in
-            // blocking mode.
-            futil::connect(fd.fd,&remote_addr.sa,sizeof(remote_addr.sa));
+            int flags = fd.fcntl(F_GETFL);
+            fd.fcntl(F_SETFL,flags | O_NONBLOCK);
+
+            if (!futil::connect(fd.fd,&remote_addr.sa,
+                                sizeof(remote_addr.sa)))
+            {
+                struct pollfd pfd = {fd.fd,POLLOUT,0};
+                int rv;
+                do
+                {
+                    // A signal restarts the full timeout; we don't expect
+                    // enough signals for that to matter.
+                    rv = ::poll(&pfd,1,timeout_ms);
+                } while (rv == -1 && errno == EINTR);
+                if (rv == -1)
+                    throw futil::errno_exception(errno);
+                if (rv == 0)
+                    throw futil::errno_exception(ETIMEDOUT);
+
+                int err = 0;
+                socklen_t len = sizeof(err);
+                if (getsockopt(fd.fd,SOL_SOCKET,SO_ERROR,&err,&len) == -1)
+                    throw futil::errno_exception(errno);
+                if (err)
+                    throw futil::errno_exception(err);
+            }
+
+            fd.fcntl(F_SETFL,flags);
             return fd.extract_fd();
         }
 
-        client_socket(const net::addr& remote_addr):
-            socket(_connect(remote_addr),remote_addr)
+        // Connects to the remote address.  If timeout_ms is negative, the
+        // system's connect timeout applies (~75 seconds on macOS, ~127
+        // seconds on Linux); otherwise the attempt fails with ETIMEDOUT if
+        // the connection isn't established within timeout_ms milliseconds.
+        client_socket(const net::addr& remote_addr, int timeout_ms = -1):
+            socket(_connect(remote_addr,timeout_ms),remote_addr)
         {
         }
     };

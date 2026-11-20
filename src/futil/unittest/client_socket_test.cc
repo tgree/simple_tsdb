@@ -25,7 +25,13 @@ class tmock_test
         auto remote_addr = net::ipv4::loopback_addr(4000);
         {
             texpect("tcp::_socket",want(af,AF_INET),returns(FAKE_FD));
+            texpect("futil::fcntl",want(fd,FAKE_FD),want(cmd,F_GETFL),
+                    returns(O_RDWR));
+            texpect("futil::fcntl",want(fd,FAKE_FD),want(cmd,F_SETFL),
+                    want(arg,O_RDWR | O_NONBLOCK));
             texpect("futil::connect",want(fd,FAKE_FD));
+            texpect("futil::fcntl",want(fd,FAKE_FD),want(cmd,F_SETFL),
+                    want(arg,O_RDWR));
             texpect("net::getsockname",want(fd,FAKE_FD),
                     returns(mock_net::ipv4_loopback_addr(5000)));
             tcp::client_socket cs(remote_addr);
@@ -42,6 +48,10 @@ class tmock_test
     {
         auto remote_addr = net::ipv4::loopback_addr(4000);
         texpect("tcp::_socket",want(af,AF_INET),returns(FAKE_FD));
+        texpect("futil::fcntl",want(fd,FAKE_FD),want(cmd,F_GETFL),
+                returns(O_RDWR));
+        texpect("futil::fcntl",want(fd,FAKE_FD),want(cmd,F_SETFL),
+                want(arg,O_RDWR | O_NONBLOCK));
         texpect("futil::connect",want(fd,FAKE_FD),returns(ECONNREFUSED));
         texpect("futil::close",want(fd,FAKE_FD));
         try
