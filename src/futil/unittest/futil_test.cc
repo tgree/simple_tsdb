@@ -74,6 +74,23 @@ class tmock_test
         TASSERT_EQUIV(v[2],"b");
         TASSERT_EQUIV(v[3],"c");
     }
+
+    TMOCK_TEST(test_extract_fd)
+    {
+        int fds[2];
+        TASSERT(pipe(fds) == 0);
+        ::close(fds[1]);
+
+        int fd;
+        {
+            futil::file_descriptor f(fds[0]);
+            fd = f.extract_fd();
+            TASSERT_EQUIV(f.fd,-1);
+        }
+        TASSERT_EQUIV(fd,fds[0]);
+        TASSERT(fcntl(fd,F_GETFD) != -1);
+        ::close(fd);
+    }
 };
 
 TMOCK_MAIN();

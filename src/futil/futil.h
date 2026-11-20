@@ -229,6 +229,15 @@ namespace futil
             }
         }
 
+        int extract_fd()
+        {
+            // Returns the file descriptor and gives up ownership of it, so
+            // that it won't be closed when this object is destroyed.
+            int temp = fd;
+            fd = -1;
+            return temp;
+        }
+
         int fcntl(int cmd) const
         {
             return futil::fcntl(fd,cmd);
