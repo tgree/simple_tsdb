@@ -38,7 +38,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_connect_failure_closes_socket)
+    TMOCK_TEST(test_connect_failure_closes_socket)
     {
         auto remote_addr = net::ipv4::loopback_addr(4000);
         texpect("tcp::_socket",want(af,AF_INET),returns(FAKE_FD));

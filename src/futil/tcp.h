@@ -304,12 +304,13 @@ namespace tcp
     {
         static int _connect(const net::addr& remote_addr)
         {
-            int fd = _socket(remote_addr.sa.sa_family);
+            // The file_descriptor closes the socket if connect() fails.
+            futil::file_descriptor fd(_socket(remote_addr.sa.sa_family));
             // futil::connect() returns false instead of throwing on
             // EINPROGRESS, but that can't happen because the socket is in
             // blocking mode.
-            futil::connect(fd,&remote_addr.sa,sizeof(remote_addr.sa));
-            return fd;
+            futil::connect(fd.fd,&remote_addr.sa,sizeof(remote_addr.sa));
+            return fd.extract_fd();
         }
 
         client_socket(const net::addr& remote_addr):
