@@ -90,6 +90,9 @@ namespace tcp
         virtual ~stream() {}
     };
 
+#ifdef UNITTEST
+    int _socket(int af);
+#else
     inline int _socket(int af)
     {
         int fd = ::socket(af,SOCK_STREAM,0);
@@ -97,6 +100,7 @@ namespace tcp
             throw futil::errno_exception(errno);
         return fd;
     }
+#endif
 
     struct socket : public futil::file_descriptor,
                     public stream

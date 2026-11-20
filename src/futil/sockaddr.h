@@ -66,6 +66,9 @@ namespace net
         constexpr addr():ss{AF_UNSPEC} {}
     };
 
+#ifdef UNITTEST
+    addr getsockname(int fd);
+#else
     inline addr getsockname(int fd)
     {
         struct ::sockaddr_storage ss{};
@@ -74,6 +77,7 @@ namespace net
             throw futil::errno_exception(errno);
         return addr(ss);
     }
+#endif
 
     inline std::vector<net::addr> get_addrs(const char* host, uint16_t port = 0)
     {
