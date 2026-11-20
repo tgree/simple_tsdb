@@ -167,6 +167,7 @@ namespace futil
     void close(int fd);
     int fcntl(int fd, int cmd);
     template<typename T> int fcntl(int fd, int cmd, T arg);
+    template<> int fcntl<int>(int fd, int cmd, int arg);
     void fsync_and_flush(int fd);
     void fsync_and_barrier(int fd);
     int vdprintf(int fd, const char* fmt, va_list ap);
