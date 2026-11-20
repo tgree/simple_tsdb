@@ -301,8 +301,10 @@ namespace tcp
         static int _connect(const net::addr& remote_addr)
         {
             int fd = _socket(remote_addr.sa.sa_family);
-            if (::connect(fd,&remote_addr.sa,sizeof(remote_addr.sa)) == -1)
-                throw futil::errno_exception(errno);
+            // futil::connect() returns false instead of throwing on
+            // EINPROGRESS, but that can't happen because the socket is in
+            // blocking mode.
+            futil::connect(fd,&remote_addr.sa,sizeof(remote_addr.sa));
             return fd;
         }
 
