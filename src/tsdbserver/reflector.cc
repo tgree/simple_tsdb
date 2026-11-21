@@ -217,6 +217,9 @@ handle_write_points(connection& conn,
     }
 }
 
+// Unittests provide their own main() and can't call the functions that
+// only main() uses.
+#ifndef UNITTEST
 static void
 request_handler(std::unique_ptr<tcp::stream> s)
 {
@@ -255,6 +258,7 @@ socket4_workloop(uint16_t port)
         }
     }
 }
+#endif
 
 static void
 create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
@@ -470,6 +474,7 @@ flush_pass(client& c, std::set<std::string>& validated_dbs,
     }
 }
 
+#ifndef UNITTEST
 static void
 flush_workloop()
 {
@@ -490,7 +495,9 @@ flush_workloop()
         sleep_for_ns(10UL*1000000000UL);
     }
 }
+#endif
 
+#ifndef UNITTEST
 static const std::string&
 get_part(const std::vector<std::string>& parts, size_t i, size_t line_num,
     const char* err_msg)
@@ -667,3 +674,4 @@ main(int argc, const char* argv[])
 
     socket4_workloop(reflector_cfg.port);
 }
+#endif /* UNITTEST */
