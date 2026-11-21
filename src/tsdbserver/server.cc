@@ -1439,7 +1439,7 @@ ssl_workloop(const std::string& cert_file, const std::string& key_file,
 #endif
 
 prod_static void
-info_handler(std::unique_ptr<tcp::socket> sock)
+info_handler(std::unique_ptr<tcp::socket> sock) try
 {
     size_t nconnections = 0;
     std::string output = "TID      Established               "
@@ -1482,6 +1482,14 @@ info_handler(std::unique_ptr<tcp::socket> sock)
     }
     output += str::printf("%zu connections.\n",nconnections);
     sock->push(output);
+}
+catch (const std::exception& e)
+{
+    prod_printf("Info handler error: %s\n",e.what());
+}
+catch (...)
+{
+    prod_printf("Random info handler exception!\n");
 }
 
 #ifndef UNITTEST

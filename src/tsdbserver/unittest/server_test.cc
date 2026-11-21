@@ -53,8 +53,7 @@ class tmock_test
         ::close(client_fd);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
-        test_info_handler_survives_closed_client)
+    TMOCK_TEST(test_info_handler_survives_closed_client)
     {
         // A client that goes away before info_handler() writes its reply
         // makes push() throw: ECONNRESET for a reset TCP connection, or
