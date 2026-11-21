@@ -1285,7 +1285,7 @@ request_handler(std::unique_ptr<tcp::socket> sock)
 
 prod_static void
 auth_request_handler(tcp::ssl::server_context* sslctx,
-    std::unique_ptr<tcp::socket> sock)
+    std::unique_ptr<tcp::socket> sock) try
 {
     uint64_t t0 = time_ns();
 
@@ -1390,6 +1390,14 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     s->s->set_send_timeout_us(0);
     s->s->set_recv_timeout_us(0);
     stream_request_handler(conn);
+}
+catch (const std::exception& e)
+{
+    prod_printf("Auth request handler error: %s\n",e.what());
+}
+catch (...)
+{
+    prod_printf("Random auth request handler exception!\n");
 }
 
 // Unittests provide their own main() and can't call the functions that
