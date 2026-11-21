@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "../tcp.h"
 #include <tmock/tmock.h>
+#include <time.h>
 
 // The fd that the mocked _accept() hands out.  futil::close() is mocked, so
 // it never needs to be a real fd.
@@ -38,6 +39,14 @@ struct test_server_socket
         ::close(fd);
     }
 };
+
+static uint64_t
+now_ns()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC,&ts);
+    return ts.tv_sec*1000000000ULL + ts.tv_nsec;
+}
 
 class tmock_test
 {
@@ -85,6 +94,27 @@ class tmock_test
             }
         );
         tcheckpoint();
+    }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
+        test_accept_connection_backs_off_after_emfile)
+    {
+        // Linux leaves a connection queued when accept() fails with EMFILE,
+        // so an accept loop that retries at once spins, logging hundreds of
+        // thousands of errors a second, until an fd frees up.  The first
+        // failure should wait at least 10 ms before the loop retries.
+        test_server_socket tss;
+        texpect("tcp::_accept",want(fd,tss.fd),returns(-EMFILE));
+        uint64_t t0 = now_ns();
+        tcp::accept_connection(*tss.ss,"TCP",
+            [&](std::unique_ptr<tcp::socket> s)
+            {
+                TABORT("handled a failed accept");
+            }
+        );
+        uint64_t t1 = now_ns();
+        tcheckpoint();
+        TASSERT(t1 - t0 >= 10000000);
     }
 };
 
