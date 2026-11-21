@@ -13,8 +13,11 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <algorithm>
+#include <chrono>
 #include <functional>
 #include <memory>
+#include <thread>
 
 namespace tcp
 {
@@ -380,23 +383,58 @@ namespace tcp
         }
     };
 
+    // How long accept_connection() last waited after a failure on this
+    // thread, or 0 after a success.  Each accept loop runs
+    // on its own thread, so each backs off independently.
+    inline thread_local uint64_t accept_backoff_ns = 0;
+
     // Accepts one connection on ss and passes it to handle(), which
     // normally starts a thread to serve it.  Errors from either are logged,
     // naming the kind of connection, such as "TCP", and not rethrown, so
-    // that an accept loop keeps running.
+    // that an accept loop keeps running.  If accept() runs out of resources
+    // or handle() fails, it waits before returning: 10 ms at first, doubling
+    // with each consecutive failure up to 1 s.
     inline void
     accept_connection(server_socket& ss, const char* kind,
         const std::function<void(std::unique_ptr<socket>)>& handle)
     {
+        bool accepted = false;
         try
         {
-            handle(ss.accept());
+            auto s = ss.accept();
+            accepted = true;
+            handle(std::move(s));
+            accept_backoff_ns = 0;
+            return;
+        }
+        catch (const futil::errno_exception& e)
+        {
+            prod_printf("Exception accepting %s connection: %s\n",kind,
+                        e.what());
+
+            // Back off only if accept() ran out of resources, or if handle()
+            // failed, such as to start a thread.  Other accept() errors,
+            // such as the network errors that Linux can report for a new
+            // connection, belong to that connection, so retry at once: a
+            // remote peer mustn't be able to slow down the accept loop.
+            if (!accepted && e.errnov != EMFILE && e.errnov != ENFILE &&
+                e.errnov != ENOBUFS && e.errnov != ENOMEM)
+            {
+                return;
+            }
         }
         catch (const std::exception& e)
         {
             prod_printf("Exception accepting %s connection: %s\n",kind,
                         e.what());
         }
+
+        // Linux leaves the connection queued when accept() fails with
+        // EMFILE, so retrying at once would fail again and spin.
+        accept_backoff_ns = std::clamp<uint64_t>(2*accept_backoff_ns,
+                                                 10000000,1000000000);
+        std::this_thread::sleep_for(
+            std::chrono::nanoseconds(accept_backoff_ns));
     }
 }
 

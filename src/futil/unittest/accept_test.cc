@@ -96,8 +96,7 @@ class tmock_test
         tcheckpoint();
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
-        test_accept_connection_backs_off_after_emfile)
+    TMOCK_TEST(test_accept_connection_backs_off_after_emfile)
     {
         // Linux leaves a connection queued when accept() fails with EMFILE,
         // so an accept loop that retries at once spins, logging hundreds of
