@@ -433,7 +433,7 @@ catch (...)
 
 static void
 flush_database(client& c, const std::string& local_db_path,
-    const std::string& remote_db_path, auto_buf& chunk_storage)
+    const std::string& remote_db_path, auto_buf& chunk_storage) try
 {
     tsdb::database local_db(*root,local_db_path);
     auto local_measurements = local_db.list_measurements();
@@ -454,6 +454,14 @@ flush_database(client& c, const std::string& local_db_path,
                          remote_db_path,chunk_storage);
         }
     }
+}
+catch (const std::exception& e)
+{
+    prod_printf("Error flushing %s: %s\n",local_db_path.c_str(),e.what());
+}
+catch (...)
+{
+    prod_printf("Random exception flushing %s!\n",local_db_path.c_str());
 }
 
 prod_static void

@@ -118,7 +118,7 @@ class tmock_test
         flush_pass(c,validated_dbs,chunk_storage);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_flush_pass_survives_emfile)
+    TMOCK_TEST(test_flush_pass_survives_emfile)
     {
         // The first futil call in a pass over an already-validated database
         // lists it, before flush_series() runs.  The reflector used to
