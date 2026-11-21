@@ -1,5 +1,6 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
+#include "server.h"
 #include "tokens.h"
 #include <version.h>
 #include <hdr/kmath.h>
@@ -7,6 +8,7 @@
 #include <hdr/fixed_vector.h>
 #include <hdr/klist.h>
 #include <hdr/with_lock.h>
+#include <hdr/unittest.h>
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <futil/ssl.h>
@@ -1432,7 +1434,7 @@ ssl_workloop(const std::string& cert_file, const std::string& key_file,
     }
 }
 
-static void
+prod_static void
 info_handler(std::unique_ptr<tcp::socket> sock)
 {
     size_t nconnections = 0;
