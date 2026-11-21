@@ -48,6 +48,34 @@ now_ns()
     return ts.tv_sec*1000000000ULL + ts.tv_nsec;
 }
 
+// Runs accept_connection() with accept() failing with err.
+static void
+fail_accept(test_server_socket& tss, int err = EMFILE)
+{
+    texpect("tcp::_accept",want(fd,tss.fd),returns(-err));
+    tcp::accept_connection(*tss.ss,"TCP",
+        [&](std::unique_ptr<tcp::socket> s)
+        {
+            TABORT("handled a failed accept");
+        }
+    );
+    tcheckpoint();
+}
+
+// Runs accept_connection() with accept() succeeding.
+static void
+succeed_accept(test_server_socket& tss)
+{
+    texpect("tcp::_accept",want(fd,tss.fd),returns(accepted_fd));
+    texpect("futil::close",want(fd,accepted_fd));
+    tcp::accept_connection(*tss.ss,"TCP",
+        [&](std::unique_ptr<tcp::socket> s)
+        {
+        }
+    );
+    tcheckpoint();
+}
+
 class tmock_test
 {
     TMOCK_TEST(test_accept_connection)
@@ -114,6 +142,75 @@ class tmock_test
         uint64_t t1 = now_ns();
         tcheckpoint();
         TASSERT(t1 - t0 >= 10000000);
+    }
+
+    TMOCK_TEST(test_accept_backoff_doubles_and_resets)
+    {
+        test_server_socket tss;
+        fail_accept(tss);
+        TASSERT(tcp::accept_backoff_ns == 10000000);
+        fail_accept(tss);
+        TASSERT(tcp::accept_backoff_ns == 20000000);
+        fail_accept(tss);
+        TASSERT(tcp::accept_backoff_ns == 40000000);
+        succeed_accept(tss);
+        TASSERT(tcp::accept_backoff_ns == 0);
+        fail_accept(tss);
+        TASSERT(tcp::accept_backoff_ns == 10000000);
+    }
+
+    TMOCK_TEST(test_accept_backoff_cap)
+    {
+        // Start near the cap rather than failing seven times.  The failure
+        // still waits the full second.
+        test_server_socket tss;
+        tcp::accept_backoff_ns = 600000000;
+        fail_accept(tss);
+        TASSERT(tcp::accept_backoff_ns == 1000000000);
+    }
+
+    TMOCK_TEST(test_accept_backoff_resource_errors)
+    {
+        test_server_socket tss;
+        for (int err : {EMFILE, ENFILE, ENOBUFS, ENOMEM})
+        {
+            tcp::accept_backoff_ns = 0;
+            fail_accept(tss,err);
+            TASSERT(tcp::accept_backoff_ns == 10000000);
+        }
+    }
+
+    TMOCK_TEST(test_accept_backoff_ignores_connection_errors)
+    {
+        // Errors that belong to one connection are retried at once, so that
+        // a remote peer can't slow down the accept loop.  They neither grow
+        // nor reset the backoff.
+        test_server_socket tss;
+        for (int err : {ECONNABORTED, EPROTO, EHOSTUNREACH})
+        {
+            fail_accept(tss,err);
+            TASSERT(tcp::accept_backoff_ns == 0);
+        }
+        fail_accept(tss);
+        fail_accept(tss,ECONNABORTED);
+        TASSERT(tcp::accept_backoff_ns == 10000000);
+    }
+
+    TMOCK_TEST(test_accept_backoff_handler_error)
+    {
+        // A handler that fails, such as to start a thread, backs off whatever
+        // the error.
+        test_server_socket tss;
+        texpect("tcp::_accept",want(fd,tss.fd),returns(accepted_fd));
+        texpect("futil::close",want(fd,accepted_fd));
+        tcp::accept_connection(*tss.ss,"TCP",
+            [&](std::unique_ptr<tcp::socket> s)
+            {
+                throw futil::errno_exception(ECONNABORTED);
+            }
+        );
+        tcheckpoint();
+        TASSERT(tcp::accept_backoff_ns == 10000000);
     }
 };
 
