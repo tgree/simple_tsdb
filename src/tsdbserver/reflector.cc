@@ -255,15 +255,13 @@ socket4_workloop(uint16_t port)
     printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        try
-        {
-            std::thread t(request_handler,ss.accept());
-            t.detach();
-        }
-        catch (const std::exception& e)
-        {
-            printf("Exception accepting TCP connection: %s\n",e.what());
-        }
+        tcp::accept_connection(ss,"TCP",
+            [](std::unique_ptr<tcp::socket> s)
+            {
+                std::thread t(request_handler,std::move(s));
+                t.detach();
+            }
+        );
     }
 }
 #endif
