@@ -20,13 +20,16 @@ struct reflector_config
 #ifdef UNITTEST
 #include "client.h"
 #include <hdr/auto_buf.h>
+#include <futil/tcp.h>
 #include <libtsdb/root.h>
 
+#include <memory>
 #include <set>
 
 // Defined prod_static in reflector.cc.
 extern tsdb::root* root;
 extern reflector_config reflector_cfg;
+void request_handler(std::unique_ptr<tcp::stream> s);
 void flush_pass(client& c, std::set<std::string>& validated_dbs,
                 auto_buf& chunk_storage);
 #endif

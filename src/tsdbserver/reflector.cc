@@ -217,10 +217,7 @@ handle_write_points(connection& conn,
     }
 }
 
-// Unittests provide their own main() and can't call the functions that
-// only main() uses.
-#ifndef UNITTEST
-static void
+prod_static void
 request_handler(std::unique_ptr<tcp::stream> s)
 {
     printf("Handling local %s remote %s.\n",
@@ -239,6 +236,9 @@ request_handler(std::unique_ptr<tcp::stream> s)
            s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 }
 
+// Unittests provide their own main() and can't call the functions that
+// only main() uses.
+#ifndef UNITTEST
 static void
 socket4_workloop(uint16_t port)
 {
