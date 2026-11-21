@@ -3,6 +3,7 @@
 #include "../server.h"
 #include <tmock/tmock.h>
 #include <sys/socket.h>
+#include <signal.h>
 
 // Returns the server end of a new socketpair as a tcp::socket, and the
 // client end in *client_fd.  futil::close() is mocked, so destroying the
@@ -50,6 +51,26 @@ class tmock_test
         TASSERT(output.starts_with("TID "));
         TASSERT(output.ends_with("\n0 connections.\n"));
         ::close(client_fd);
+    }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
+        test_info_handler_survives_closed_client)
+    {
+        // A client that goes away before info_handler() writes its reply
+        // makes push() throw: ECONNRESET for a reset TCP connection, or
+        // EPIPE here.  tsdbserver used to abort when that escaped the
+        // thread.  Like tsdbserver's main(), ignore SIGPIPE so that the
+        // write fails with EPIPE instead.
+        signal(SIGPIPE,SIG_IGN);
+        int client_fd;
+        auto sock = make_info_socket(&client_fd);
+        int server_fd = sock->fd;
+        ::close(client_fd);
+
+        texpect("futil::close",want(fd,server_fd));
+        info_handler(std::move(sock));
+        tcheckpoint();
+        ::close(server_fd);
     }
 };
 
