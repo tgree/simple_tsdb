@@ -436,6 +436,31 @@ catch (...)
 }
 
 static void
+flush_database(client& c, const std::string& local_db_path,
+    const std::string& remote_db_path, auto_buf& chunk_storage)
+{
+    tsdb::database local_db(*root,local_db_path);
+    auto local_measurements = local_db.list_measurements();
+    for (const auto& m_path : local_measurements)
+    {
+        tsdb::measurement local_m(local_db,m_path);
+        auto local_series = local_m.list_active_series();
+        for (const auto& s_path : local_series)
+        {
+            auto series_id = local_db_path + "/" +
+                             m_path + "/" +
+                             s_path;
+            printf("Flushing %s/%s/%s -> %s/%s/%s.\n",
+                   local_db_path.c_str(),m_path.c_str(),s_path.c_str(),
+                   remote_db_path.c_str(),m_path.c_str(),
+                   s_path.c_str());
+            flush_series(c,local_m,local_db_path,m_path,s_path,
+                         remote_db_path,chunk_storage);
+        }
+    }
+}
+
+static void
 flush_pass(client& c, std::set<std::string>& validated_dbs,
     auto_buf& chunk_storage)
 {
@@ -450,25 +475,7 @@ flush_pass(client& c, std::set<std::string>& validated_dbs,
         if (!validated_dbs.count(local_db_path))
             continue;
 
-        tsdb::database local_db(*root,local_db_path);
-        auto local_measurements = local_db.list_measurements();
-        for (const auto& m_path : local_measurements)
-        {
-            tsdb::measurement local_m(local_db,m_path);
-            auto local_series = local_m.list_active_series();
-            for (const auto& s_path : local_series)
-            {
-                auto series_id = local_db_path + "/" +
-                                 m_path + "/" +
-                                 s_path;
-                printf("Flushing %s/%s/%s -> %s/%s/%s.\n",
-                       local_db_path.c_str(),m_path.c_str(),s_path.c_str(),
-                       remote_db_path.c_str(),m_path.c_str(),
-                       s_path.c_str());
-                flush_series(c,local_m,local_db_path,m_path,s_path,
-                             remote_db_path,chunk_storage);
-            }
-        }
+        flush_database(c,local_db_path,remote_db_path,chunk_storage);
     }
 }
 
