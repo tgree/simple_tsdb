@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/file.h>
+#include <sys/socket.h>
 #include <sys/errno.h>
 #include <dirent.h>
 #include <stdarg.h>
@@ -64,6 +65,7 @@ namespace futil
         HI_CHDIR                    = 0x00240000,
         HI_FCHMOD                   = 0x00250000,
         HI_FCHMODAT                 = 0x00260000,
+        HI_CONNECT                  = 0x00270000,
     };
 
     struct exception : public std::exception
@@ -165,6 +167,7 @@ namespace futil
     void close(int fd);
     int fcntl(int fd, int cmd);
     template<typename T> int fcntl(int fd, int cmd, T arg);
+    template<> int fcntl<int>(int fd, int cmd, int arg);
     void fsync_and_flush(int fd);
     void fsync_and_barrier(int fd);
     int vdprintf(int fd, const char* fmt, va_list ap);
@@ -198,6 +201,7 @@ namespace futil
     void chdir(const char* path);
     void fchmod(int fd, mode_t mode);
     void fchmodat(int fd, const char* path, mode_t mode, int flag);
+    bool connect(int fd, const struct sockaddr* addr, socklen_t addr_len);
 
 #else
 
@@ -637,6 +641,22 @@ namespace futil
             if (errno != EINTR)
                 FW_THROW_ERRNO();
         }
+    }
+
+    inline bool connect(int fd, const struct sockaddr* addr,
+                        socklen_t addr_len)
+    {
+        // Returns true if the connection was established, or false if fd is
+        // non-blocking and the connection is still in progress.  Unlike the
+        // other wrappers, this doesn't retry on EINTR: an interrupted
+        // connect() continues asynchronously and can't simply be restarted,
+        // so EINTR is thrown like any other error.
+        FW_PROBE(HI_CONNECT,"connect(%d,%p,%u)",fd,addr,(unsigned)addr_len);
+        if (!::connect(fd,addr,addr_len))
+            return true;
+        if (errno == EINPROGRESS)
+            return false;
+        FW_THROW_ERRNO();
     }
 
 #endif

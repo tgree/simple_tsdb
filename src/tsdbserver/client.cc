@@ -268,8 +268,20 @@ client::connect() try
     if (addrs.empty())
         return;
 
-    auto cs = std::make_unique<tcp::client_socket>(addrs[0]);
+    // Fail fast if the remote host is unreachable rather than waiting
+    // out the kernel's SYN retries (over 2 minutes on Linux).
+    auto cs = std::make_unique<tcp::client_socket>(addrs[0],10000);
     cs->enable_keepalive();
+    cs->set_user_timeout_secs(30);
+
+    // Bound every blocking send or receive, including the SSL handshake.
+    // Keepalive and the user timeout only detect a dead network path; if
+    // the remote host is reachable but the tsdbserver never answers (for
+    // instance, it is blocked on a series lock), this is what breaks us out
+    // so that the caller can fall back to its local database.
+    cs->set_send_timeout_us(60*1000000ULL);
+    cs->set_recv_timeout_us(60*1000000ULL);
+
     s = ssl_context.wrap(std::move(cs),remote_hostname.c_str());
     s->push(CT_AUTHENTICATE);
     push_string(DT_USERNAME,remote_user);
