@@ -95,6 +95,7 @@ namespace tcp
     int _socket(int af);
     void _setsockopt(int fd, int level, int name, const void* val,
                      socklen_t len);
+    int _accept(int fd, net::addr& remote_addr);
 #else
     inline int _socket(int af)
     {
@@ -109,6 +110,15 @@ namespace tcp
     {
         if (::setsockopt(fd,level,name,val,len))
             throw futil::errno_exception(errno);
+    }
+
+    inline int _accept(int fd, net::addr& remote_addr)
+    {
+        socklen_t sl = sizeof(remote_addr.sa);
+        int afd = ::accept(fd,(struct sockaddr*)&remote_addr.sa,&sl);
+        if (afd == -1)
+            throw futil::errno_exception(errno);
+        return afd;
     }
 #endif
 
@@ -350,11 +360,7 @@ namespace tcp
         std::unique_ptr<tcp::socket> accept()
         {
             net::addr remote_addr;
-            socklen_t sl = sizeof(remote_addr.sa);
-            int afd = ::accept(fd,(struct sockaddr*)&remote_addr.sa,&sl);
-            if (afd == -1)
-                throw futil::errno_exception(errno);
-
+            int afd = _accept(fd,remote_addr);
             return std::make_unique<socket>(afd,bind_addr,remote_addr);
         }
 

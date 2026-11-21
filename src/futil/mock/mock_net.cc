@@ -23,6 +23,17 @@ tcp::_setsockopt(int fd, int level, int name, const void* val,
         throw futil::errno_exception(err);
 }
 
+int
+tcp::_accept(int fd, net::addr& remote_addr)
+{
+    // The mock returns the accepted fd, or a negative errno value to fail.
+    // remote_addr is left as it is.
+    int afd = (int)mock("tcp::_accept",fd);
+    if (afd < 0)
+        throw futil::errno_exception(-afd);
+    return afd;
+}
+
 net::addr
 net::getsockname(int fd)
 {
