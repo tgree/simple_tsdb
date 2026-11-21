@@ -1260,15 +1260,15 @@ handle_sum_compute_points(connection& conn,
 static void
 stream_request_handler(connection& conn)
 {
-    printf("Handling local %s remote %s.\n",
-           conn.s.local_addr_string().c_str(),
-           conn.s.remote_addr_string().c_str());
+    prod_printf("Handling local %s remote %s.\n",
+                conn.s.local_addr_string().c_str(),
+                conn.s.remote_addr_string().c_str());
 
     process_stream(conn,commands);
 
-    printf("Teardown local %s remote %s.\n",
-           conn.s.local_addr_string().c_str(),
-           conn.s.remote_addr_string().c_str());
+    prod_printf("Teardown local %s remote %s.\n",
+                conn.s.local_addr_string().c_str(),
+                conn.s.remote_addr_string().c_str());
 }
 
 prod_static void
@@ -1291,8 +1291,8 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
 
     std::string local_addr_string = sock->local_addr_string();
     std::string remote_addr_string = sock->remote_addr_string();
-    printf("Authenticating local %s remote %s.\n",
-           local_addr_string.c_str(),remote_addr_string.c_str());
+    prod_printf("Authenticating local %s remote %s.\n",
+                local_addr_string.c_str(),remote_addr_string.c_str());
 
     // Set a 3-second timeout on the socket and then attempt to wrap() it into
     // an SSL stream.  The timeout should handle the case where the remote
@@ -1314,24 +1314,25 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
         catch (const tcp::ssl::ssl_error_exception& e)
         {
             if (e.ssl_error == SSL_ERROR_WANT_READ)
-                printf("Zombie detected: %s\n",remote_addr_string.c_str());
+                prod_printf("Zombie detected: %s\n",remote_addr_string.c_str());
             else
             {
-                printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
-                       e.what());
+                prod_printf("SSL wrap failure: %s %s\n",
+                            remote_addr_string.c_str(),e.what());
             }
 
             throw;
         }
         catch (const std::exception& e)
         {
-            printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
-                   e.what());
+            prod_printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
+                        e.what());
             throw;
         }
         catch (...)
         {
-            printf("SSL wrap failure: %s (?)\n",remote_addr_string.c_str());
+            prod_printf("SSL wrap failure: %s (?)\n",
+                        remote_addr_string.c_str());
             throw;
         }
     }
@@ -1356,12 +1357,12 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
         parse_cmd(conn,auth_command,tokens);
 
         conn.username = tokens[0].to_string();
-        printf("Authenticating user %s from %s...\n",
-               conn.username.c_str(),remote_addr_string.c_str());
+        prod_printf("Authenticating user %s from %s...\n",
+                    conn.username.c_str(),remote_addr_string.c_str());
         if (!root->verify_user(conn.username,tokens[1].to_string()))
             throw futil::errno_exception(EPERM);
-        printf("Authentication from %s for user %s succeeded.\n",
-               remote_addr_string.c_str(),conn.username.c_str());
+        prod_printf("Authentication from %s for user %s succeeded.\n",
+                    remote_addr_string.c_str(),conn.username.c_str());
 
         uint32_t status[2] = {DT_STATUS_CODE, 0};
         conn.s.send_all(&status,sizeof(status));
@@ -1370,15 +1371,15 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     {
         if (!conn.username.empty())
         {
-            printf("Authentication from %s for user %s failed.\n",
-                   remote_addr_string.c_str(),conn.username.c_str());
+            prod_printf("Authentication from %s for user %s failed.\n",
+                        remote_addr_string.c_str(),conn.username.c_str());
         }
         else
         {
-            printf("Authentication from %s failed.\n",
-                   remote_addr_string.c_str());
+            prod_printf("Authentication from %s failed.\n",
+                        remote_addr_string.c_str());
         }
-        printf("Authentication exception: %s\n",e.what());
+        prod_printf("Authentication exception: %s\n",e.what());
         uint64_t t1 = time_ns();
         uint64_t nsecs = round_up_to_nearest_multiple(t1 - t0,
                                                       (uint64_t)2000000000);
