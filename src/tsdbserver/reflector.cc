@@ -436,6 +436,43 @@ catch (...)
 }
 
 static void
+flush_pass(client& c, std::set<std::string>& validated_dbs,
+    auto_buf& chunk_storage)
+{
+    // Create the remote measurements if they don't exist; validate for a
+    // matching schema if they do exist.  Skip any databases that we have
+    // already completely validated.
+    create_remote_measurements(c,validated_dbs);
+
+    // Iterate over all mapped databases, flushing as we go.
+    for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
+    {
+        if (!validated_dbs.count(local_db_path))
+            continue;
+
+        tsdb::database local_db(*root,local_db_path);
+        auto local_measurements = local_db.list_measurements();
+        for (const auto& m_path : local_measurements)
+        {
+            tsdb::measurement local_m(local_db,m_path);
+            auto local_series = local_m.list_active_series();
+            for (const auto& s_path : local_series)
+            {
+                auto series_id = local_db_path + "/" +
+                                 m_path + "/" +
+                                 s_path;
+                printf("Flushing %s/%s/%s -> %s/%s/%s.\n",
+                       local_db_path.c_str(),m_path.c_str(),s_path.c_str(),
+                       remote_db_path.c_str(),m_path.c_str(),
+                       s_path.c_str());
+                flush_series(c,local_m,local_db_path,m_path,s_path,
+                             remote_db_path,chunk_storage);
+            }
+        }
+    }
+}
+
+static void
 flush_workloop()
 {
     client c(reflector_cfg.remote_host,
@@ -448,38 +485,7 @@ flush_workloop()
     for (;;)
     {
         debugf("Starting flush scan...\n");
-
-        // Create the remote measurements if they don't exist; validate for a
-        // matching schema if they do exist.  Skip any databases that we have
-        // already completely validated.
-        create_remote_measurements(c,validated_dbs);
-
-        // Iterate over all mapped databases, flushing as we go.
-        for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
-        {
-            if (!validated_dbs.count(local_db_path))
-                continue;
-
-            tsdb::database local_db(*root,local_db_path);
-            auto local_measurements = local_db.list_measurements();
-            for (const auto& m_path : local_measurements)
-            {
-                tsdb::measurement local_m(local_db,m_path);
-                auto local_series = local_m.list_active_series();
-                for (const auto& s_path : local_series)
-                {
-                    auto series_id = local_db_path + "/" +
-                                     m_path + "/" +
-                                     s_path;
-                    printf("Flushing %s/%s/%s -> %s/%s/%s.\n",
-                           local_db_path.c_str(),m_path.c_str(),s_path.c_str(),
-                           remote_db_path.c_str(),m_path.c_str(),
-                           s_path.c_str());
-                    flush_series(c,local_m,local_db_path,m_path,s_path,
-                                 remote_db_path,chunk_storage);
-                }
-            }
-        }
+        flush_pass(c,validated_dbs,chunk_storage);
 
         // Give it a rest.
         debugf("Resting...\n");
