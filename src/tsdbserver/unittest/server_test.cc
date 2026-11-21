@@ -71,6 +71,26 @@ class tmock_test
         tcheckpoint();
         ::close(server_fd);
     }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
+        test_auth_request_handler_survives_setsockopt_failure)
+    {
+        // On macOS, every socket option fails with EINVAL once the client
+        // has reset the connection.  auth_request_handler() sets its
+        // options outside any try block, so one reset connection to the
+        // TLS port used to abort tsdbserver.  The handler fails before it
+        // uses the SSL context, so the test doesn't need one.
+        int client_fd;
+        auto sock = make_server_socket(&client_fd);
+        int server_fd = sock->fd;
+
+        texpect("tcp::_setsockopt",want(fd,server_fd),returns(EINVAL));
+        texpect("futil::close",want(fd,server_fd));
+        auth_request_handler(NULL,std::move(sock));
+        tcheckpoint();
+        ::close(server_fd);
+        ::close(client_fd);
+    }
 };
 
 TMOCK_MAIN();
