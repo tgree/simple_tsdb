@@ -1,12 +1,17 @@
 # Copyright (c) 2025 by Terry Greeniaus.
 # All rights reserved.
 TESTS := \
+	 client_socket_test \
 	 futil_test \
 	 sockaddr_test
 
 ITESTS := \
 	 tcp_test
 
+client_socket_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/client_socket_test.o \
+	$(PARENT_TBUILD_DIR)/mock/mock_futil.o \
+	$(PARENT_TBUILD_DIR)/mock/mock_net.o
 futil_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/futil_test.o
 sockaddr_test.OBJ := \
