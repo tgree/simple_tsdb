@@ -2,6 +2,7 @@
 // All rights reserved.
 #include "../ssl.h"
 #include <tmock/tmock.h>
+#include <string.h>
 
 // Fake OpenSSL objects for the mocks to return.  Nothing dereferences them.
 static const SSL_METHOD* const client_method = (const SSL_METHOD*)0x1000;
@@ -35,6 +36,42 @@ class tmock_test
         tcp::ssl::server_context ctx("cert.pem","key.pem");
         tcheckpoint();
         TASSERT(ctx.sslctx == sslctx);
+    }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_client_context_null_ssl_ctx)
+    {
+        // Without a check, a NULL SSL_CTX goes on to SSL_CTX_set_verify(),
+        // which segfaults in the real OpenSSL.
+        texpect("TLS_client_method",returns(client_method));
+        texpect("SSL_CTX_new",want(meth,client_method),returns(NULL));
+        try
+        {
+            tcp::ssl::client_context ctx;
+            TABORT("client_context didn't throw");
+        }
+        catch (const tcp::ssl::exception& e)
+        {
+            TASSERT(!strcmp(e.what(),"SSL_CTX_new returned NULL"));
+        }
+    }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_server_context_null_ssl_ctx)
+    {
+        // Without a check, a NULL SSL_CTX goes on to
+        // SSL_CTX_use_certificate_chain_file(), which fails in the real
+        // OpenSSL, and server_context calls kabort() as if the certificate
+        // chain were bad.
+        texpect("TLS_server_method",returns(server_method));
+        texpect("SSL_CTX_new",want(meth,server_method),returns(NULL));
+        try
+        {
+            tcp::ssl::server_context ctx("cert.pem","key.pem");
+            TABORT("server_context didn't throw");
+        }
+        catch (const tcp::ssl::exception& e)
+        {
+            TASSERT(!strcmp(e.what(),"SSL_CTX_new returned NULL"));
+        }
     }
 };
 
