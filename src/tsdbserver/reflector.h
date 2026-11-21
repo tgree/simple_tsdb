@@ -17,4 +17,18 @@ struct reflector_config
     std::map<std::string,std::string>   db_map;
 };
 
+#ifdef UNITTEST
+#include "client.h"
+#include <hdr/auto_buf.h>
+#include <libtsdb/root.h>
+
+#include <set>
+
+// Defined prod_static in reflector.cc.
+extern tsdb::root* root;
+extern reflector_config reflector_cfg;
+void flush_pass(client& c, std::set<std::string>& validated_dbs,
+                auto_buf& chunk_storage);
+#endif
+
 #endif /* __TSDBSERVER_REFLECTOR_H */

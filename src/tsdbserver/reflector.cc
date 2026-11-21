@@ -7,6 +7,7 @@
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
 #include <hdr/fixed_vector.h>
+#include <hdr/unittest.h>
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <futil/ssl.h>
@@ -60,8 +61,8 @@ static const command_syntax<connection&> commands[] =
     },
 };
 
-static tsdb::root* root;
-static reflector_config reflector_cfg;
+prod_static tsdb::root* root;
+prod_static reflector_config reflector_cfg;
 
 void
 debugf(const char* fmt, ...)
@@ -450,7 +451,7 @@ flush_database(client& c, const std::string& local_db_path,
     }
 }
 
-static void
+prod_static void
 flush_pass(client& c, std::set<std::string>& validated_dbs,
     auto_buf& chunk_storage)
 {
