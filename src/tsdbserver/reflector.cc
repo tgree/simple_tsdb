@@ -218,7 +218,7 @@ handle_write_points(connection& conn,
 }
 
 prod_static void
-request_handler(std::unique_ptr<tcp::stream> s)
+request_handler(std::unique_ptr<tcp::stream> s) try
 {
     prod_printf("Handling local %s remote %s.\n",
                 s->local_addr_string().c_str(),s->remote_addr_string().c_str());
@@ -234,6 +234,14 @@ request_handler(std::unique_ptr<tcp::stream> s)
 
     prod_printf("Teardown local %s remote %s.\n",
                 s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+}
+catch (const std::exception& e)
+{
+    prod_printf("Request handler error: %s\n",e.what());
+}
+catch (...)
+{
+    prod_printf("Random request handler exception!\n");
 }
 
 // Unittests provide their own main() and can't call the functions that

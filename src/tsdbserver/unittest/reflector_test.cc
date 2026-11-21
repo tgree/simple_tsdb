@@ -159,8 +159,7 @@ class tmock_test
         flush_pass(c,validated_dbs,chunk_storage);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
-        test_request_handler_survives_setsockopt_failure)
+    TMOCK_TEST(test_request_handler_survives_setsockopt_failure)
     {
         // On macOS, every socket option fails with EINVAL once the client
         // has reset the connection.  request_handler() sets its options
