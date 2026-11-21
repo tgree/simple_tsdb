@@ -19,6 +19,7 @@ reflector_test.OBJ := \
 	$(BUILD_TO_DIR)/libtsdb/measurement.o \
 	$(BUILD_TO_DIR)/libtsdb/root.o \
 	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_TO_DIR)/futil/mock/mock_net.o \
 	$(BUILD_O_DIR)/floor/kassert.o
 
 # info_handler() never touches the database, so server_test links the

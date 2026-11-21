@@ -3,6 +3,7 @@
 #include "../reflector.h"
 #include <libtsdb/unittest/fake_db.h>
 #include <futil/fakefs/fakefs.h>
+#include <futil/mock/mock_net.h>
 #include <tmock/tmock.h>
 
 // A mock client that never touches the network.
@@ -156,6 +157,19 @@ class tmock_test
                 want_str(m,"measurement1"));
         expect_flush();
         flush_pass(c,validated_dbs,chunk_storage);
+    }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
+        test_request_handler_survives_setsockopt_failure)
+    {
+        // On macOS, every socket option fails with EINVAL once the client
+        // has reset the connection.  request_handler() sets its options
+        // outside any try block, so one reset connection used to abort the
+        // reflector.  fakefs can't close a real socket, so this uses a mock
+        // stream.
+        texpect("mock_net::tcp::stream::enable_keepalive",returns(EINVAL));
+        request_handler(std::make_unique<mock_net::tcp::stream>());
+        tcheckpoint();
     }
 };
 
