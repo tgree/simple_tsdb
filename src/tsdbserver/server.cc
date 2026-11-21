@@ -1419,15 +1419,13 @@ socket4_workloop(uint16_t port)
     printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        try
-        {
-            std::thread t(request_handler,ss.accept());
-            t.detach();
-        }
-        catch (const std::exception& e)
-        {
-            printf("Exception accepting TCP connection: %s\n",e.what());
-        }
+        tcp::accept_connection(ss,"TCP",
+            [](std::unique_ptr<tcp::socket> s)
+            {
+                std::thread t(request_handler,std::move(s));
+                t.detach();
+            }
+        );
     }
 }
 
@@ -1441,16 +1439,14 @@ ssl_workloop(const std::string& cert_file, const std::string& key_file,
     printf("SSL listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        try
-        {
-            // Handle the request, letting the target thread wrap it.
-            std::thread t(auth_request_handler,&sslctx,ss.accept());
-            t.detach();
-        }
-        catch (const std::exception& e)
-        {
-            printf("Exception accepting SSL connection: %s\n",e.what());
-        }
+        tcp::accept_connection(ss,"SSL",
+            [&](std::unique_ptr<tcp::socket> s)
+            {
+                // Handle the request, letting the target thread wrap it.
+                std::thread t(auth_request_handler,&sslctx,std::move(s));
+                t.detach();
+            }
+        );
     }
 }
 #endif
@@ -1518,15 +1514,13 @@ info_workloop(uint16_t port)
     printf("Info listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        try
-        {
-            std::thread t(info_handler,ss.accept());
-            t.detach();
-        }
-        catch (const std::exception& e)
-        {
-            printf("Exception accepting Info connection: %s\n",e.what());
-        }
+        tcp::accept_connection(ss,"Info",
+            [](std::unique_ptr<tcp::socket> s)
+            {
+                std::thread t(info_handler,std::move(s));
+                t.detach();
+            }
+        );
     }
 }
 
