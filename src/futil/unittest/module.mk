@@ -1,6 +1,7 @@
 # Copyright (c) 2025 by Terry Greeniaus.
 # All rights reserved.
 TESTS := \
+	 accept_test \
 	 client_socket_test \
 	 futil_test \
 	 sockaddr_test
@@ -8,6 +9,10 @@ TESTS := \
 ITESTS := \
 	 tcp_test
 
+accept_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/accept_test.o \
+	$(PARENT_TBUILD_DIR)/mock/mock_futil.o \
+	$(PARENT_TBUILD_DIR)/mock/mock_net.o
 client_socket_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/client_socket_test.o \
 	$(PARENT_TBUILD_DIR)/mock/mock_futil.o \

@@ -6,12 +6,14 @@
 #include "futil.h"
 #include "sockaddr.h"
 #include <hdr/kassert.h>
+#include <hdr/unittest.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <functional>
 #include <memory>
 
 namespace tcp
@@ -377,6 +379,25 @@ namespace tcp
             bind(bind_addr);
         }
     };
+
+    // Accepts one connection on ss and passes it to handle(), which
+    // normally starts a thread to serve it.  Errors from either are logged,
+    // naming the kind of connection, such as "TCP", and not rethrown, so
+    // that an accept loop keeps running.
+    inline void
+    accept_connection(server_socket& ss, const char* kind,
+        const std::function<void(std::unique_ptr<socket>)>& handle)
+    {
+        try
+        {
+            handle(ss.accept());
+        }
+        catch (const std::exception& e)
+        {
+            prod_printf("Exception accepting %s connection: %s\n",kind,
+                        e.what());
+        }
+    }
 }
 
 #endif /* __SRC_FUTIL_TCP_H */
