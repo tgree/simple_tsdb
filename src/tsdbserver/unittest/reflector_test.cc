@@ -76,6 +76,19 @@ init_reflector()
     reflector_cfg.db_map["db1"] = "rdb1";
 }
 
+// Makes the next futil call fail with EMFILE, as it does when the reflector
+// has run out of file descriptors.  The probe clears futil::hook_func while
+// the hook runs and doesn't restore it if the hook throws, so this fails
+// exactly one call.
+static void
+fail_next_futil_call_with_emfile()
+{
+    futil::hook_func = [](uint32_t id)
+    {
+        throw futil::errno_exception(EMFILE);
+    };
+}
+
 // Expects a complete flush of the 8 points set up by init_reflector().
 static void
 expect_flush()
@@ -102,6 +115,47 @@ class tmock_test
         TASSERT(validated_dbs.count("db1"));
 
         // Nothing is left to flush.
+        flush_pass(c,validated_dbs,chunk_storage);
+    }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_flush_pass_survives_emfile)
+    {
+        // The first futil call in a pass over an already-validated database
+        // lists it, before flush_series() runs.  The reflector used to
+        // abort here when it ran out of file descriptors.
+        init_reflector();
+        client c("remote",4000,"user","password");
+        std::set<std::string> validated_dbs = {"db1"};
+        auto_buf chunk_storage(10*1024*1024);
+
+        fail_next_futil_call_with_emfile();
+        flush_pass(c,validated_dbs,chunk_storage);
+        TASSERT(!futil::hook_func);
+
+        // The next pass flushes normally.
+        expect_flush();
+        flush_pass(c,validated_dbs,chunk_storage);
+    }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
+        test_create_remote_measurements_survives_emfile)
+    {
+        // The first futil call in a pass over an unvalidated database is
+        // root->database_exists().
+        init_reflector();
+        client c("remote",4000,"user","password");
+        std::set<std::string> validated_dbs;
+        auto_buf chunk_storage(10*1024*1024);
+
+        fail_next_futil_call_with_emfile();
+        flush_pass(c,validated_dbs,chunk_storage);
+        TASSERT(!futil::hook_func);
+        TASSERT(!validated_dbs.count("db1"));
+
+        // The next pass validates and flushes normally.
+        texpect("client::create_measurement",want_str(db,"rdb1"),
+                want_str(m,"measurement1"));
+        expect_flush();
         flush_pass(c,validated_dbs,chunk_storage);
     }
 };
