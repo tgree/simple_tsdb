@@ -1257,9 +1257,6 @@ handle_sum_compute_points(connection& conn,
     conn.s.send_all(&dt,sizeof(dt));
 }
 
-// Unittests provide their own main() and can't call the functions that
-// only main() uses.
-#ifndef UNITTEST
 static void
 stream_request_handler(connection& conn)
 {
@@ -1274,7 +1271,7 @@ stream_request_handler(connection& conn)
            conn.s.remote_addr_string().c_str());
 }
 
-static void
+prod_static void
 request_handler(std::unique_ptr<tcp::socket> sock)
 {
     sock->enable_keepalive();
@@ -1286,7 +1283,7 @@ request_handler(std::unique_ptr<tcp::socket> sock)
     stream_request_handler(conn);
 }
 
-static void
+prod_static void
 auth_request_handler(tcp::ssl::server_context* sslctx,
     std::unique_ptr<tcp::socket> sock)
 {
@@ -1394,6 +1391,9 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     stream_request_handler(conn);
 }
 
+// Unittests provide their own main() and can't call the functions that
+// only main() uses.
+#ifndef UNITTEST
 static void
 socket4_workloop(uint16_t port)
 {
