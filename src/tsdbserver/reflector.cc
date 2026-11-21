@@ -276,9 +276,9 @@ create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
             auto local_measurements = local_db.list_measurements();
             for (const auto& m_path : local_measurements)
             {
-                printf("Checking %s/%s -> %s/%s.\n",
-                       local_db_path.c_str(),m_path.c_str(),
-                       remote_db_path.c_str(),m_path.c_str());
+                prod_printf("Checking %s/%s -> %s/%s.\n",
+                            local_db_path.c_str(),m_path.c_str(),
+                            remote_db_path.c_str(),m_path.c_str());
                 tsdb::measurement local_m(local_db,m_path);
                 std::vector<tsdb::schema_entry> fields(
                     local_m.fields.begin(),local_m.fields.end());
@@ -287,12 +287,12 @@ create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
         }
         catch (const std::exception& e)
         {
-            printf("Error: %s\n",e.what());
+            prod_printf("Error: %s\n",e.what());
             continue;
         }
         catch (...)
         {
-            printf("Random exception!\n");
+            prod_printf("Random exception!\n");
             continue;
         }
 
@@ -344,15 +344,15 @@ flush_series(client& c, tsdb::measurement& local_m,
             }
 
             // Transmit the chunk.
-            printf("Transmitting %zu chunk points from %" PRIu64
-                   " to %" PRIu64 ".\n",N,wci.timestamps[0],
-                   wci.timestamps[N-1]);
+            prod_printf("Transmitting %zu chunk points from %" PRIu64
+                        " to %" PRIu64 ".\n",N,wci.timestamps[0],
+                        wci.timestamps[N-1]);
             c.write_points(remote_db_path,m_path,s_path,N,0,data_len,
                            chunk_storage);
 
             // Delete the local points.
-            printf("Deleting local points up to %" PRIu64".\n",
-                   wci.timestamps[N-1]);
+            prod_printf("Deleting local points up to %" PRIu64".\n",
+                        wci.timestamps[N-1]);
             tsdb::delete_points(stl,wci.timestamps[N-1]);
 
             // Finish the rest of this main store chunk.
@@ -404,15 +404,15 @@ flush_series(client& c, tsdb::measurement& local_m,
             }
 
             // Transmit the chunk.
-            printf("Transmitting %zu WAL points from %" PRIu64
-                   " to %" PRIu64 ".\n",N,wci.timestamps[0],
-                   wci.timestamps[N-1]);
+            prod_printf("Transmitting %zu WAL points from %" PRIu64
+                        " to %" PRIu64 ".\n",N,wci.timestamps[0],
+                        wci.timestamps[N-1]);
             c.write_points(remote_db_path,m_path,s_path,N,0,data_len,
                            chunk_storage);
 
             // Delete the local points.
-            printf("Deleting local points up to %" PRIu64".\n",
-                   wci.timestamps[N-1]);
+            prod_printf("Deleting local points up to %" PRIu64".\n",
+                        wci.timestamps[N-1]);
             tsdb::delete_points(stl,wci.timestamps[N-1]);
 
             // Finish the rest of this main store chunk.
@@ -423,11 +423,11 @@ flush_series(client& c, tsdb::measurement& local_m,
 }
 catch (const std::exception& e)
 {
-    printf("Flush error: %s\n",e.what());
+    prod_printf("Flush error: %s\n",e.what());
 }
 catch (...)
 {
-    printf("Random flush exception!\n");
+    prod_printf("Random flush exception!\n");
 }
 
 static void
@@ -445,10 +445,10 @@ flush_database(client& c, const std::string& local_db_path,
             auto series_id = local_db_path + "/" +
                              m_path + "/" +
                              s_path;
-            printf("Flushing %s/%s/%s -> %s/%s/%s.\n",
-                   local_db_path.c_str(),m_path.c_str(),s_path.c_str(),
-                   remote_db_path.c_str(),m_path.c_str(),
-                   s_path.c_str());
+            prod_printf("Flushing %s/%s/%s -> %s/%s/%s.\n",
+                        local_db_path.c_str(),m_path.c_str(),s_path.c_str(),
+                        remote_db_path.c_str(),m_path.c_str(),
+                        s_path.c_str());
             flush_series(c,local_m,local_db_path,m_path,s_path,
                          remote_db_path,chunk_storage);
         }
