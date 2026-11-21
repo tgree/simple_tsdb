@@ -44,3 +44,56 @@ net::getsockname(int fd)
     }
     TABORT("net::getsockname() mock: unsupported address type");
 }
+
+std::string
+mock_net::tcp::stream::local_addr_string()
+{
+    return "127.0.0.1:4000";
+}
+
+std::string
+mock_net::tcp::stream::remote_addr_string()
+{
+    return "127.0.0.1:50000";
+}
+
+size_t
+mock_net::tcp::stream::send(const void* buffer, size_t len)
+{
+    return mock("mock_net::tcp::stream::send",len);
+}
+
+size_t
+mock_net::tcp::stream::recv(void* buffer, size_t len)
+{
+    return mock("mock_net::tcp::stream::recv",len);
+}
+
+void
+mock_net::tcp::stream::enable_keepalive(int keepidle_secs,
+    int keepintvl_secs, int keepcnt, int connection_timeout_secs)
+{
+    int err = (int)mock("mock_net::tcp::stream::enable_keepalive");
+    if (err)
+        throw futil::errno_exception(err);
+}
+
+void
+mock_net::tcp::stream::cork()
+{
+    mock("mock_net::tcp::stream::cork");
+}
+
+void
+mock_net::tcp::stream::uncork()
+{
+    mock("mock_net::tcp::stream::uncork");
+}
+
+void
+mock_net::tcp::stream::nodelay()
+{
+    int err = (int)mock("mock_net::tcp::stream::nodelay");
+    if (err)
+        throw futil::errno_exception(err);
+}
