@@ -267,11 +267,12 @@ create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
     {
         if (validated_dbs.count(local_db_path))
             continue;
-        if (!root->database_exists(local_db_path))
-            continue;
 
         try
         {
+            if (!root->database_exists(local_db_path))
+                continue;
+
             tsdb::database local_db(*root,local_db_path);
             auto local_measurements = local_db.list_measurements();
             for (const auto& m_path : local_measurements)
