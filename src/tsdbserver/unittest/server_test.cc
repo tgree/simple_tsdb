@@ -9,7 +9,7 @@
 // client end in *client_fd.  futil::close() is mocked, so destroying the
 // tcp::socket doesn't close its fd; the test closes it with ::close().
 static std::unique_ptr<tcp::socket>
-make_info_socket(int* client_fd)
+make_server_socket(int* client_fd)
 {
     int fds[2];
     TASSERT(::socketpair(AF_UNIX,SOCK_STREAM,0,fds) == 0);
@@ -39,7 +39,7 @@ class tmock_test
     TMOCK_TEST(test_info_handler)
     {
         int client_fd;
-        auto sock = make_info_socket(&client_fd);
+        auto sock = make_server_socket(&client_fd);
         int server_fd = sock->fd;
 
         texpect("futil::close",want(fd,server_fd));
@@ -62,7 +62,7 @@ class tmock_test
         // write fails with EPIPE instead.
         signal(SIGPIPE,SIG_IGN);
         int client_fd;
-        auto sock = make_info_socket(&client_fd);
+        auto sock = make_server_socket(&client_fd);
         int server_fd = sock->fd;
         ::close(client_fd);
 
