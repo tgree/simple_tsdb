@@ -91,8 +91,7 @@ class tmock_test
         ::close(client_fd);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
-        test_request_handler_survives_setsockopt_failure)
+    TMOCK_TEST(test_request_handler_survives_setsockopt_failure)
     {
         // The same macOS EINVAL failure as above, on the plain port.
         // request_handler() sets its options outside any try block, so one

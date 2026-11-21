@@ -1272,7 +1272,7 @@ stream_request_handler(connection& conn)
 }
 
 prod_static void
-request_handler(std::unique_ptr<tcp::socket> sock)
+request_handler(std::unique_ptr<tcp::socket> sock) try
 {
     sock->enable_keepalive();
     sock->set_user_timeout_secs(30);
@@ -1281,6 +1281,14 @@ request_handler(std::unique_ptr<tcp::socket> sock)
     std::unique_ptr<tcp::stream> stream(std::move(sock));
     connection conn(*stream,"");
     stream_request_handler(conn);
+}
+catch (const std::exception& e)
+{
+    prod_printf("Request handler error: %s\n",e.what());
+}
+catch (...)
+{
+    prod_printf("Random request handler exception!\n");
 }
 
 prod_static void
