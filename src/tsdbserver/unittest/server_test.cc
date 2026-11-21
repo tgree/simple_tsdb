@@ -90,6 +90,24 @@ class tmock_test
         ::close(server_fd);
         ::close(client_fd);
     }
+
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(
+        test_request_handler_survives_setsockopt_failure)
+    {
+        // The same macOS EINVAL failure as above, on the plain port.
+        // request_handler() sets its options outside any try block, so one
+        // reset connection to the plain port used to abort tsdbserver.
+        int client_fd;
+        auto sock = make_server_socket(&client_fd);
+        int server_fd = sock->fd;
+
+        texpect("tcp::_setsockopt",want(fd,server_fd),returns(EINVAL));
+        texpect("futil::close",want(fd,server_fd));
+        request_handler(std::move(sock));
+        tcheckpoint();
+        ::close(server_fd);
+        ::close(client_fd);
+    }
 };
 
 TMOCK_MAIN();
