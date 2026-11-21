@@ -220,8 +220,8 @@ handle_write_points(connection& conn,
 prod_static void
 request_handler(std::unique_ptr<tcp::stream> s)
 {
-    printf("Handling local %s remote %s.\n",
-           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+    prod_printf("Handling local %s remote %s.\n",
+                s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
     client c(reflector_cfg.remote_host,
              reflector_cfg.remote_port,
@@ -232,8 +232,8 @@ request_handler(std::unique_ptr<tcp::stream> s)
     s->nodelay();
     process_stream(conn,commands);
 
-    printf("Teardown local %s remote %s.\n",
-           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+    prod_printf("Teardown local %s remote %s.\n",
+                s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 }
 
 // Unittests provide their own main() and can't call the functions that
