@@ -31,4 +31,5 @@ server_test.OBJ := \
 	$(PARENT_TBUILD_DIR)/tokens.o \
 	$(BUILD_O_DIR)/shunter/shunting_functions.o \
 	$(BUILD_TO_DIR)/futil/mock/mock_futil.o \
+	$(BUILD_TO_DIR)/futil/mock/mock_net.o \
 	$(BUILD_O_DIR)/floor/kassert.o

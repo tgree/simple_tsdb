@@ -13,6 +13,16 @@ tcp::_socket(int af)
     return (int)mock("tcp::_socket",af);
 }
 
+void
+tcp::_setsockopt(int fd, int level, int name, const void* val,
+    socklen_t len)
+{
+    // The mock returns an errno value, or 0 for success.
+    int err = (int)mock("tcp::_setsockopt",fd,level,name);
+    if (err)
+        throw futil::errno_exception(err);
+}
+
 net::addr
 net::getsockname(int fd)
 {

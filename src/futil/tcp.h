@@ -93,6 +93,8 @@ namespace tcp
 
 #ifdef UNITTEST
     int _socket(int af);
+    void _setsockopt(int fd, int level, int name, const void* val,
+                     socklen_t len);
 #else
     inline int _socket(int af)
     {
@@ -100,6 +102,13 @@ namespace tcp
         if (fd == -1)
             throw futil::errno_exception(errno);
         return fd;
+    }
+
+    inline void _setsockopt(int fd, int level, int name, const void* val,
+                            socklen_t len)
+    {
+        if (::setsockopt(fd,level,name,val,len))
+            throw futil::errno_exception(errno);
     }
 #endif
 
@@ -158,38 +167,21 @@ namespace tcp
             //                       establishment
             int on = 1;
 #if IS_MACOS
-            if (setsockopt(fd,IPPROTO_TCP,TCP_CONNECTIONTIMEOUT,
-                           &connection_timeout_secs,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPALIVE,&keepidle_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_CONNECTIONTIMEOUT,
+                        &connection_timeout_secs,sizeof(int));
+            _setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPALIVE,&keepidle_secs,
+                        sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
+                        sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int));
 #elif IS_LINUX
-            if (setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPIDLE,&keepidle_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPIDLE,&keepidle_secs,
+                        sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
+                        sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int));
 #else
 #warning Unknown system, keepalive not supported.
 #endif
@@ -199,11 +191,9 @@ namespace tcp
         {
             int on = 1;
 #if IS_MACOS
-        if (setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int)))
-            throw futil::errno_exception(errno);
+        _setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int));
 #elif IS_LINUX
-        if (setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int)))
-            throw futil::errno_exception(errno);
+        _setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int));
 #else
 #warning Unknown system, corking not supported.
 #endif
@@ -213,19 +203,16 @@ namespace tcp
         {
             int on = 0;
 #if IS_MACOS
-            if (setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int));
 #elif IS_LINUX
-            if (setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int));
 #endif
         }
 
         virtual void nodelay() override
         {
             int on = 1;
-            if (setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(int));
         }
 
         void set_send_timeout_us(uint64_t us)
@@ -233,8 +220,7 @@ namespace tcp
             struct timeval timeout;
             timeout.tv_sec = (us / 1000000);
             timeout.tv_usec = (us % 1000000);
-            if (setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
         }
 
         void set_recv_timeout_us(uint64_t us)
@@ -242,8 +228,7 @@ namespace tcp
             struct timeval timeout;
             timeout.tv_sec = (us / 1000000);
             timeout.tv_usec = (us % 1000000);
-            if (setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));
         }
 
         void set_user_timeout_secs(unsigned int secs)
@@ -256,15 +241,10 @@ namespace tcp
             // A value of 0 restores the system default.
 #if IS_MACOS
             int val = secs;
-            if (setsockopt(fd,IPPROTO_TCP,TCP_RXT_CONNDROPTIME,&val,
-                           sizeof(val)))
-            {
-                throw futil::errno_exception(errno);
-            }
+            _setsockopt(fd,IPPROTO_TCP,TCP_RXT_CONNDROPTIME,&val,sizeof(val));
 #elif IS_LINUX
             unsigned int ms = secs*1000;
-            if (setsockopt(fd,IPPROTO_TCP,TCP_USER_TIMEOUT,&ms,sizeof(ms)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_USER_TIMEOUT,&ms,sizeof(ms));
 #else
 #warning Unknown system, user timeout not supported.
 #endif
@@ -383,12 +363,10 @@ namespace tcp
             bind_addr(bind_addr)
         {
             int reuse = 1;
-            if (setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse));
 
             reuse = 1;
-            if (setsockopt(fd,SOL_SOCKET,SO_REUSEPORT,&reuse,sizeof(reuse)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_REUSEPORT,&reuse,sizeof(reuse));
 
             bind(bind_addr);
         }
