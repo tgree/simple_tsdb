@@ -1,6 +1,6 @@
 # Copyright (c) 2025 by Terry Greeniaus.
 # All rights reserved.
-SUBMODULES :=
+SUBMODULES := unittest
 
 tsdbserver.MK  := $(MODULE_MK)
 tsdbserver.LIB := libtsdb.a libz-ng.a
