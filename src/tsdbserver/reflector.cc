@@ -1,5 +1,6 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
+#include "reflector.h"
 #include "tokens.h"
 #include "client.h"
 #include <version.h>
@@ -13,23 +14,12 @@
 
 #include <algorithm>
 #include <thread>
-#include <map>
 #include <set>
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <time.h>
 #include <inttypes.h>
-
-struct reflector_config
-{
-    uint16_t                            port = 4000;
-    std::string                         remote_host;
-    uint16_t                            remote_port = 4000;
-    std::string                         remote_user;
-    std::string                         remote_password;
-    std::map<std::string,std::string>   db_map;
-};
 
 struct db_mapping
 {
