@@ -375,7 +375,7 @@ static const command_syntax<connection&> auth_command =
 
 static const uint8_t pad_bytes[8] = {};
 
-static tsdb::root* root;
+prod_static tsdb::root* root;
 
 void
 debugf(const char* fmt, ...)
@@ -1257,6 +1257,9 @@ handle_sum_compute_points(connection& conn,
     conn.s.send_all(&dt,sizeof(dt));
 }
 
+// Unittests provide their own main() and can't call the functions that
+// only main() uses.
+#ifndef UNITTEST
 static void
 stream_request_handler(connection& conn)
 {
@@ -1433,6 +1436,7 @@ ssl_workloop(const std::string& cert_file, const std::string& key_file,
         }
     }
 }
+#endif
 
 prod_static void
 info_handler(std::unique_ptr<tcp::socket> sock)
@@ -1480,6 +1484,7 @@ info_handler(std::unique_ptr<tcp::socket> sock)
     sock->push(output);
 }
 
+#ifndef UNITTEST
 static void
 info_workloop(uint16_t port)
 {
@@ -1655,3 +1660,4 @@ main(int argc, const char* argv[])
     else
         socket4_workloop(server_cfg.port);
 }
+#endif /* UNITTEST */

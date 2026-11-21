@@ -5,9 +5,11 @@
 
 #ifdef UNITTEST
 #include <futil/tcp.h>
+#include <libtsdb/root.h>
 #include <memory>
 
 // Defined prod_static in server.cc.
+extern tsdb::root* root;
 void info_handler(std::unique_ptr<tcp::socket> sock);
 #endif
 
