@@ -28,7 +28,7 @@ validate_measurement_name(const futil::path& name)
 //       because it is somehow corrupt.
 tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     db(db),
-    dir(db.dir,validate_measurement_name(path)),
+    dir(futil::open_exact_directory(db.dir,validate_measurement_name(path))),
     schema_fd(dir,"schema",O_RDONLY),
     schema_mapping(0,schema_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                    schema_fd.fd,0),
@@ -145,9 +145,15 @@ tsdb::create_measurement(const database& db, const futil::path& name,
             return;
         }
 
-        // The move operation failed.  This means that a directory now exists
-        // in the target measurement location, indicating that someone has just
-        // created the measurement.  Loop around and try again.
+        // The move operation failed.  On a case-insensitive file system, that
+        // may be because the name opens an existing measurement with a
+        // different spelling.
+        if (futil::dir_opens_as_other_case(db.dir,name))
+            throw tsdb::name_case_conflict_exception();
+
+        // Otherwise a directory now exists in the target measurement location,
+        // indicating that someone has just created the measurement.  Loop
+        // around and try again.
     }
 
     // The measurement exists, but we can't open it for some reason.  It must

@@ -189,7 +189,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_measurement_exact_case)
+    TMOCK_TEST(test_measurement_exact_case)
     {
         // On a case-insensitive file system, a measurement is reachable only
         // by the name it was created with: "MEASUREMENT1" must not open
