@@ -112,7 +112,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_tsdb_database_exact_case)
+    TMOCK_TEST(test_tsdb_database_exact_case)
     {
         // On a case-insensitive file system, a database is reachable only by
         // the name it was created with: "DB1" must not open "db1", and
