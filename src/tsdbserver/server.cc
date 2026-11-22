@@ -189,6 +189,12 @@ struct connection
         return tokens;
     }
 
+    void authorize(command_token _ct,
+                   const std::vector<parsed_data_token>& _tokens)
+    {
+        // Every command is allowed for now.
+    }
+
     connection(tcp::stream& s, const std::string& username):
         s(s),
         tid(get_thread_id()),

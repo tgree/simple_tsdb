@@ -200,6 +200,11 @@ parse_and_exec(Conn& conn, const command_syntax<Conn&, Args...>& cs)
     uint32_t status[2] = {DT_STATUS_CODE, 0};
     try
     {
+        // The connection can refuse the command, for instance because its
+        // user may not use the database, by throwing a tsdb::exception.
+        // That is reported as a status like any other error, and the
+        // connection stays open for the next command.
+        conn.authorize(cs.cmd_token,tokens);
         cs.handler(conn,tokens);
     }
     catch (const tsdb::exception& e)

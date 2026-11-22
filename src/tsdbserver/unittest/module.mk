@@ -2,7 +2,8 @@
 # All rights reserved.
 TESTS := \
 	 reflector_test \
-	 server_test
+	 server_test \
+	 tokens_test
 
 reflector_test.LIB := libz-ng.a
 reflector_test.DYLIB := ssl crypto
@@ -33,4 +34,8 @@ server_test.OBJ := \
 	$(BUILD_O_DIR)/shunter/shunting_functions.o \
 	$(BUILD_TO_DIR)/futil/mock/mock_futil.o \
 	$(BUILD_TO_DIR)/futil/mock/mock_net.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+
+tokens_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/tokens_test.o \
 	$(BUILD_O_DIR)/floor/kassert.o
