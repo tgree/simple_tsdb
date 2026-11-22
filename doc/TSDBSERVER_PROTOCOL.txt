@@ -2,7 +2,8 @@ The tsdbserver binary provides a server process that can handle transactions
 via TCP.  It can use either an unsecure port, in which case no user
 authentication is performed, or it can use an SSL port, which also requires
 user authentication.  It is recommended to not use an unsecure port on the
-open Internet.
+open Internet.  Users on the SSL port can only use the databases that the
+root's access control list allows them; see ACLS.txt.
 
 The protocol used by tsdbserver is token-based where each token is a uint32_t,
 possibly followed by more data according to the token.  There are two types of

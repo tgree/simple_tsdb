@@ -29,12 +29,16 @@ The process for setting up a reflector system is as follows:
 server, initialize the instance with tsdbcli2.  Use the "add user <username>
 <password>" command to create a unique user for each data logger.  Use the
 "create database" command to create a unique database for eac data logger.
-Use the "create measurement" command to set up the schemas for the different
-measurements you want to reflect into the cloud.  Something like this:
+Use the "grant" command to let each data logger's user write to its database;
+new roots start with access control on, so without a grant the reflector is
+refused (see ACLS.txt).  Use the "create measurement" command to set up the
+schemas for the different measurements you want to reflect into the cloud.
+Something like this:
 
     tsdbcli2 --init-root 2M
     add user data_logger_xyz123 <password>
     create database data_logger_xyz123_data
+    grant write on data_logger_xyz123_data to data_logger_xyz123
     create measurement data_logger_xyz123_data/points with fields value/f64
 
 2. Now that the databases and schemas have been initialized, we need to start
