@@ -24,6 +24,14 @@ namespace tcp::ssl
         }
     };
 
+    struct null_ssl_ctx_exception : public exception
+    {
+        virtual const char* what() const noexcept override
+        {
+            return "SSL_CTX_new returned NULL";
+        }
+    };
+
     struct set_fd_failed_exception : public exception
     {
         virtual const char* what() const noexcept override
@@ -245,6 +253,8 @@ namespace tcp::ssl
         client_context():
             sslctx(SSL_CTX_new(TLS_client_method()))
         {
+            if (!sslctx)
+                throw null_ssl_ctx_exception();
             SSL_CTX_set_verify(sslctx,SSL_VERIFY_PEER,NULL);
             if (!SSL_CTX_set_default_verify_paths(sslctx))
                 throw set_default_verify_paths_exception();
@@ -276,6 +286,8 @@ namespace tcp::ssl
                        const futil::path& key_file):
             sslctx(SSL_CTX_new(TLS_server_method()))
         {
+            if (!sslctx)
+                throw null_ssl_ctx_exception();
             kassert(cert_file.ends_with(".pem"));
             kassert(key_file.ends_with(".pem"));
             if (SSL_CTX_use_certificate_chain_file(sslctx,cert_file) <= 0)

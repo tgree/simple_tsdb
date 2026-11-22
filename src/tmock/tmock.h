@@ -25,7 +25,11 @@ namespace tmock
                unsigned int l) __attribute__((noreturn));
 #define TABORT(s) tmock::abort((s),__FILE__,__LINE__)
 #define TASSERT(...) \
-    do {if (!(__VA_ARGS__)) tmock::abort(#__VA_ARGS__,__FILE__,__LINE__);} while(0)
+    do                                                                      \
+    {                                                                       \
+        if (!(__VA_ARGS__))                                                 \
+            tmock::abort(#__VA_ARGS__,__FILE__,__LINE__);                   \
+    } while (0)
 
     void abort_mem_dump(const char* file, size_t line, const void* v,
                         const void* expected, size_t len) __NORETURN__;

@@ -1,0 +1,36 @@
+# Copyright (c) 2026 by Terry Greeniaus.
+# All rights reserved.
+TESTS := \
+	 reflector_test \
+	 server_test
+
+reflector_test.LIB := libz-ng.a
+reflector_test.DYLIB := ssl crypto
+reflector_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/reflector_test.o \
+	$(PARENT_TBUILD_DIR)/reflector.o \
+	$(BUILD_TO_DIR)/libtsdb/unittest/fake_db.o \
+	$(BUILD_TO_DIR)/libtsdb/delete.o \
+	$(BUILD_TO_DIR)/libtsdb/wal.o \
+	$(BUILD_TO_DIR)/libtsdb/write.o \
+	$(BUILD_TO_DIR)/libtsdb/count.o \
+	$(BUILD_TO_DIR)/libtsdb/select_op.o \
+	$(BUILD_TO_DIR)/libtsdb/series.o \
+	$(BUILD_TO_DIR)/libtsdb/measurement.o \
+	$(BUILD_TO_DIR)/libtsdb/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_TO_DIR)/futil/mock/mock_net.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+
+# info_handler() never touches the database, so server_test links the
+# production libtsdb.a instead of fakefs, which can't close a real socket.
+server_test.LIB := libtsdb.a libz-ng.a
+server_test.DYLIB := ssl crypto
+server_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/server_test.o \
+	$(PARENT_TBUILD_DIR)/server.o \
+	$(PARENT_TBUILD_DIR)/tokens.o \
+	$(BUILD_O_DIR)/shunter/shunting_functions.o \
+	$(BUILD_TO_DIR)/futil/mock/mock_futil.o \
+	$(BUILD_TO_DIR)/futil/mock/mock_net.o \
+	$(BUILD_O_DIR)/floor/kassert.o

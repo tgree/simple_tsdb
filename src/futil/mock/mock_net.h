@@ -3,6 +3,9 @@
 #ifndef __SRC_FUTIL_MOCK_MOCK_NET_H
 #define __SRC_FUTIL_MOCK_MOCK_NET_H
 
+#include "../tcp.h"
+
+#include <string>
 #include <stdint.h>
 
 // The net::getsockname() mock has to return a net::addr, which doesn't fit
@@ -25,6 +28,28 @@ namespace mock_net
     constexpr uint64_t ipv4_loopback_addr(uint16_t port)
     {
         return (0x1ULL << 60) | ((uint64_t)port << 32);
+    }
+
+    // Mirrors the global tcp namespace.
+    namespace tcp
+    {
+        // A mock stream for code that takes a ::tcp::stream.  The address
+        // strings are fixed.  The socket option mocks return an errno value
+        // to throw as a futil::errno_exception, or 0 for success.  The
+        // other methods are plain mocks.
+        struct stream : public ::tcp::stream
+        {
+            virtual std::string local_addr_string() override;
+            virtual std::string remote_addr_string() override;
+            virtual size_t send(const void* buffer, size_t len) override;
+            virtual size_t recv(void* buffer, size_t len) override;
+            virtual void enable_keepalive(int keepidle_secs,
+                                          int keepintvl_secs, int keepcnt,
+                                          int connection_timeout_secs) override;
+            virtual void cork() override;
+            virtual void uncork() override;
+            virtual void nodelay() override;
+        };
     }
 }
 

@@ -6,13 +6,18 @@
 #include "futil.h"
 #include "sockaddr.h"
 #include <hdr/kassert.h>
+#include <hdr/unittest.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <algorithm>
+#include <chrono>
+#include <functional>
 #include <memory>
+#include <thread>
 
 namespace tcp
 {
@@ -93,6 +98,9 @@ namespace tcp
 
 #ifdef UNITTEST
     int _socket(int af);
+    void _setsockopt(int fd, int level, int name, const void* val,
+                     socklen_t len);
+    int _accept(int fd, net::addr& remote_addr);
 #else
     inline int _socket(int af)
     {
@@ -100,6 +108,22 @@ namespace tcp
         if (fd == -1)
             throw futil::errno_exception(errno);
         return fd;
+    }
+
+    inline void _setsockopt(int fd, int level, int name, const void* val,
+                            socklen_t len)
+    {
+        if (::setsockopt(fd,level,name,val,len))
+            throw futil::errno_exception(errno);
+    }
+
+    inline int _accept(int fd, net::addr& remote_addr)
+    {
+        socklen_t sl = sizeof(remote_addr.sa);
+        int afd = ::accept(fd,(struct sockaddr*)&remote_addr.sa,&sl);
+        if (afd == -1)
+            throw futil::errno_exception(errno);
+        return afd;
     }
 #endif
 
@@ -158,38 +182,21 @@ namespace tcp
             //                       establishment
             int on = 1;
 #if IS_MACOS
-            if (setsockopt(fd,IPPROTO_TCP,TCP_CONNECTIONTIMEOUT,
-                           &connection_timeout_secs,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPALIVE,&keepidle_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_CONNECTIONTIMEOUT,
+                        &connection_timeout_secs,sizeof(int));
+            _setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPALIVE,&keepidle_secs,
+                        sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
+                        sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int));
 #elif IS_LINUX
-            if (setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPIDLE,&keepidle_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
-                           sizeof(int)))
-            {
-                throw futil::errno_exception(errno);
-            }
-            if (setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_KEEPALIVE,&on,sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPIDLE,&keepidle_secs,
+                        sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPINTVL,&keepintvl_secs,
+                        sizeof(int));
+            _setsockopt(fd,IPPROTO_TCP,TCP_KEEPCNT,&keepcnt,sizeof(int));
 #else
 #warning Unknown system, keepalive not supported.
 #endif
@@ -199,11 +206,9 @@ namespace tcp
         {
             int on = 1;
 #if IS_MACOS
-        if (setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int)))
-            throw futil::errno_exception(errno);
+        _setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int));
 #elif IS_LINUX
-        if (setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int)))
-            throw futil::errno_exception(errno);
+        _setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int));
 #else
 #warning Unknown system, corking not supported.
 #endif
@@ -213,19 +218,16 @@ namespace tcp
         {
             int on = 0;
 #if IS_MACOS
-            if (setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_NOPUSH,&on,sizeof(int));
 #elif IS_LINUX
-            if (setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_CORK,&on,sizeof(int));
 #endif
         }
 
         virtual void nodelay() override
         {
             int on = 1;
-            if (setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(int)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&on,sizeof(int));
         }
 
         void set_send_timeout_us(uint64_t us)
@@ -233,8 +235,7 @@ namespace tcp
             struct timeval timeout;
             timeout.tv_sec = (us / 1000000);
             timeout.tv_usec = (us % 1000000);
-            if (setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
         }
 
         void set_recv_timeout_us(uint64_t us)
@@ -242,8 +243,7 @@ namespace tcp
             struct timeval timeout;
             timeout.tv_sec = (us / 1000000);
             timeout.tv_usec = (us % 1000000);
-            if (setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof(timeout));
         }
 
         void set_user_timeout_secs(unsigned int secs)
@@ -256,15 +256,10 @@ namespace tcp
             // A value of 0 restores the system default.
 #if IS_MACOS
             int val = secs;
-            if (setsockopt(fd,IPPROTO_TCP,TCP_RXT_CONNDROPTIME,&val,
-                           sizeof(val)))
-            {
-                throw futil::errno_exception(errno);
-            }
+            _setsockopt(fd,IPPROTO_TCP,TCP_RXT_CONNDROPTIME,&val,sizeof(val));
 #elif IS_LINUX
             unsigned int ms = secs*1000;
-            if (setsockopt(fd,IPPROTO_TCP,TCP_USER_TIMEOUT,&ms,sizeof(ms)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,IPPROTO_TCP,TCP_USER_TIMEOUT,&ms,sizeof(ms));
 #else
 #warning Unknown system, user timeout not supported.
 #endif
@@ -370,11 +365,7 @@ namespace tcp
         std::unique_ptr<tcp::socket> accept()
         {
             net::addr remote_addr;
-            socklen_t sl = sizeof(remote_addr.sa);
-            int afd = ::accept(fd,(struct sockaddr*)&remote_addr.sa,&sl);
-            if (afd == -1)
-                throw futil::errno_exception(errno);
-
+            int afd = _accept(fd,remote_addr);
             return std::make_unique<socket>(afd,bind_addr,remote_addr);
         }
 
@@ -383,16 +374,68 @@ namespace tcp
             bind_addr(bind_addr)
         {
             int reuse = 1;
-            if (setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&reuse,sizeof(reuse));
 
             reuse = 1;
-            if (setsockopt(fd,SOL_SOCKET,SO_REUSEPORT,&reuse,sizeof(reuse)))
-                throw futil::errno_exception(errno);
+            _setsockopt(fd,SOL_SOCKET,SO_REUSEPORT,&reuse,sizeof(reuse));
 
             bind(bind_addr);
         }
     };
+
+    // How long accept_connection() last waited after a failure on this
+    // thread, or 0 after a success.  Each accept loop runs
+    // on its own thread, so each backs off independently.
+    inline thread_local uint64_t accept_backoff_ns = 0;
+
+    // Accepts one connection on ss and passes it to handle(), which
+    // normally starts a thread to serve it.  Errors from either are logged,
+    // naming the kind of connection, such as "TCP", and not rethrown, so
+    // that an accept loop keeps running.  If accept() runs out of resources
+    // or handle() fails, it waits before returning: 10 ms at first, doubling
+    // with each consecutive failure up to 1 s.
+    inline void
+    accept_connection(server_socket& ss, const char* kind,
+        const std::function<void(std::unique_ptr<socket>)>& handle)
+    {
+        bool accepted = false;
+        try
+        {
+            auto s = ss.accept();
+            accepted = true;
+            handle(std::move(s));
+            accept_backoff_ns = 0;
+            return;
+        }
+        catch (const futil::errno_exception& e)
+        {
+            prod_printf("Exception accepting %s connection: %s\n",kind,
+                        e.what());
+
+            // Back off only if accept() ran out of resources, or if handle()
+            // failed, such as to start a thread.  Other accept() errors,
+            // such as the network errors that Linux can report for a new
+            // connection, belong to that connection, so retry at once: a
+            // remote peer mustn't be able to slow down the accept loop.
+            if (!accepted && e.errnov != EMFILE && e.errnov != ENFILE &&
+                e.errnov != ENOBUFS && e.errnov != ENOMEM)
+            {
+                return;
+            }
+        }
+        catch (const std::exception& e)
+        {
+            prod_printf("Exception accepting %s connection: %s\n",kind,
+                        e.what());
+        }
+
+        // Linux leaves the connection queued when accept() fails with
+        // EMFILE, so retrying at once would fail again and spin.
+        accept_backoff_ns = std::clamp<uint64_t>(2*accept_backoff_ns,
+                                                 10000000,1000000000);
+        std::this_thread::sleep_for(
+            std::chrono::nanoseconds(accept_backoff_ns));
+    }
 }
 
 #endif /* __SRC_FUTIL_TCP_H */

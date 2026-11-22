@@ -1,11 +1,13 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
+#include "reflector.h"
 #include "tokens.h"
 #include "client.h"
 #include <version.h>
 #include <hdr/kmath.h>
 #include <hdr/auto_buf.h>
 #include <hdr/fixed_vector.h>
+#include <hdr/unittest.h>
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <futil/ssl.h>
@@ -13,23 +15,12 @@
 
 #include <algorithm>
 #include <thread>
-#include <map>
 #include <set>
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <time.h>
 #include <inttypes.h>
-
-struct reflector_config
-{
-    uint16_t                            port = 4000;
-    std::string                         remote_host;
-    uint16_t                            remote_port = 4000;
-    std::string                         remote_user;
-    std::string                         remote_password;
-    std::map<std::string,std::string>   db_map;
-};
 
 struct db_mapping
 {
@@ -70,8 +61,8 @@ static const command_syntax<connection&> commands[] =
     },
 };
 
-static tsdb::root* root;
-static reflector_config reflector_cfg;
+prod_static tsdb::root* root;
+prod_static reflector_config reflector_cfg;
 
 void
 debugf(const char* fmt, ...)
@@ -226,11 +217,11 @@ handle_write_points(connection& conn,
     }
 }
 
-static void
-request_handler(std::unique_ptr<tcp::stream> s)
+prod_static void
+request_handler(std::unique_ptr<tcp::stream> s) try
 {
-    printf("Handling local %s remote %s.\n",
-           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+    prod_printf("Handling local %s remote %s.\n",
+                s->local_addr_string().c_str(),s->remote_addr_string().c_str());
 
     client c(reflector_cfg.remote_host,
              reflector_cfg.remote_port,
@@ -241,10 +232,21 @@ request_handler(std::unique_ptr<tcp::stream> s)
     s->nodelay();
     process_stream(conn,commands);
 
-    printf("Teardown local %s remote %s.\n",
-           s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+    prod_printf("Teardown local %s remote %s.\n",
+                s->local_addr_string().c_str(),s->remote_addr_string().c_str());
+}
+catch (const std::exception& e)
+{
+    prod_printf("Request handler error: %s\n",e.what());
+}
+catch (...)
+{
+    prod_printf("Random request handler exception!\n");
 }
 
+// Unittests provide their own main() and can't call the functions that
+// only main() uses.
+#ifndef UNITTEST
 static void
 socket4_workloop(uint16_t port)
 {
@@ -253,17 +255,16 @@ socket4_workloop(uint16_t port)
     printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        try
-        {
-            std::thread t(request_handler,ss.accept());
-            t.detach();
-        }
-        catch (const std::exception& e)
-        {
-            printf("Exception accepting TCP connection: %s\n",e.what());
-        }
+        tcp::accept_connection(ss,"TCP",
+            [](std::unique_ptr<tcp::socket> s)
+            {
+                std::thread t(request_handler,std::move(s));
+                t.detach();
+            }
+        );
     }
 }
+#endif
 
 static void
 create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
@@ -272,18 +273,19 @@ create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
     {
         if (validated_dbs.count(local_db_path))
             continue;
-        if (!root->database_exists(local_db_path))
-            continue;
 
         try
         {
+            if (!root->database_exists(local_db_path))
+                continue;
+
             tsdb::database local_db(*root,local_db_path);
             auto local_measurements = local_db.list_measurements();
             for (const auto& m_path : local_measurements)
             {
-                printf("Checking %s/%s -> %s/%s.\n",
-                       local_db_path.c_str(),m_path.c_str(),
-                       remote_db_path.c_str(),m_path.c_str());
+                prod_printf("Checking %s/%s -> %s/%s.\n",
+                            local_db_path.c_str(),m_path.c_str(),
+                            remote_db_path.c_str(),m_path.c_str());
                 tsdb::measurement local_m(local_db,m_path);
                 std::vector<tsdb::schema_entry> fields(
                     local_m.fields.begin(),local_m.fields.end());
@@ -292,12 +294,12 @@ create_remote_measurements(client& c, std::set<std::string>& validated_dbs)
         }
         catch (const std::exception& e)
         {
-            printf("Error: %s\n",e.what());
+            prod_printf("Error: %s\n",e.what());
             continue;
         }
         catch (...)
         {
-            printf("Random exception!\n");
+            prod_printf("Random exception!\n");
             continue;
         }
 
@@ -349,15 +351,15 @@ flush_series(client& c, tsdb::measurement& local_m,
             }
 
             // Transmit the chunk.
-            printf("Transmitting %zu chunk points from %" PRIu64
-                   " to %" PRIu64 ".\n",N,wci.timestamps[0],
-                   wci.timestamps[N-1]);
+            prod_printf("Transmitting %zu chunk points from %" PRIu64
+                        " to %" PRIu64 ".\n",N,wci.timestamps[0],
+                        wci.timestamps[N-1]);
             c.write_points(remote_db_path,m_path,s_path,N,0,data_len,
                            chunk_storage);
 
             // Delete the local points.
-            printf("Deleting local points up to %" PRIu64".\n",
-                   wci.timestamps[N-1]);
+            prod_printf("Deleting local points up to %" PRIu64".\n",
+                        wci.timestamps[N-1]);
             tsdb::delete_points(stl,wci.timestamps[N-1]);
 
             // Finish the rest of this main store chunk.
@@ -409,15 +411,15 @@ flush_series(client& c, tsdb::measurement& local_m,
             }
 
             // Transmit the chunk.
-            printf("Transmitting %zu WAL points from %" PRIu64
-                   " to %" PRIu64 ".\n",N,wci.timestamps[0],
-                   wci.timestamps[N-1]);
+            prod_printf("Transmitting %zu WAL points from %" PRIu64
+                        " to %" PRIu64 ".\n",N,wci.timestamps[0],
+                        wci.timestamps[N-1]);
             c.write_points(remote_db_path,m_path,s_path,N,0,data_len,
                            chunk_storage);
 
             // Delete the local points.
-            printf("Deleting local points up to %" PRIu64".\n",
-                   wci.timestamps[N-1]);
+            prod_printf("Deleting local points up to %" PRIu64".\n",
+                        wci.timestamps[N-1]);
             tsdb::delete_points(stl,wci.timestamps[N-1]);
 
             // Finish the rest of this main store chunk.
@@ -428,13 +430,66 @@ flush_series(client& c, tsdb::measurement& local_m,
 }
 catch (const std::exception& e)
 {
-    printf("Flush error: %s\n",e.what());
+    prod_printf("Flush error: %s\n",e.what());
 }
 catch (...)
 {
-    printf("Random flush exception!\n");
+    prod_printf("Random flush exception!\n");
 }
 
+static void
+flush_database(client& c, const std::string& local_db_path,
+    const std::string& remote_db_path, auto_buf& chunk_storage) try
+{
+    tsdb::database local_db(*root,local_db_path);
+    auto local_measurements = local_db.list_measurements();
+    for (const auto& m_path : local_measurements)
+    {
+        tsdb::measurement local_m(local_db,m_path);
+        auto local_series = local_m.list_active_series();
+        for (const auto& s_path : local_series)
+        {
+            auto series_id = local_db_path + "/" +
+                             m_path + "/" +
+                             s_path;
+            prod_printf("Flushing %s/%s/%s -> %s/%s/%s.\n",
+                        local_db_path.c_str(),m_path.c_str(),s_path.c_str(),
+                        remote_db_path.c_str(),m_path.c_str(),
+                        s_path.c_str());
+            flush_series(c,local_m,local_db_path,m_path,s_path,
+                         remote_db_path,chunk_storage);
+        }
+    }
+}
+catch (const std::exception& e)
+{
+    prod_printf("Error flushing %s: %s\n",local_db_path.c_str(),e.what());
+}
+catch (...)
+{
+    prod_printf("Random exception flushing %s!\n",local_db_path.c_str());
+}
+
+prod_static void
+flush_pass(client& c, std::set<std::string>& validated_dbs,
+    auto_buf& chunk_storage)
+{
+    // Create the remote measurements if they don't exist; validate for a
+    // matching schema if they do exist.  Skip any databases that we have
+    // already completely validated.
+    create_remote_measurements(c,validated_dbs);
+
+    // Iterate over all mapped databases, flushing as we go.
+    for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
+    {
+        if (!validated_dbs.count(local_db_path))
+            continue;
+
+        flush_database(c,local_db_path,remote_db_path,chunk_storage);
+    }
+}
+
+#ifndef UNITTEST
 static void
 flush_workloop()
 {
@@ -448,45 +503,16 @@ flush_workloop()
     for (;;)
     {
         debugf("Starting flush scan...\n");
-
-        // Create the remote measurements if they don't exist; validate for a
-        // matching schema if they do exist.  Skip any databases that we have
-        // already completely validated.
-        create_remote_measurements(c,validated_dbs);
-
-        // Iterate over all mapped databases, flushing as we go.
-        for (auto const& [local_db_path, remote_db_path] : reflector_cfg.db_map)
-        {
-            if (!validated_dbs.count(local_db_path))
-                continue;
-
-            tsdb::database local_db(*root,local_db_path);
-            auto local_measurements = local_db.list_measurements();
-            for (const auto& m_path : local_measurements)
-            {
-                tsdb::measurement local_m(local_db,m_path);
-                auto local_series = local_m.list_active_series();
-                for (const auto& s_path : local_series)
-                {
-                    auto series_id = local_db_path + "/" +
-                                     m_path + "/" +
-                                     s_path;
-                    printf("Flushing %s/%s/%s -> %s/%s/%s.\n",
-                           local_db_path.c_str(),m_path.c_str(),s_path.c_str(),
-                           remote_db_path.c_str(),m_path.c_str(),
-                           s_path.c_str());
-                    flush_series(c,local_m,local_db_path,m_path,s_path,
-                                 remote_db_path,chunk_storage);
-                }
-            }
-        }
+        flush_pass(c,validated_dbs,chunk_storage);
 
         // Give it a rest.
         debugf("Resting...\n");
         sleep_for_ns(10UL*1000000000UL);
     }
 }
+#endif
 
+#ifndef UNITTEST
 static const std::string&
 get_part(const std::vector<std::string>& parts, size_t i, size_t line_num,
     const char* err_msg)
@@ -663,3 +689,4 @@ main(int argc, const char* argv[])
 
     socket4_workloop(reflector_cfg.port);
 }
+#endif /* UNITTEST */

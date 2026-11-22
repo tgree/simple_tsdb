@@ -13,6 +13,27 @@ tcp::_socket(int af)
     return (int)mock("tcp::_socket",af);
 }
 
+void
+tcp::_setsockopt(int fd, int level, int name, const void* val,
+    socklen_t len)
+{
+    // The mock returns an errno value, or 0 for success.
+    int err = (int)mock("tcp::_setsockopt",fd,level,name);
+    if (err)
+        throw futil::errno_exception(err);
+}
+
+int
+tcp::_accept(int fd, net::addr& remote_addr)
+{
+    // The mock returns the accepted fd, or a negative errno value to fail.
+    // remote_addr is left as it is.
+    int afd = (int)mock("tcp::_accept",fd);
+    if (afd < 0)
+        throw futil::errno_exception(-afd);
+    return afd;
+}
+
 net::addr
 net::getsockname(int fd)
 {
@@ -33,4 +54,57 @@ net::getsockname(int fd)
             return net::ipv4::loopback_addr(port);
     }
     TABORT("net::getsockname() mock: unsupported address type");
+}
+
+std::string
+mock_net::tcp::stream::local_addr_string()
+{
+    return "127.0.0.1:4000";
+}
+
+std::string
+mock_net::tcp::stream::remote_addr_string()
+{
+    return "127.0.0.1:50000";
+}
+
+size_t
+mock_net::tcp::stream::send(const void* buffer, size_t len)
+{
+    return mock("mock_net::tcp::stream::send",len);
+}
+
+size_t
+mock_net::tcp::stream::recv(void* buffer, size_t len)
+{
+    return mock("mock_net::tcp::stream::recv",len);
+}
+
+void
+mock_net::tcp::stream::enable_keepalive(int keepidle_secs,
+    int keepintvl_secs, int keepcnt, int connection_timeout_secs)
+{
+    int err = (int)mock("mock_net::tcp::stream::enable_keepalive");
+    if (err)
+        throw futil::errno_exception(err);
+}
+
+void
+mock_net::tcp::stream::cork()
+{
+    mock("mock_net::tcp::stream::cork");
+}
+
+void
+mock_net::tcp::stream::uncork()
+{
+    mock("mock_net::tcp::stream::uncork");
+}
+
+void
+mock_net::tcp::stream::nodelay()
+{
+    int err = (int)mock("mock_net::tcp::stream::nodelay");
+    if (err)
+        throw futil::errno_exception(err);
 }

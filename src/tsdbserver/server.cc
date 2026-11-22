@@ -1,5 +1,6 @@
 // Copyright (c) 2025 by Terry Greeniaus.
 // All rights reserved.
+#include "server.h"
 #include "tokens.h"
 #include <version.h>
 #include <hdr/kmath.h>
@@ -7,6 +8,7 @@
 #include <hdr/fixed_vector.h>
 #include <hdr/klist.h>
 #include <hdr/with_lock.h>
+#include <hdr/unittest.h>
 #include <strutil/strutil.h>
 #include <futil/tcp.h>
 #include <futil/ssl.h>
@@ -373,7 +375,7 @@ static const command_syntax<connection&> auth_command =
 
 static const uint8_t pad_bytes[8] = {};
 
-static tsdb::root* root;
+prod_static tsdb::root* root;
 
 void
 debugf(const char* fmt, ...)
@@ -1258,19 +1260,19 @@ handle_sum_compute_points(connection& conn,
 static void
 stream_request_handler(connection& conn)
 {
-    printf("Handling local %s remote %s.\n",
-           conn.s.local_addr_string().c_str(),
-           conn.s.remote_addr_string().c_str());
+    prod_printf("Handling local %s remote %s.\n",
+                conn.s.local_addr_string().c_str(),
+                conn.s.remote_addr_string().c_str());
 
     process_stream(conn,commands);
 
-    printf("Teardown local %s remote %s.\n",
-           conn.s.local_addr_string().c_str(),
-           conn.s.remote_addr_string().c_str());
+    prod_printf("Teardown local %s remote %s.\n",
+                conn.s.local_addr_string().c_str(),
+                conn.s.remote_addr_string().c_str());
 }
 
-static void
-request_handler(std::unique_ptr<tcp::socket> sock)
+prod_static void
+request_handler(std::unique_ptr<tcp::socket> sock) try
 {
     sock->enable_keepalive();
     sock->set_user_timeout_secs(30);
@@ -1280,17 +1282,25 @@ request_handler(std::unique_ptr<tcp::socket> sock)
     connection conn(*stream,"");
     stream_request_handler(conn);
 }
+catch (const std::exception& e)
+{
+    prod_printf("Request handler error: %s\n",e.what());
+}
+catch (...)
+{
+    prod_printf("Random request handler exception!\n");
+}
 
-static void
+prod_static void
 auth_request_handler(tcp::ssl::server_context* sslctx,
-    std::unique_ptr<tcp::socket> sock)
+    std::unique_ptr<tcp::socket> sock) try
 {
     uint64_t t0 = time_ns();
 
     std::string local_addr_string = sock->local_addr_string();
     std::string remote_addr_string = sock->remote_addr_string();
-    printf("Authenticating local %s remote %s.\n",
-           local_addr_string.c_str(),remote_addr_string.c_str());
+    prod_printf("Authenticating local %s remote %s.\n",
+                local_addr_string.c_str(),remote_addr_string.c_str());
 
     // Set a 3-second timeout on the socket and then attempt to wrap() it into
     // an SSL stream.  The timeout should handle the case where the remote
@@ -1312,24 +1322,25 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
         catch (const tcp::ssl::ssl_error_exception& e)
         {
             if (e.ssl_error == SSL_ERROR_WANT_READ)
-                printf("Zombie detected: %s\n",remote_addr_string.c_str());
+                prod_printf("Zombie detected: %s\n",remote_addr_string.c_str());
             else
             {
-                printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
-                       e.what());
+                prod_printf("SSL wrap failure: %s %s\n",
+                            remote_addr_string.c_str(),e.what());
             }
 
             throw;
         }
         catch (const std::exception& e)
         {
-            printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
-                   e.what());
+            prod_printf("SSL wrap failure: %s %s\n",remote_addr_string.c_str(),
+                        e.what());
             throw;
         }
         catch (...)
         {
-            printf("SSL wrap failure: %s (?)\n",remote_addr_string.c_str());
+            prod_printf("SSL wrap failure: %s (?)\n",
+                        remote_addr_string.c_str());
             throw;
         }
     }
@@ -1354,12 +1365,12 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
         parse_cmd(conn,auth_command,tokens);
 
         conn.username = tokens[0].to_string();
-        printf("Authenticating user %s from %s...\n",
-               conn.username.c_str(),remote_addr_string.c_str());
+        prod_printf("Authenticating user %s from %s...\n",
+                    conn.username.c_str(),remote_addr_string.c_str());
         if (!root->verify_user(conn.username,tokens[1].to_string()))
             throw futil::errno_exception(EPERM);
-        printf("Authentication from %s for user %s succeeded.\n",
-               remote_addr_string.c_str(),conn.username.c_str());
+        prod_printf("Authentication from %s for user %s succeeded.\n",
+                    remote_addr_string.c_str(),conn.username.c_str());
 
         uint32_t status[2] = {DT_STATUS_CODE, 0};
         conn.s.send_all(&status,sizeof(status));
@@ -1368,15 +1379,15 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     {
         if (!conn.username.empty())
         {
-            printf("Authentication from %s for user %s failed.\n",
-                   remote_addr_string.c_str(),conn.username.c_str());
+            prod_printf("Authentication from %s for user %s failed.\n",
+                        remote_addr_string.c_str(),conn.username.c_str());
         }
         else
         {
-            printf("Authentication from %s failed.\n",
-                   remote_addr_string.c_str());
+            prod_printf("Authentication from %s failed.\n",
+                        remote_addr_string.c_str());
         }
-        printf("Authentication exception: %s\n",e.what());
+        prod_printf("Authentication exception: %s\n",e.what());
         uint64_t t1 = time_ns();
         uint64_t nsecs = round_up_to_nearest_multiple(t1 - t0,
                                                       (uint64_t)2000000000);
@@ -1388,7 +1399,18 @@ auth_request_handler(tcp::ssl::server_context* sslctx,
     s->s->set_recv_timeout_us(0);
     stream_request_handler(conn);
 }
+catch (const std::exception& e)
+{
+    prod_printf("Auth request handler error: %s\n",e.what());
+}
+catch (...)
+{
+    prod_printf("Random auth request handler exception!\n");
+}
 
+// Unittests provide their own main() and can't call the functions that
+// only main() uses.
+#ifndef UNITTEST
 static void
 socket4_workloop(uint16_t port)
 {
@@ -1397,15 +1419,13 @@ socket4_workloop(uint16_t port)
     printf("TCP listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        try
-        {
-            std::thread t(request_handler,ss.accept());
-            t.detach();
-        }
-        catch (const std::exception& e)
-        {
-            printf("Exception accepting TCP connection: %s\n",e.what());
-        }
+        tcp::accept_connection(ss,"TCP",
+            [](std::unique_ptr<tcp::socket> s)
+            {
+                std::thread t(request_handler,std::move(s));
+                t.detach();
+            }
+        );
     }
 }
 
@@ -1419,21 +1439,20 @@ ssl_workloop(const std::string& cert_file, const std::string& key_file,
     printf("SSL listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        try
-        {
-            // Handle the request, letting the target thread wrap it.
-            std::thread t(auth_request_handler,&sslctx,ss.accept());
-            t.detach();
-        }
-        catch (const std::exception& e)
-        {
-            printf("Exception accepting SSL connection: %s\n",e.what());
-        }
+        tcp::accept_connection(ss,"SSL",
+            [&](std::unique_ptr<tcp::socket> s)
+            {
+                // Handle the request, letting the target thread wrap it.
+                std::thread t(auth_request_handler,&sslctx,std::move(s));
+                t.detach();
+            }
+        );
     }
 }
+#endif
 
-static void
-info_handler(std::unique_ptr<tcp::socket> sock)
+prod_static void
+info_handler(std::unique_ptr<tcp::socket> sock) try
 {
     size_t nconnections = 0;
     std::string output = "TID      Established               "
@@ -1477,7 +1496,16 @@ info_handler(std::unique_ptr<tcp::socket> sock)
     output += str::printf("%zu connections.\n",nconnections);
     sock->push(output);
 }
+catch (const std::exception& e)
+{
+    prod_printf("Info handler error: %s\n",e.what());
+}
+catch (...)
+{
+    prod_printf("Random info handler exception!\n");
+}
 
+#ifndef UNITTEST
 static void
 info_workloop(uint16_t port)
 {
@@ -1486,15 +1514,13 @@ info_workloop(uint16_t port)
     printf("Info listening on %s.\n",ss.bind_addr.to_string().c_str());
     for (;;)
     {
-        try
-        {
-            std::thread t(info_handler,ss.accept());
-            t.detach();
-        }
-        catch (const std::exception& e)
-        {
-            printf("Exception accepting Info connection: %s\n",e.what());
-        }
+        tcp::accept_connection(ss,"Info",
+            [](std::unique_ptr<tcp::socket> s)
+            {
+                std::thread t(info_handler,std::move(s));
+                t.detach();
+            }
+        );
     }
 }
 
@@ -1653,3 +1679,4 @@ main(int argc, const char* argv[])
     else
         socket4_workloop(server_cfg.port);
 }
+#endif /* UNITTEST */
