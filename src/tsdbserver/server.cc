@@ -511,11 +511,34 @@ handle_create_database(connection& conn,
     root->create_database(database);
 }
 
+prod_static std::vector<std::string>
+list_visible_databases(const std::string& username)
+{
+    // Returns the databases username may see: every database for the plain
+    // TCP port or a root without an acl file, and otherwise only those the
+    // user holds some permission on, directly or through "*".
+    auto dbs = root->list_databases();
+    if (username.empty())
+        return dbs;
+
+    auto acl = root->load_acl();
+    if (!acl)
+        return dbs;
+
+    std::vector<std::string> visible;
+    for (const auto& d_name : dbs)
+    {
+        if (acl->permissions(username,d_name))
+            visible.push_back(d_name);
+    }
+    return visible;
+}
+
 static void
 handle_list_databases(connection& conn,
     const std::vector<parsed_data_token>& tokens)
 {
-    auto dbs = root->list_databases();
+    auto dbs = list_visible_databases(conn.username);
     root->debugf("LIST DATABASES\n");
     for (const auto& d_name : dbs)
     {

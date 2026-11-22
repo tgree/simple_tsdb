@@ -290,6 +290,31 @@ class tmock_test
         make_grants();
         TASSERT(!is_allowed("admin",CT_SELECT_POINTS_LIMIT,""));
     }
+
+    TMOCK_TEST(test_list_visible_databases)
+    {
+        // LIST DATABASES shows a user only the databases they hold some
+        // permission on.
+        make_root();
+        make_grants();
+        root->create_database("db3");
+        const std::vector<std::string> all = {"db1","db2","db3"};
+        const std::vector<std::string> db1 = {"db1"};
+        const std::vector<std::string> none;
+
+        TASSERT(list_visible_databases("") == all);
+        TASSERT(list_visible_databases("reader") == db1);
+        TASSERT(list_visible_databases("writer") == db1);
+        TASSERT(list_visible_databases("deleter") == db1);
+        TASSERT(list_visible_databases("db1admin") == db1);
+        TASSERT(list_visible_databases("starreader") == all);
+        TASSERT(list_visible_databases("admin") == all);
+        TASSERT(list_visible_databases("nobody") == none);
+
+        // Without an acl file, everyone sees everything.
+        futil::unlink_if_exists(root->root_dir,"acl");
+        TASSERT(list_visible_databases("nobody") == all);
+    }
 };
 
 TMOCK_MAIN();

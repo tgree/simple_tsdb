@@ -14,6 +14,7 @@
 extern tsdb::root* root;
 void authorize_command(const std::string& username, command_token ct,
                        const std::vector<parsed_data_token>& tokens);
+std::vector<std::string> list_visible_databases(const std::string& username);
 void request_handler(std::unique_ptr<tcp::socket> sock);
 void auth_request_handler(tcp::ssl::server_context* sslctx,
                           std::unique_ptr<tcp::socket> sock);
