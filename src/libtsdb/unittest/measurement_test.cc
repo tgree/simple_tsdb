@@ -189,6 +189,75 @@ class tmock_test
         }
     }
 
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_measurement_exact_case)
+    {
+        // On a case-insensitive file system, a measurement is reachable only
+        // by the name it was created with: "MEASUREMENT1" must not open
+        // "measurement1", and creating it must report a case conflict.
+        fakefs_case_insensitive = true;
+        tsdb::configuration c = {
+            .chunk_size = 2*1024*1024,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+        tsdb::root root(".",true);
+        root.create_database("db1");
+        tsdb::database db1(root,"db1");
+        tsdb::create_measurement(db1,"measurement1",test_fields);
+        tsdb::measurement m1(db1,"measurement1");
+
+        for (const char* name : {"MEASUREMENT1","Measurement1"})
+        {
+            try
+            {
+                tsdb::measurement m(db1,name);
+                TABORT("Expected no such measurement exception!");
+            }
+            catch (const tsdb::no_such_measurement_exception&)
+            {
+            }
+
+            try
+            {
+                tsdb::create_measurement(db1,name,test_fields);
+                TABORT("Expected name case conflict exception!");
+            }
+            catch (const tsdb::name_case_conflict_exception&)
+            {
+            }
+        }
+
+        auto ms = db1.list_measurements();
+        TASSERT_EQUIV(ms.size(),1UL);
+        TASSERT_EQUIV(ms[0],"measurement1");
+        TASSERT_EQUIV(fs_root->subdirs["tmp"]->subdirs.size(),0UL);
+        TASSERT_EQUIV(fs_root->subdirs["tmp"]->files.size(),0UL);
+    }
+
+    TMOCK_TEST(test_measurement_case_sensitive)
+    {
+        // On a case-sensitive file system, names that differ only in case are
+        // separate measurements.
+        tsdb::configuration c = {
+            .chunk_size = 2*1024*1024,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+        tsdb::root root(".",true);
+        root.create_database("db1");
+        tsdb::database db1(root,"db1");
+        tsdb::create_measurement(db1,"measurement1",test_fields);
+        tsdb::create_measurement(db1,"MEASUREMENT1",test_fields2);
+
+        tsdb::measurement m1(db1,"measurement1");
+        tsdb::measurement M1(db1,"MEASUREMENT1");
+        TASSERT_EQUIV(m1.fields.size(),test_fields.size());
+        TASSERT_EQUIV(M1.fields.size(),test_fields2.size());
+        TASSERT_EQUIV(db1.list_measurements().size(),2UL);
+    }
+
 #if 0
     TMOCK_TEST(test_create_collision)
     {
