@@ -58,7 +58,7 @@ handle_create_database(const database_specifier& ds)
     // Handles:
     // CREATE DATABASE <database>
     printf("Creating database \"%s\"...\n",ds.database.c_str());
-    root->create_database(ds.database.c_str());
+    root->create_database(ds.database);
 }
 
 static void

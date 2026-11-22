@@ -57,7 +57,7 @@ namespace tsdb
                          const std::string& password);
 
         // Creates a new database.
-        void create_database(const char* name);
+        void create_database(const futil::path& name);
 
         // Returns a list of all databases.
         std::vector<std::string> list_databases();

@@ -145,7 +145,7 @@ tsdb::root::verify_user(const std::string& username,
 }
 
 void
-tsdb::root::create_database(const char* name) try
+tsdb::root::create_database(const futil::path& name) try
 {
     futil::mkdir(databases_dir,name,0770);
     databases_dir.fsync();

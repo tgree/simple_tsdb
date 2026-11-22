@@ -415,7 +415,7 @@ handle_create_database(connection& conn,
     // TODO: Use string_view.
     std::string database(tokens[0].data,tokens[0].len);
     root->debugf("CREATE DATABASE %s\n",database.c_str());
-    root->create_database(database.c_str());
+    root->create_database(database);
 }
 
 static void
