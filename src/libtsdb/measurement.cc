@@ -7,6 +7,16 @@
 #include <futil/xact.h>
 #include <hdr/types.h>
 
+// Returns name if it is a valid measurement name, otherwise throws
+// invalid_measurement_exception.
+static const futil::path&
+validate_measurement_name(const futil::path& name)
+{
+    if (!tsdb::is_valid_name(name))
+        throw tsdb::invalid_measurement_exception();
+    return name;
+}
+
 // TODO: Annoyingly, this doesn't properly detect a measurement directory that
 //       exists but has not schema file.  That will throw
 //       no_such_measurement_exception but put create_measurement() into an
@@ -18,7 +28,7 @@
 //       because it is somehow corrupt.
 tsdb::measurement::measurement(const database& db, const futil::path& path) try:
     db(db),
-    dir(db.dir,path),
+    dir(db.dir,validate_measurement_name(path)),
     schema_fd(dir,"schema",O_RDONLY),
     schema_mapping(0,schema_fd.lseek(0,SEEK_END),PROT_READ,MAP_SHARED,
                    schema_fd.fd,0),
@@ -66,8 +76,7 @@ void
 tsdb::create_measurement(const database& db, const futil::path& name,
     const std::vector<schema_entry>& fields) try
 {
-    if (name.empty() || name[0] == '/' || name.count_components() > 1)
-        throw tsdb::invalid_measurement_exception();
+    validate_measurement_name(name);
     if (fields.size() > MAX_FIELDS)
         throw tsdb::too_many_fields_exception();
 

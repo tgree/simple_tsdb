@@ -130,7 +130,7 @@ class tmock_test
         TASSERT_EQUIV(fs_root->subdirs["tmp"]->files.size(),0UL);
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_measurement_bad_names)
+    TMOCK_TEST(test_measurement_bad_names)
     {
         // Each of these names either reaches outside its database, isn't a
         // single path component, or contains whitespace, a backslash, a
