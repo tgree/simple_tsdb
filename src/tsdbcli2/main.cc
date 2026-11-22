@@ -29,6 +29,9 @@
     }
 
 DECL_KEYWORD(FROM);
+DECL_KEYWORD(ON);
+DECL_KEYWORD(TO);
+DECL_KEYWORD(FOR);
 
 static tsdb::root* root;
 
@@ -50,6 +53,97 @@ handle_auth_user(const std::string& username, const std::string& password)
         printf("Authentication successful.\n");
     else
         printf("Authentication failed.\n");
+}
+
+static void
+handle_enable_acls()
+{
+    // Handles:
+    // ENABLE ACLS
+    if (root->enable_acls())
+    {
+        printf("Access control is on.  Authenticated users can reach nothing "
+               "until granted.\n");
+    }
+    else
+        printf("Access control is already on.\n");
+}
+
+static void
+handle_grant(const permissions_list& pl, const ON_keyword,
+    const database_specifier& ds, const TO_keyword, const std::string& user)
+{
+    // Handles:
+    // GRANT <permissions> ON <database|*> TO <user>
+    root->grant(user,ds.database,pl.perms);
+    printf("Granted %s on %s to %s.\n",
+           tsdb::permissions_to_string(pl.perms).c_str(),ds.database.c_str(),
+           user.c_str());
+}
+
+static void
+handle_revoke(const permissions_list& pl, const ON_keyword,
+    const database_specifier& ds, const FROM_keyword, const std::string& user)
+{
+    // Handles:
+    // REVOKE <permissions> ON <database|*> FROM <user>
+    root->revoke(user,ds.database,pl.perms);
+    printf("Revoked %s on %s from %s.\n",
+           tsdb::permissions_to_string(pl.perms).c_str(),ds.database.c_str(),
+           user.c_str());
+}
+
+static void
+print_grants(const std::string* user)
+{
+    auto a = root->load_acl();
+    if (!a)
+    {
+        printf("Access control is off.\n");
+        return;
+    }
+
+    std::vector<const tsdb::acl_entry*> entries;
+    int user_width = 4;
+    int database_width = 8;
+    for (const auto& e : a->entries)
+    {
+        if (user && e.user != *user)
+            continue;
+        entries.push_back(&e);
+        user_width = std::max(user_width,(int)e.user.size());
+        database_width = std::max(database_width,(int)e.database.size());
+    }
+    if (entries.empty())
+    {
+        printf("No grants.\n");
+        return;
+    }
+
+    printf("%-*s  %-*s  %s\n",user_width,"User",database_width,"Database",
+           "Permissions");
+    for (const auto* e : entries)
+    {
+        printf("%-*s  %-*s  %s\n",user_width,e->user.c_str(),
+               database_width,e->database.c_str(),
+               tsdb::permissions_to_string(e->perms).c_str());
+    }
+}
+
+static void
+handle_list_grants_1()
+{
+    // Handles:
+    // LIST GRANTS
+    print_grants(NULL);
+}
+
+static void
+handle_list_grants_2(const FOR_keyword, const std::string& user)
+{
+    // Handles:
+    // LIST GRANTS FOR <user>
+    print_grants(&user);
 }
 
 static void
@@ -505,6 +599,11 @@ static const command_handler command_handlers[] =
 {
     {"ADD USER",{XLATE(handle_add_user)}},
     {"AUTH",{XLATE(handle_auth_user)}},
+    {"ENABLE ACLS",{XLATE(handle_enable_acls)}},
+    {"GRANT",{XLATE(handle_grant)}},
+    {"REVOKE",{XLATE(handle_revoke)}},
+    {"LIST GRANTS",{XLATE(handle_list_grants_1),
+                    XLATE(handle_list_grants_2)}},
     {"CREATE DATABASE",{XLATE(handle_create_database)}},
     {"CREATE MEASUREMENT",{XLATE(handle_create_measurement)}},
     {"LIST DATABASES",{XLATE(handle_list_databases)}},
