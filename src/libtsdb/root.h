@@ -94,6 +94,23 @@ namespace tsdb
         // is off.  Throws invalid_acl_file_exception if it doesn't parse.
         std::optional<acl> load_acl() const;
 
+        // Turns access control on by creating an empty acl file, so that
+        // authenticated users can reach nothing until they are granted
+        // something.  Returns false if access control was already on.
+        bool enable_acls();
+
+        // Grants user perms on database, or on every database if database is
+        // "*", adding to anything they already hold.  The user must exist
+        // and access control must be on.
+        void grant(const std::string& user, const std::string& database,
+                   uint32_t perms);
+
+        // Revokes perms from user on database, or from their "*" entry if
+        // database is "*".  Revoking something the user doesn't hold does
+        // nothing.  Access control must be on.
+        void revoke(const std::string& user, const std::string& database,
+                    uint32_t perms);
+
         // Creates a new database.
         void create_database(const futil::path& name);
 

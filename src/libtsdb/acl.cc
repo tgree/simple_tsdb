@@ -3,8 +3,10 @@
 #include "acl.h"
 #include "root.h"
 #include "exception.h"
+#include <futil/xact.h>
 #include <strutil/strutil.h>
 #include <algorithm>
+#include <functional>
 #include <strings.h>
 
 static const struct
@@ -71,6 +73,46 @@ tsdb::acl::permissions(const std::string& user,
     return perms;
 }
 
+static bool
+entry_less(const tsdb::acl_entry& l, const tsdb::acl_entry& r)
+{
+    if (l.user != r.user)
+        return l.user < r.user;
+    return l.database < r.database;
+}
+
+void
+tsdb::acl::grant(const std::string& user, const std::string& database,
+    uint32_t perms)
+{
+    for (auto& e : entries)
+    {
+        if (e.user == user && e.database == database)
+        {
+            e.perms |= perms;
+            return;
+        }
+    }
+    entries.push_back(acl_entry{user,database,perms});
+    std::sort(entries.begin(),entries.end(),entry_less);
+}
+
+void
+tsdb::acl::revoke(const std::string& user, const std::string& database,
+    uint32_t perms)
+{
+    for (auto iter = entries.begin(); iter != entries.end(); ++iter)
+    {
+        if (iter->user == user && iter->database == database)
+        {
+            iter->perms &= ~perms;
+            if (!iter->perms)
+                entries.erase(iter);
+            return;
+        }
+    }
+}
+
 std::string
 tsdb::acl::to_string() const
 {
@@ -120,13 +162,7 @@ tsdb::acl::parse(const std::string& text)
         a.entries.push_back(e);
     }
 
-    std::sort(a.entries.begin(),a.entries.end(),
-        [](const acl_entry& l, const acl_entry& r)
-        {
-            if (l.user != r.user)
-                return l.user < r.user;
-            return l.database < r.database;
-        });
+    std::sort(a.entries.begin(),a.entries.end(),entry_less);
     return a;
 }
 
@@ -149,4 +185,96 @@ tsdb::root::load_acl() const
         throw;
     }
     return acl::parse(text);
+}
+
+static void
+write_acl_file(const tsdb::root& r, const tsdb::acl& a)
+{
+    // Writes the new acl file in tmp/ and renames it into place, so that
+    // tsdbserver, which reads it without locking, always sees a whole file.
+    auto text = a.to_string();
+    futil::xact_mktemp tmp_fd(r.tmp_dir,0660);
+    tmp_fd.write_all(text.c_str(),text.size());
+    tmp_fd.fsync();
+    futil::rename(r.tmp_dir,tmp_fd.name,r.root_dir,"acl");
+    tmp_fd.commit();
+    r.root_dir.fsync_and_flush();
+    r.tmp_dir.fsync_and_flush();
+}
+
+static bool
+passwd_has_user(const tsdb::root& r, const std::string& user)
+{
+    // The caller holds passwd.lock.  Don't flock() it again here: a second
+    // lock on another descriptor for the same file would wait for ours.
+    futil::file passwd_fd(r.root_dir,"passwd",O_RDONLY);
+    for (const std::string& line : passwd_fd.lines())
+    {
+        auto parts = str::split(line);
+        if (!parts.empty() && parts[0] == user)
+            return true;
+    }
+    return false;
+}
+
+static void
+update_acl(tsdb::root& r, const std::function<void(tsdb::acl&)>& f)
+{
+    // Changes to the acl file are serialized by an exclusive lock on
+    // passwd.lock, the same lock that add_user() takes, so that two
+    // tsdbcli2 sessions can't both read the old file and have the second
+    // rename discard the first one's change.
+    futil::file lock_fd(r.root_dir,"passwd.lock",O_RDONLY);
+    lock_fd.flock(LOCK_EX);
+
+    auto a = r.load_acl();
+    if (!a)
+        throw tsdb::acls_disabled_exception();
+    f(*a);
+    write_acl_file(r,*a);
+}
+
+static void
+validate_acl_database(const std::string& database)
+{
+    if (database != "*")
+        tsdb::validate_database_name(database);
+}
+
+bool
+tsdb::root::enable_acls()
+{
+    futil::file lock_fd(root_dir,"passwd.lock",O_RDONLY);
+    lock_fd.flock(LOCK_EX);
+
+    if (load_acl())
+        return false;
+    write_acl_file(*this,acl());
+    return true;
+}
+
+void
+tsdb::root::grant(const std::string& user, const std::string& database,
+    uint32_t perms)
+{
+    kassert(perms && !(perms & ~PERM_ALL));
+    validate_acl_database(database);
+    update_acl(*this,[&](acl& a)
+    {
+        if (!passwd_has_user(*this,user))
+            throw no_such_user_exception();
+        a.grant(user,database,perms);
+    });
+}
+
+void
+tsdb::root::revoke(const std::string& user, const std::string& database,
+    uint32_t perms)
+{
+    kassert(perms && !(perms & ~PERM_ALL));
+    validate_acl_database(database);
+    update_acl(*this,[&](acl& a)
+    {
+        a.revoke(user,database,perms);
+    });
 }

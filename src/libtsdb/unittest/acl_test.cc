@@ -36,6 +36,19 @@ write_acl_file(const std::string& text)
     acl_fd.write_all(text.c_str(),text.size());
 }
 
+static tsdb::root*
+make_root()
+{
+    tsdb::create_root(".",tsdb::default_configuration);
+    return new tsdb::root(".",true);
+}
+
+static std::string
+acl_file_text()
+{
+    return fs_root->get_file("acl")->data_as_string();
+}
+
 class tmock_test
 {
     TMOCK_TEST(test_parse_permissions)
@@ -170,6 +183,160 @@ class tmock_test
             TASSERT_EQUIV(std::string(e.what()),
                           "Invalid ACL file at line 2.");
         }
+    }
+
+    TMOCK_TEST(test_acl_grant_revoke)
+    {
+        tsdb::acl a;
+        a.grant("hub2","hub2_data",tsdb::PERM_WRITE);
+        a.grant("hub1","hub1_data",tsdb::PERM_READ);
+        a.grant("hub1","hub1_data",tsdb::PERM_WRITE);
+        a.grant("hub1","*",tsdb::PERM_READ);
+        TASSERT_EQUIV(a.entries.size(),3UL);
+        TASSERT_EQUIV(a.entries[0].user,"hub1");
+        TASSERT_EQUIV(a.entries[0].database,"*");
+        TASSERT_EQUIV(a.entries[1].database,"hub1_data");
+        TASSERT_EQUIV(a.entries[1].perms,
+                      (uint32_t)(tsdb::PERM_READ | tsdb::PERM_WRITE));
+        TASSERT_EQUIV(a.entries[2].user,"hub2");
+
+        a.revoke("hub1","hub1_data",tsdb::PERM_READ);
+        TASSERT_EQUIV(a.entries[1].perms,(uint32_t)tsdb::PERM_WRITE);
+
+        // Revoking on "*" only changes the "*" entry.
+        a.revoke("hub1","*",tsdb::PERM_ALL);
+        TASSERT_EQUIV(a.entries.size(),2UL);
+        TASSERT_EQUIV(a.permissions("hub1","hub1_data"),
+                      (uint32_t)tsdb::PERM_WRITE);
+
+        // Revoking the last permission removes the entry.
+        a.revoke("hub1","hub1_data",tsdb::PERM_WRITE);
+        TASSERT_EQUIV(a.entries.size(),1UL);
+
+        // Revoking something nobody holds does nothing.
+        a.revoke("nobody","db1",tsdb::PERM_ALL);
+        TASSERT_EQUIV(a.entries.size(),1UL);
+    }
+
+    TMOCK_TEST(test_enable_acls)
+    {
+        tsdb::root* root = make_root();
+        TASSERT(root->enable_acls());
+        TASSERT(!root->enable_acls());
+        TASSERT_EQUIV(acl_file_text(),
+                      std::string(tsdb::acl_file_header) + "\n");
+        auto a = root->load_acl();
+        TASSERT(a.has_value());
+        TASSERT(a->entries.empty());
+        assert_tree_fsynced(fs_root);
+        TASSERT_EQUIV(fs_root->subdirs["tmp"]->files.size(),0UL);
+        delete root;
+    }
+
+    TMOCK_TEST(test_grant_revoke_need_acls)
+    {
+        tsdb::root* root = make_root();
+        root->add_user("hub1","hub1pw");
+        try
+        {
+            root->grant("hub1","hub1_data",tsdb::PERM_WRITE);
+            TABORT("Expected ACLs disabled exception!");
+        }
+        catch (const tsdb::acls_disabled_exception&)
+        {
+        }
+        try
+        {
+            root->revoke("hub1","hub1_data",tsdb::PERM_WRITE);
+            TABORT("Expected ACLs disabled exception!");
+        }
+        catch (const tsdb::acls_disabled_exception&)
+        {
+        }
+        TASSERT(!root->load_acl().has_value());
+        delete root;
+    }
+
+    TMOCK_TEST(test_grant_and_revoke)
+    {
+        tsdb::root* root = make_root();
+        root->add_user("hub1","hub1pw");
+        root->add_user("alice","alicepw");
+        TASSERT(root->enable_acls());
+
+        // The database doesn't have to exist yet.
+        root->grant("hub1","hub1_data",tsdb::PERM_WRITE);
+        root->grant("alice","*",tsdb::PERM_READ);
+        root->grant("alice","*",tsdb::PERM_DELETE);
+        TASSERT_EQUIV(acl_file_text(),
+                      std::string(tsdb::acl_file_header) + "\n"
+                      "alice *         read,delete\n"
+                      "hub1  hub1_data write\n");
+        assert_tree_fsynced(fs_root);
+        TASSERT_EQUIV(fs_root->subdirs["tmp"]->files.size(),0UL);
+
+        auto a = root->load_acl();
+        TASSERT_EQUIV(a->permissions("hub1","hub1_data"),
+                      (uint32_t)tsdb::PERM_WRITE);
+        TASSERT_EQUIV(a->permissions("alice","hub1_data"),
+                      (uint32_t)(tsdb::PERM_READ | tsdb::PERM_DELETE));
+
+        root->revoke("alice","*",tsdb::PERM_READ | tsdb::PERM_DELETE);
+        a = root->load_acl();
+        TASSERT_EQUIV(a->entries.size(),1UL);
+        TASSERT_EQUIV(a->permissions("alice","hub1_data"),(uint32_t)0);
+
+        // Unknown users and invalid database names are refused, leaving the
+        // file alone.
+        try
+        {
+            root->grant("nobody","hub1_data",tsdb::PERM_READ);
+            TABORT("Expected no such user exception!");
+        }
+        catch (const tsdb::no_such_user_exception&)
+        {
+        }
+        for (const char* bad : {"a/b","..","","hub 1"})
+        {
+            try
+            {
+                root->grant("hub1",bad,tsdb::PERM_READ);
+                TABORT("Expected invalid database exception!");
+            }
+            catch (const tsdb::invalid_database_exception&)
+            {
+            }
+        }
+        TASSERT_EQUIV(acl_file_text(),
+                      std::string(tsdb::acl_file_header) + "\n"
+                      "hub1 hub1_data write\n");
+        delete root;
+    }
+
+    TMOCK_TEST(test_acl_changes_hold_passwd_lock)
+    {
+        // The acl file may only be replaced while passwd.lock is held
+        // exclusively, so that two tsdbcli2 sessions can't both read the old
+        // file and have the second rename throw away the first's change.
+        tsdb::root* root = make_root();
+        root->add_user("hub1","hub1pw");
+        file_node* lock_fn = fs_root->get_file("passwd.lock");
+        size_t renames = 0;
+        futil::hook_func = [&](uint32_t id)
+        {
+            if (id == futil::HI_RENAMEAT)
+            {
+                TASSERT_EQUIV(lock_fn->exclusive_locks,1UL);
+                ++renames;
+            }
+        };
+        TASSERT(root->enable_acls());
+        root->grant("hub1","hub1_data",tsdb::PERM_WRITE);
+        root->revoke("hub1","hub1_data",tsdb::PERM_WRITE);
+        futil::hook_func = NULL;
+        TASSERT_EQUIV(renames,3UL);
+        TASSERT_EQUIV(lock_fn->exclusive_locks,0UL);
+        delete root;
     }
 };
 
