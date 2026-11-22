@@ -28,12 +28,13 @@ class tmock_test
         tsdb::create_root(".",c);
 
         TASSERT_EQUIV(fs_root->subdirs.size(),2UL);
-        TASSERT_EQUIV(fs_root->files.size(),3UL);
+        TASSERT_EQUIV(fs_root->files.size(),4UL);
         TASSERT(fs_root->subdirs.count("databases"));
         TASSERT(fs_root->subdirs.count("tmp"));
         TASSERT(fs_root->files.count("passwd.lock"));
         TASSERT(fs_root->files.count("passwd"));
         TASSERT(fs_root->files.count("config.txt"));
+        TASSERT(fs_root->files.count("acl"));
         TASSERT(fs_root->subdirs["databases"]->subdirs.empty());
         TASSERT(fs_root->subdirs["databases"]->files.empty());
         TASSERT(fs_root->subdirs["tmp"]->subdirs.empty());
@@ -49,6 +50,10 @@ class tmock_test
         TASSERT_EQUIV(
             fs_root->files["config.txt"]->data_as_string(),
             expected_config);
+
+        // Access control starts on, with nothing granted.
+        TASSERT_EQUIV(fs_root->files["acl"]->data_as_string(),
+                      std::string(tsdb::acl_file_header) + "\n");
 
         try
         {

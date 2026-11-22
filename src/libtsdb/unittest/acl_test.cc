@@ -29,8 +29,16 @@ expect_invalid(const std::string& text, size_t line_num)
 }
 
 static void
+remove_acl_file()
+{
+    futil::directory root_dir(".");
+    futil::unlink_if_exists(root_dir,"acl");
+}
+
+static void
 write_acl_file(const std::string& text)
 {
+    remove_acl_file();
     futil::directory root_dir(".");
     futil::file acl_fd(root_dir,"acl",O_CREAT | O_EXCL | O_RDWR,0660);
     acl_fd.write_all(text.c_str(),text.size());
@@ -41,6 +49,15 @@ make_root()
 {
     tsdb::create_root(".",tsdb::default_configuration);
     return new tsdb::root(".",true);
+}
+
+static tsdb::root*
+make_old_root()
+{
+    // Roots created before access control existed have no acl file.
+    tsdb::root* root = make_root();
+    remove_acl_file();
+    return root;
 }
 
 static std::string
@@ -157,6 +174,15 @@ class tmock_test
     {
         tsdb::create_root(".",tsdb::default_configuration);
         tsdb::root root(".",true);
+
+        // A new root has access control on, with nothing granted.
+        auto empty = root.load_acl();
+        TASSERT(empty.has_value());
+        TASSERT(empty->entries.empty());
+        TASSERT_EQUIV(empty->permissions("hub1","hub1_data"),(uint32_t)0);
+
+        // An old root without an acl file has access control off.
+        remove_acl_file();
         TASSERT(!root.load_acl().has_value());
 
         write_acl_file(test_acl_text);
@@ -220,7 +246,7 @@ class tmock_test
 
     TMOCK_TEST(test_enable_acls)
     {
-        tsdb::root* root = make_root();
+        tsdb::root* root = make_old_root();
         TASSERT(root->enable_acls());
         TASSERT(!root->enable_acls());
         TASSERT_EQUIV(acl_file_text(),
@@ -235,7 +261,7 @@ class tmock_test
 
     TMOCK_TEST(test_grant_revoke_need_acls)
     {
-        tsdb::root* root = make_root();
+        tsdb::root* root = make_old_root();
         root->add_user("hub1","hub1pw");
         try
         {
@@ -262,7 +288,9 @@ class tmock_test
         tsdb::root* root = make_root();
         root->add_user("hub1","hub1pw");
         root->add_user("alice","alicepw");
-        TASSERT(root->enable_acls());
+
+        // New roots already have access control on.
+        TASSERT(!root->enable_acls());
 
         // The database doesn't have to exist yet.
         root->grant("hub1","hub1_data",tsdb::PERM_WRITE);
@@ -318,7 +346,7 @@ class tmock_test
         // The acl file may only be replaced while passwd.lock is held
         // exclusively, so that two tsdbcli2 sessions can't both read the old
         // file and have the second rename throw away the first's change.
-        tsdb::root* root = make_root();
+        tsdb::root* root = make_old_root();
         root->add_user("hub1","hub1pw");
         file_node* lock_fn = fs_root->get_file("passwd.lock");
         size_t renames = 0;

@@ -234,7 +234,17 @@ tsdb::create_root(const futil::path& path, const configuration& config) try
     futil::xact_creat config_fd(root_dir,"config.txt",O_RDWR | O_CREAT,0440);
     config_fd.write_all(&config_str[0],config_str.size());
     config_fd.fsync();
+
+    // New roots start with access control on and nothing granted, which is
+    // what acl().to_string() would write.  Writing it here keeps root.o from
+    // depending on acl.o.
+    std::string acl_str = std::string(acl_file_header) + "\n";
+    futil::xact_creat acl_fd(root_dir,"acl",O_RDWR | O_CREAT,0660);
+    acl_fd.write_all(&acl_str[0],acl_str.size());
+    acl_fd.fsync();
+
     root_dir.fsync();
+    acl_fd.commit();
     config_fd.commit();
     databases_dir.commit();
     tmp_dir.commit();
