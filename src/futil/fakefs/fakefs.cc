@@ -13,9 +13,9 @@ struct ffs_DIR
     int at_fd;
     dir_node* dn;
     struct dirent de;
-    std::map<std::string,file_node*>::iterator files_iter;
+    fakefs_name_map<file_node*>::iterator files_iter;
     size_t special_iter;
-    std::map<std::string,dir_node*>::iterator subdirs_iter;
+    fakefs_name_map<dir_node*>::iterator subdirs_iter;
 
     ffs_DIR(int at_fd,dir_node* dn):
         at_fd(at_fd),
@@ -33,6 +33,7 @@ struct resolved_path
     std::string name;
 };
 
+bool fakefs_case_insensitive = false;
 dir_node* fs_root = new dir_node{NULL,"",0,1,true};
 std::vector<dir_node*> snapshots;
 std::set<dir_node*> live_dirs{fs_root};
@@ -897,6 +898,24 @@ futil::renameat_if_not_exists(int fromfd, const char* from, int tofd,
 
     futil::renameat(fromfd,from,tofd,to);
     return true;
+}
+
+bool
+futil::fd_open_was_exact(int fd, const char* opened_name)
+{
+    FW_PROBE(HI_FD_OPEN_WAS_EXACT,"fd_open_was_exact(%d,\"%s\")",
+             fd,opened_name);
+    if (fd >= (int)NELEMS(fd_table) || fd <= 0)
+        throw futil::errno_exception(EBADF);
+    switch (fd_table[fd].type)
+    {
+        case FDT_DIRECTORY:
+            return fd_table[fd].directory->name == opened_name;
+        case FDT_FILE:
+            return fd_table[fd].file->name == opened_name;
+        default:
+            throw futil::errno_exception(EBADF);
+    }
 }
 
 void

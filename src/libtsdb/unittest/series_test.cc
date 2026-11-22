@@ -147,6 +147,87 @@ class tmock_test
         }
     }
 
+    TMOCK_TEST(test_series_exact_case)
+    {
+        // On a case-insensitive file system, a series is reachable only by
+        // the name it was created with: "SERIES1" must not open "series1",
+        // and writing to it must report a case conflict.
+        fakefs_case_insensitive = true;
+        tsdb::configuration c = {
+            .chunk_size = 2*1024*1024,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+        tsdb::root root(".",true);
+        root.create_database("db1");
+        tsdb::database db1(root,"db1");
+        tsdb::create_measurement(db1,"measurement1",test_fields);
+        tsdb::measurement m1(db1,"measurement1");
+        tsdb::open_or_create_and_lock_series(m1,"series1");
+
+        for (const char* name : {"SERIES1","Series1"})
+        {
+            try
+            {
+                tsdb::series_read_lock read_lock(m1,name);
+                TABORT("Expected no such series exception!");
+            }
+            catch (const tsdb::no_such_series_exception&)
+            {
+            }
+
+            try
+            {
+                tsdb::series_total_lock total_lock(m1,name);
+                TABORT("Expected no such series exception!");
+            }
+            catch (const tsdb::no_such_series_exception&)
+            {
+            }
+
+            try
+            {
+                tsdb::open_or_create_and_lock_series(m1,name);
+                TABORT("Expected name case conflict exception!");
+            }
+            catch (const tsdb::name_case_conflict_exception&)
+            {
+            }
+        }
+
+        auto ss = m1.list_series();
+        TASSERT_EQUIV(ss.size(),1UL);
+        TASSERT_EQUIV(ss[0],"series1");
+        TASSERT_EQUIV(fs_root->subdirs["tmp"]->subdirs.size(),0UL);
+        TASSERT_EQUIV(fs_root->subdirs["tmp"]->files.size(),0UL);
+    }
+
+    TMOCK_TEST(test_series_case_sensitive)
+    {
+        // On a case-sensitive file system, names that differ only in case are
+        // separate series.
+        tsdb::configuration c = {
+            .chunk_size = 2*1024*1024,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+        tsdb::root root(".",true);
+        root.create_database("db1");
+        tsdb::database db1(root,"db1");
+        tsdb::create_measurement(db1,"measurement1",test_fields);
+        tsdb::measurement m1(db1,"measurement1");
+        tsdb::open_or_create_and_lock_series(m1,"series1");
+        tsdb::open_or_create_and_lock_series(m1,"SERIES1");
+
+        tsdb::series_read_lock s1(m1,"series1");
+        tsdb::series_read_lock S1(m1,"SERIES1");
+        TASSERT(fd_table[s1.series_dir.fd].directory !=
+                fd_table[S1.series_dir.fd].directory);
+        TASSERT_EQUIV(m1.list_series().size(),2UL);
+    }
+
     TMOCK_TEST(test_create_new_series)
     {
         {

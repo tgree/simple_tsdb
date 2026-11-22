@@ -645,6 +645,38 @@ namespace futil
         return futil::openat(d.fd,p,oflag,mode);
     }
 
+    inline directory open_exact_directory(const directory& d, const path& p)
+    {
+        // Opens subdirectory p of d, like directory(d,p), but throws ENOENT
+        // unless the file system's own name for it is exactly p.  On a
+        // case-insensitive file system, directory(d,"Foo") opens an existing
+        // "foo"; this treats "Foo" as not existing.
+        directory sd(d,p);
+        if (!futil::fd_open_was_exact(sd.fd,p))
+            throw errno_exception(ENOENT);
+        return sd;
+    }
+
+    inline bool dir_opens_as_other_case(const directory& d, const path& p)
+    {
+        // Opens subdirectory p of d and returns true if the open succeeded but
+        // the file system's name for what it found isn't exactly p, such as
+        // "foo" when p is "Foo".  That can only happen on a case-insensitive
+        // file system.  Returns false if p doesn't open as a directory.
+        file_descriptor sd;
+        try
+        {
+            sd.fd = futil::openat(d.fd,p,O_DIRECTORY | O_RDONLY);
+        }
+        catch (const errno_exception& e)
+        {
+            if (e.errnov == ENOENT || e.errnov == ENOTDIR)
+                return false;
+            throw;
+        }
+        return !futil::fd_open_was_exact(sd.fd,p);
+    }
+
     inline futil::path
     operator+(const std::string& lhs, const futil::path& rhs)
     {

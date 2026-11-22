@@ -85,6 +85,8 @@ check_status(tsdb::status_code sc)
             throw tsdb::shunt_extra_expressions_exception();
         case tsdb::INVALID_DATABASE:
             throw tsdb::invalid_database_exception();
+        case tsdb::NAME_CASE_CONFLICT:
+            throw tsdb::name_case_conflict_exception();
     }
 
     throw protocol_exception("Unknown status code");

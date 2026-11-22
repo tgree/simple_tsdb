@@ -20,6 +20,17 @@
 #include <inttypes.h>
 #include <exception>
 #include <functional>
+#if IS_MACOS
+// <sys/attr.h> pulls in <sys/param.h>, whose MIN() and MAX() macros clash
+// with hdr/kmath.h's.  Keep whatever MIN and MAX meant before including it.
+#pragma push_macro("MIN")
+#pragma push_macro("MAX")
+#include <sys/attr.h>
+#undef MIN
+#undef MAX
+#pragma pop_macro("MIN")
+#pragma pop_macro("MAX")
+#endif
 
 #define FUTIL_WRAP_TRACE    0
 
@@ -66,6 +77,7 @@ namespace futil
         HI_FCHMOD                   = 0x00250000,
         HI_FCHMODAT                 = 0x00260000,
         HI_CONNECT                  = 0x00270000,
+        HI_FD_OPEN_WAS_EXACT        = 0x00280000,
     };
 
     struct exception : public std::exception
@@ -202,6 +214,7 @@ namespace futil
     void fchmod(int fd, mode_t mode);
     void fchmodat(int fd, const char* path, mode_t mode, int flag);
     bool connect(int fd, const struct sockaddr* addr, socklen_t addr_len);
+    bool fd_open_was_exact(int fd, const char* opened_name);
 
 #else
 
@@ -657,6 +670,50 @@ namespace futil
         if (errno == EINPROGRESS)
             return false;
         FW_THROW_ERRNO();
+    }
+
+    inline bool fd_open_was_exact(int fd, const char* opened_name)
+    {
+        // fd must have just been opened by the caller with opened_name.
+        // Returns true if that open found an entry whose name is exactly
+        // opened_name.  On a case-insensitive file system, such as macOS's
+        // default APFS, opening "Foo" succeeds when the entry is really
+        // "foo"; this tells the two apart by asking the file system for the
+        // entry's stored name.
+        //
+        // On Linux this returns true without checking anything: Linux file
+        // systems are case-sensitive (apart from ext4 directories with the
+        // casefold attribute, which we don't support), so an open of
+        // opened_name can only have found an entry with exactly that name.
+        // That is also why passing a name other than the one fd was opened
+        // with gives a meaningless answer.
+        FW_PROBE(HI_FD_OPEN_WAS_EXACT,"fd_open_was_exact(%d,\"%s\")",
+                 fd,opened_name);
+#if IS_MACOS
+        struct attrlist al = {};
+        al.bitmapcount = ATTR_BIT_MAP_COUNT;
+        al.commonattr  = ATTR_CMN_NAME;
+        struct __attribute__((packed))
+        {
+            uint32_t        len;
+            attrreference_t name;
+            char            buf[1024];
+        } ab;
+        for (;;)
+        {
+            if (!::fgetattrlist(fd,&al,&ab,sizeof(ab),0))
+                break;
+            if (errno != EINTR)
+                FW_THROW_ERRNO();
+        }
+        const char* stored_name = (const char*)&ab.name +
+                                  ab.name.attr_dataoffset;
+        return !strcmp(stored_name,opened_name);
+#elif IS_LINUX
+        return true;
+#else
+#error Unknown platform.
+#endif
     }
 
 #endif

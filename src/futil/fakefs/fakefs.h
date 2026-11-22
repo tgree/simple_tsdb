@@ -4,12 +4,41 @@
 #define __FUTIL_FAKEFS_H
 
 #include <hdr/kassert.h>
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <map>
 #include <set>
+#include <ctype.h>
 
 struct file_node;
+
+// When true, fakefs looks up names the way a case-insensitive file system
+// such as macOS's default APFS does: "Foo" finds an entry created as "foo",
+// and the entry keeps the name it was created with.  A test that wants this
+// must set it before creating anything, since the directory maps are ordered
+// by it.
+extern bool fakefs_case_insensitive;
+
+// Orders names in the directory maps, ignoring ASCII case when
+// fakefs_case_insensitive is set.
+struct fakefs_name_less
+{
+    bool operator()(const std::string& a, const std::string& b) const
+    {
+        if (!fakefs_case_insensitive)
+            return a < b;
+        return std::lexicographical_compare(a.begin(),a.end(),
+                                            b.begin(),b.end(),
+            [](unsigned char x, unsigned char y)
+            {
+                return tolower(x) < tolower(y);
+            });
+    }
+};
+
+template<typename T>
+using fakefs_name_map = std::map<std::string,T,fakefs_name_less>;
 
 struct dir_node
 {
@@ -19,8 +48,8 @@ struct dir_node
     size_t                              refcount;
     bool                                meta_fsynced;
     std::set<std::string>               dirty_unlinks;
-    std::map<std::string,file_node*>    files;
-    std::map<std::string,dir_node*>     subdirs;
+    fakefs_name_map<file_node*>         files;
+    fakefs_name_map<dir_node*>          subdirs;
 
     file_node* get_file(const std::string& name) const
     {

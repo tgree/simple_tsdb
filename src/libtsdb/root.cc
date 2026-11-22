@@ -152,6 +152,11 @@ tsdb::root::create_database(const futil::path& name) try
 }
 catch (const futil::errno_exception& e)
 {
+    if (e.errnov == EEXIST &&
+        futil::dir_opens_as_other_case(databases_dir,name))
+    {
+        throw tsdb::name_case_conflict_exception();
+    }
     throw tsdb::create_database_io_error_exception(e.errnov);
 }
 
@@ -166,7 +171,7 @@ tsdb::root::list_databases()
 bool
 tsdb::root::database_exists(const futil::path& path) try
 {
-    futil::directory dir(databases_dir,validate_database_name(path));
+    futil::open_exact_directory(databases_dir,validate_database_name(path));
     return true;
 }
 catch (const futil::errno_exception& e)

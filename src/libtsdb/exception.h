@@ -49,6 +49,7 @@ namespace tsdb
         SHUNT_MISSING_OP_ARG            = -35,
         SHUNT_EXTRA_EXPRESSIONS         = -36,
         INVALID_DATABASE                = -37,
+        NAME_CASE_CONFLICT              = -38,
     };
 
     struct exception : public std::exception
@@ -280,6 +281,8 @@ DEFINE_TSDB_EXCEPTION(shunt_extra_expressions_exception,SHUNT_EXTRA_EXPRESSIONS,
                       "Extra expressions in equation.");
 DEFINE_TSDB_EXCEPTION(invalid_database_exception,INVALID_DATABASE,
                       "Invalid database path.");
+DEFINE_TSDB_EXCEPTION(name_case_conflict_exception,NAME_CASE_CONFLICT,
+                      "Name differs only in case from an existing name.");
 }
 
 #endif /* __SRC_LIBTSDB_EXCEPTION_H */
