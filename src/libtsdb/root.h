@@ -3,12 +3,43 @@
 #ifndef __SRC_LIBROOT_ROOT_H
 #define __SRC_LIBROOT_ROOT_H
 
+#include "exception.h"
 #include <futil/futil.h>
 #include <strutil/strutil.h>
 #include <hdr/kassert.h>
 
 namespace tsdb
 {
+    // Returns true if name is a single path component that stays inside the
+    // directory it is opened from and is made only of printable ASCII
+    // characters other than space, '/' and '\'.  This rules out the empty
+    // name, "." and "..", whitespace, control characters such as tabs,
+    // newlines, escape sequences and NUL, and any byte outside 7-bit ASCII.
+    // Database, measurement and series names must all pass this check.
+    static inline bool is_valid_name(const futil::path& name)
+    {
+        const std::string& s = name._path;
+        if (s.empty() || s == "." || s == "..")
+            return false;
+        for (unsigned char c : s)
+        {
+            if (c <= ' ' || c > '~' || c == '/' || c == '\\')
+                return false;
+        }
+        return true;
+    }
+
+    // Returns name if it is a valid database name, otherwise throws
+    // invalid_database_exception.  The name "*" is reserved: access control
+    // lists use it to mean every database.
+    static inline const futil::path&
+    validate_database_name(const futil::path& name)
+    {
+        if (!is_valid_name(name) || name._path == "*")
+            throw invalid_database_exception();
+        return name;
+    }
+
     // Configuration as loaded from the config file.
     struct configuration
     {

@@ -46,7 +46,7 @@ class tmock_test
         tsdb::database db3(root,"db1");
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_tsdb_database_bad_names)
+    TMOCK_TEST(test_tsdb_database_bad_names)
     {
         // Each of these names either reaches outside the databases directory,
         // isn't a single path component, or contains whitespace, a backslash,
