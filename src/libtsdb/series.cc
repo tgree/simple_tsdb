@@ -7,7 +7,7 @@
 static tsdb::series_write_lock
 open_and_lock_series(const tsdb::measurement& m, const futil::path& series)
 {
-    futil::directory series_dir(m.dir,series);
+    futil::directory series_dir(tsdb::open_series_dir(m,series));
     futil::file time_first_fd(series_dir,"time_first",O_RDWR);
     time_first_fd.flock(LOCK_SH);
     futil::file time_last_fd(series_dir,"time_last",O_RDWR);
@@ -81,11 +81,15 @@ tsdb::open_or_create_and_lock_series(const measurement& m,
     series_dir.fsync();
 
     // Try and move it in to place.  If we fail, this indicates that someone
-    // else beat us to the punch and created the series for us.
+    // else beat us to the punch and created the series for us, or, on a
+    // case-insensitive file system, that the name opens an existing series
+    // with a different spelling.
     if (!futil::rename_if_not_exists(m.db.root.tmp_dir,
                                      (const char*)series_dir.name,
                                      m.dir,series))
     {
+        if (futil::dir_opens_as_other_case(m.dir,series))
+            throw tsdb::name_case_conflict_exception();
         return open_and_lock_series(m,series);
     }
 

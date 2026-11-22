@@ -41,13 +41,15 @@ namespace tsdb
     }
 
     // Opens the directory for a series in a measurement, throwing
-    // invalid_series_exception if the series name isn't valid.
+    // invalid_series_exception if the series name isn't valid.  The series
+    // must have exactly that name: on a case-insensitive file system another
+    // spelling throws ENOENT, as if the series didn't exist.
     static inline futil::directory
     open_series_dir(const measurement& m, const futil::path& series)
     {
         if (!is_valid_name(series))
             throw invalid_series_exception();
-        return futil::directory(m.dir,series);
+        return futil::open_exact_directory(m.dir,series);
     }
 
     struct _series_lock

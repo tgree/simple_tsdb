@@ -147,7 +147,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_series_exact_case)
+    TMOCK_TEST(test_series_exact_case)
     {
         // On a case-insensitive file system, a series is reachable only by
         // the name it was created with: "SERIES1" must not open "series1",
