@@ -5,6 +5,7 @@
 
 #include "exception.h"
 #include "measurement.h"
+#include "root.h"
 
 namespace tsdb
 {
@@ -39,6 +40,16 @@ namespace tsdb
             bitmap[index / 64] &= ~(1ULL << (index % 64));
     }
 
+    // Opens the directory for a series in a measurement, throwing
+    // invalid_series_exception if the series name isn't valid.
+    static inline futil::directory
+    open_series_dir(const measurement& m, const futil::path& series)
+    {
+        if (!is_valid_name(series))
+            throw invalid_series_exception();
+        return futil::directory(m.dir,series);
+    }
+
     struct _series_lock
     {
         const measurement&  m;
@@ -49,7 +60,7 @@ namespace tsdb
         _series_lock(const measurement& m, const futil::path& series,
                      int oflag) try:
             m(m),
-            series_dir(m.dir,series),
+            series_dir(open_series_dir(m,series)),
             time_first_fd(series_dir,"time_first",oflag),
             time_first(time_first_fd.flock(LOCK_SH).read_u64())
         {
@@ -65,7 +76,7 @@ namespace tsdb
         _series_lock(const measurement& m, const futil::path& series,
                      futil::file&& _time_first_fd) try:
             m(m),
-            series_dir(m.dir,series),
+            series_dir(open_series_dir(m,series)),
             time_first_fd(std::move(_time_first_fd)),
             time_first(time_first_fd.read_u64())
         {
@@ -164,10 +175,10 @@ namespace tsdb
         series_total_lock(const measurement& m, const futil::path& series) try:
             series_write_lock(
                 m,series,
-                std::move(futil::file(futil::directory(m.dir,series),
+                std::move(futil::file(open_series_dir(m,series),
                                       "time_first",O_RDWR).flock(LOCK_EX)),
-                futil::file(futil::directory(m.dir,series),"wal",O_RDWR),
-                futil::file(futil::directory(m.dir,series),"time_last",O_RDWR))
+                futil::file(open_series_dir(m,series),"wal",O_RDWR),
+                futil::file(open_series_dir(m,series),"time_last",O_RDWR))
         {
         }
         catch (const futil::errno_exception& e)

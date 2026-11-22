@@ -75,7 +75,7 @@ class tmock_test
         }
     }
 
-    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_series_bad_names)
+    TMOCK_TEST(test_series_bad_names)
     {
         // Each of these names either reaches outside its measurement, isn't a
         // single path component, or contains whitespace, a backslash, a
