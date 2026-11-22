@@ -31,6 +31,9 @@
 
 struct connection;
 
+prod_static void authorize_command(const std::string& username,
+    command_token ct, const std::vector<parsed_data_token>& tokens);
+
 struct server_config
 {
     std::string     cert_file;
@@ -192,7 +195,7 @@ struct connection
     void authorize(command_token _ct,
                    const std::vector<parsed_data_token>& _tokens)
     {
-        // Every command is allowed for now.
+        authorize_command(username,_ct,_tokens);
     }
 
     connection(tcp::stream& s, const std::string& username):
@@ -401,6 +404,90 @@ sleep_for_ns(uint64_t nsec)
     rqtp.tv_nsec = (nsec % 1000000000);
     while (nanosleep(&rqtp,&rmtp) != 0)
         rqtp = rmtp;
+}
+
+prod_static void
+authorize_command(const std::string& username, command_token ct,
+    const std::vector<parsed_data_token>& tokens)
+{
+    // Throws permission_denied_exception unless username may run command ct
+    // on the database named in tokens.  The plain TCP port has no user and
+    // may run anything, as may every user of a root without an acl file.
+    if (username.empty())
+        return;
+
+    // Commands that don't name a database are always allowed; LIST
+    // DATABASES filters its own output.  CREATE DATABASE needs all
+    // permissions on "*".  Every other command needs one of the
+    // permissions listed for it, on its database or on "*".  A command
+    // missing from this list is refused, so that a new command can't be
+    // allowed by accident.
+    uint32_t needed = 0;
+    switch (ct)
+    {
+        case CT_GET_VERSION:
+        case CT_NOP:
+        case CT_LIST_DATABASES:
+            return;
+
+        case CT_CREATE_DATABASE:
+            needed = tsdb::PERM_ALL;
+        break;
+
+        case CT_GET_SCHEMA:
+            needed = tsdb::PERM_READ | tsdb::PERM_WRITE;
+        break;
+
+        case CT_LIST_MEASUREMENTS:
+        case CT_LIST_SERIES:
+        case CT_ACTIVE_SERIES:
+        case CT_COUNT_POINTS:
+        case CT_SELECT_POINTS_LIMIT:
+        case CT_SELECT_POINTS_LAST:
+        case CT_SUM_POINTS:
+        case CT_INTEGRATE_POINTS:
+        case CT_COMPUTE_POINTS_LIMIT:
+        case CT_COMPUTE_POINTS_LAST:
+        case CT_SUM_COMPUTE_POINTS:
+            needed = tsdb::PERM_READ;
+        break;
+
+        case CT_CREATE_MEASUREMENT:
+        case CT_WRITE_POINTS:
+            needed = tsdb::PERM_WRITE;
+        break;
+
+        case CT_DELETE_POINTS:
+            needed = tsdb::PERM_DELETE;
+        break;
+
+        default:
+        break;
+    }
+
+    auto acl = root->load_acl();
+    if (!acl)
+        return;
+
+    std::string database;
+    if (!tokens.empty() && tokens[0].type == DT_DATABASE)
+        database = tokens[0].to_string();
+
+    bool allowed;
+    if (ct == CT_CREATE_DATABASE)
+        allowed = (acl->permissions(username,"*") == tsdb::PERM_ALL);
+    else
+    {
+        allowed = !database.empty() &&
+                  (acl->permissions(username,database) & needed);
+    }
+    if (!allowed)
+    {
+        prod_printf("Permission denied: user %s, %s %s.\n",
+                    username.c_str(),get_command_token_str(ct),
+                    database.c_str());
+        throw tsdb::permission_denied_exception();
+    }
 }
 
 static void

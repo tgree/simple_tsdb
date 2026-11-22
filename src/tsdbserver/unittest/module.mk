@@ -2,6 +2,7 @@
 # All rights reserved.
 TESTS := \
 	 reflector_test \
+	 server_acl_test \
 	 server_test \
 	 tokens_test
 
@@ -16,6 +17,31 @@ reflector_test.OBJ := \
 	$(BUILD_TO_DIR)/libtsdb/write.o \
 	$(BUILD_TO_DIR)/libtsdb/count.o \
 	$(BUILD_TO_DIR)/libtsdb/select_op.o \
+	$(BUILD_TO_DIR)/libtsdb/series.o \
+	$(BUILD_TO_DIR)/libtsdb/measurement.o \
+	$(BUILD_TO_DIR)/libtsdb/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_TO_DIR)/futil/mock/mock_net.o \
+	$(BUILD_O_DIR)/floor/kassert.o
+
+# authorize_command() reads the acl file, so server_acl_test links the
+# fakefs version of libtsdb.
+server_acl_test.LIB := libz-ng.a
+server_acl_test.DYLIB := ssl crypto
+server_acl_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/server_acl_test.o \
+	$(PARENT_TBUILD_DIR)/server.o \
+	$(PARENT_TBUILD_DIR)/tokens.o \
+	$(BUILD_O_DIR)/shunter/shunting_functions.o \
+	$(BUILD_TO_DIR)/libtsdb/acl.o \
+	$(BUILD_TO_DIR)/libtsdb/delete.o \
+	$(BUILD_TO_DIR)/libtsdb/wal.o \
+	$(BUILD_TO_DIR)/libtsdb/write.o \
+	$(BUILD_TO_DIR)/libtsdb/count.o \
+	$(BUILD_TO_DIR)/libtsdb/select_op.o \
+	$(BUILD_TO_DIR)/libtsdb/sum_op.o \
+	$(BUILD_TO_DIR)/libtsdb/sum_compute_op.o \
+	$(BUILD_TO_DIR)/libtsdb/integral_op.o \
 	$(BUILD_TO_DIR)/libtsdb/series.o \
 	$(BUILD_TO_DIR)/libtsdb/measurement.o \
 	$(BUILD_TO_DIR)/libtsdb/root.o \
