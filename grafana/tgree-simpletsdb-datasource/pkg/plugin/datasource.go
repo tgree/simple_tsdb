@@ -102,6 +102,7 @@ const (
 	MISSING_PAREN                int  = -34
 	SHUNT_MISSING_OP_ARG         int  = -35
 	SHUNT_EXTRA_EXPRESSIONS      int  = -36
+	INVALID_DATABASE             int  = -37
 
 	FT_BOOL uint8 = 1
 	FT_U32 uint8  = 2
@@ -149,6 +150,7 @@ var ERR_MAP = map[int]string{
 	MISSING_PAREN:			"Missing parenthesis in equation.",
 	SHUNT_MISSING_OP_ARG:		"Missing argument to an operation in equation.",
 	SHUNT_EXTRA_EXPRESSIONS:	"Extra expressions in equation.",
+	INVALID_DATABASE:		"Invalid database path.",
 }
 
 var FT_MAP = map[uint8]string{
