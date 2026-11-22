@@ -13,9 +13,9 @@ struct ffs_DIR
     int at_fd;
     dir_node* dn;
     struct dirent de;
-    std::map<std::string,file_node*>::iterator files_iter;
+    fakefs_name_map<file_node*>::iterator files_iter;
     size_t special_iter;
-    std::map<std::string,dir_node*>::iterator subdirs_iter;
+    fakefs_name_map<dir_node*>::iterator subdirs_iter;
 
     ffs_DIR(int at_fd,dir_node* dn):
         at_fd(at_fd),
@@ -33,6 +33,7 @@ struct resolved_path
     std::string name;
 };
 
+bool fakefs_case_insensitive = false;
 dir_node* fs_root = new dir_node{NULL,"",0,1,true};
 std::vector<dir_node*> snapshots;
 std::set<dir_node*> live_dirs{fs_root};

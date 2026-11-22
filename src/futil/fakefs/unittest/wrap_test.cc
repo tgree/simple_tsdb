@@ -593,6 +593,78 @@ class tmock_test
         TASSERT(fs_root->subdirs["dir4"]->subdirs["dir2"]->files.
                     count("fdX"));
     }
+
+    TMOCK_TEST(test_case_sensitive_names)
+    {
+        // By default, names that differ only in case are different entries,
+        // as on Linux.
+        auto cwd = futil::directory(AT_FDCWD,".");
+        futil::mkdir(cwd,"Foo",0777);
+        futil::mkdir(cwd,"foo",0777);
+        auto foo1 = futil::directory(cwd,"Foo");
+        auto foo2 = futil::directory(cwd,"foo");
+        TASSERT(fd_table[foo1.fd].directory != fd_table[foo2.fd].directory);
+        TASSERT_EQUIV(cwd.listdirs().size(),2UL);
+
+        try
+        {
+            futil::directory(cwd,"FOO");
+            TABORT("Expected ENOENT opening FOO!");
+        }
+        catch (const futil::errno_exception& e)
+        {
+            TASSERT_EQUIV(e.errnov,ENOENT);
+        }
+    }
+
+    TMOCK_TEST(test_case_insensitive_names)
+    {
+        // In case-insensitive mode, any spelling finds the entry, which keeps
+        // the name it was created with, and creating another spelling fails.
+        fakefs_case_insensitive = true;
+        auto cwd = futil::directory(AT_FDCWD,".");
+        futil::mkdir(cwd,"Foo",0777);
+        futil::mkdir(cwd,"tmp",0777);
+        futil::close(futil::openat(AT_FDCWD,"Bar",O_CREAT | O_EXCL,0777));
+
+        dir_node* foo_dn = fs_root->subdirs.find("Foo")->second;
+        for (const char* name : {"Foo","foo","FOO","fOo"})
+        {
+            auto d = futil::directory(cwd,name);
+            TASSERT(fd_table[d.fd].directory == foo_dn);
+        }
+        TASSERT_EQUIV(foo_dn->name,"Foo");
+        TASSERT_EQUIV(fs_root->subdirs.find("foo")->first,"Foo");
+        futil::close(futil::openat(AT_FDCWD,"bar",O_RDONLY));
+
+        try
+        {
+            futil::mkdir(cwd,"foo",0777);
+            TABORT("Expected EEXIST creating foo!");
+        }
+        catch (const futil::errno_exception& e)
+        {
+            TASSERT_EQUIV(e.errnov,EEXIST);
+        }
+        TASSERT(!futil::mkdirat_if_not_exists(AT_FDCWD,"FOO",0777));
+        try
+        {
+            futil::openat(AT_FDCWD,"BAR",O_CREAT | O_EXCL,0777);
+            TABORT("Expected EEXIST creating BAR!");
+        }
+        catch (const futil::errno_exception& e)
+        {
+            TASSERT_EQUIV(e.errnov,EEXIST);
+        }
+        TASSERT(!futil::renameat_if_not_exists(AT_FDCWD,"tmp",AT_FDCWD,
+                                               "fOO"));
+
+        auto dirs = cwd.listdirs();
+        std::sort(dirs.begin(),dirs.end());
+        TASSERT_EQUIV(dirs.size(),2UL);
+        TASSERT_EQUIV(dirs[0],"Foo");
+        TASSERT_EQUIV(dirs[1],"tmp");
+    }
 };
 
 TMOCK_MAIN();
