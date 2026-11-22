@@ -130,6 +130,65 @@ class tmock_test
         TASSERT_EQUIV(fs_root->subdirs["tmp"]->files.size(),0UL);
     }
 
+    TMOCK_TEST(test_measurement_bad_names)
+    {
+        // Each of these names either reaches outside its database, isn't a
+        // single path component, or contains whitespace, a backslash, a
+        // control character or a byte outside 7-bit ASCII.  None of them
+        // should be usable as a measurement name.
+        static const std::string bad_names[] = {
+            "../db2/measurement1",
+            "",
+            ".",
+            "..",
+            "measurement1/",
+            "/measurement1",
+            std::string("measurement1\0x",14),
+            "measurement 1",
+            "measurement\\1",
+            "measurement\t1",
+            "measurement\n1",
+            "measurement\x1b[1m",
+            "measurement\x7f",
+            "measurement\xc3\xa9",
+        };
+
+        tsdb::configuration c = {
+            .chunk_size = 2*1024*1024,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+        tsdb::root root(".",true);
+        root.create_database("db1");
+        root.create_database("db2");
+        tsdb::database db1(root,"db1");
+        tsdb::database db2(root,"db2");
+        tsdb::create_measurement(db1,"measurement1",test_fields);
+        tsdb::create_measurement(db2,"measurement1",test_fields);
+
+        for (const auto& name : bad_names)
+        {
+            try
+            {
+                tsdb::measurement m(db1,name);
+                TABORT("Expected invalid measurement exception!");
+            }
+            catch (const tsdb::invalid_measurement_exception&)
+            {
+            }
+
+            try
+            {
+                tsdb::create_measurement(db1,name,test_fields);
+                TABORT("Expected invalid measurement exception!");
+            }
+            catch (const tsdb::invalid_measurement_exception&)
+            {
+            }
+        }
+    }
+
 #if 0
     TMOCK_TEST(test_create_collision)
     {

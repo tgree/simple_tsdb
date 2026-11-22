@@ -145,9 +145,9 @@ tsdb::root::verify_user(const std::string& username,
 }
 
 void
-tsdb::root::create_database(const char* name) try
+tsdb::root::create_database(const futil::path& name) try
 {
-    futil::mkdir(databases_dir,name,0770);
+    futil::mkdir(databases_dir,validate_database_name(name),0770);
     databases_dir.fsync();
 }
 catch (const futil::errno_exception& e)
@@ -166,7 +166,7 @@ tsdb::root::list_databases()
 bool
 tsdb::root::database_exists(const futil::path& path) try
 {
-    futil::directory dir(databases_dir,path);
+    futil::directory dir(databases_dir,validate_database_name(path));
     return true;
 }
 catch (const futil::errno_exception& e)

@@ -24,7 +24,7 @@ namespace tsdb
 
         database(const struct root& root, const futil::path& path) try :
             root(root),
-            dir(root.databases_dir,path)
+            dir(root.databases_dir,validate_database_name(path))
         {
         }
         catch (const futil::errno_exception& e)

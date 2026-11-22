@@ -48,6 +48,7 @@ namespace tsdb
         MISSING_PAREN                   = -34,
         SHUNT_MISSING_OP_ARG            = -35,
         SHUNT_EXTRA_EXPRESSIONS         = -36,
+        INVALID_DATABASE                = -37,
     };
 
     struct exception : public std::exception
@@ -277,6 +278,8 @@ DEFINE_TSDB_EXCEPTION(shunt_missing_op_arg_exception,SHUNT_MISSING_OP_ARG,
                       "Missing operation argument.");
 DEFINE_TSDB_EXCEPTION(shunt_extra_expressions_exception,SHUNT_EXTRA_EXPRESSIONS,
                       "Extra expressions in equation.");
+DEFINE_TSDB_EXCEPTION(invalid_database_exception,INVALID_DATABASE,
+                      "Invalid database path.");
 }
 
 #endif /* __SRC_LIBTSDB_EXCEPTION_H */

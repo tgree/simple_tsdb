@@ -101,6 +101,7 @@ class StatusCode:
     MISSING_PAREN                = -34
     SHUNT_MISSING_OP_ARG         = -35
     SHUNT_EXTRA_EXPRESSIONS      = -36
+    INVALID_DATABASE             = -37
 
 
 class StatusException(Exception):

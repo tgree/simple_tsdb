@@ -45,6 +45,72 @@ class tmock_test
         tsdb::database db2(root,"db1");
         tsdb::database db3(root,"db1");
     }
+
+    TMOCK_TEST(test_tsdb_database_bad_names)
+    {
+        // Each of these names either reaches outside the databases directory,
+        // isn't a single path component, or contains whitespace, a backslash,
+        // a control character or a byte outside 7-bit ASCII.  None of them
+        // should be usable as a database name.
+        static const std::string bad_names[] = {
+            "../databases/db1",
+            "db1/../db2",
+            "",
+            ".",
+            "..",
+            "db1/",
+            "/db1",
+            "*",    // Reserved: ACLs use it to mean every database.
+            std::string("db1\0x",5),
+            "db 1",
+            "db\\1",
+            "db\t1",
+            "db\n1",
+            "db\x1b[1m",
+            "db\x7f",
+            "db\xc3\xa9",
+        };
+
+        tsdb::configuration c = {
+            .chunk_size = 2*1024*1024,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+        tsdb::root root(".",true);
+        root.create_database("db1");
+        root.create_database("db2");
+
+        for (const auto& name : bad_names)
+        {
+            try
+            {
+                tsdb::database db(root,name);
+                TABORT("Expected invalid database exception!");
+            }
+            catch (const tsdb::invalid_database_exception&)
+            {
+            }
+
+            try
+            {
+                root.database_exists(name);
+                TABORT("Expected invalid database exception!");
+            }
+            catch (const tsdb::invalid_database_exception&)
+            {
+            }
+
+            try
+            {
+                root.create_database(name);
+                TABORT("Expected invalid database exception!");
+            }
+            catch (const tsdb::invalid_database_exception&)
+            {
+            }
+        }
+    }
 };
 
 TMOCK_MAIN();
