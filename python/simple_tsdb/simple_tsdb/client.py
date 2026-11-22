@@ -103,6 +103,7 @@ class StatusCode:
     SHUNT_EXTRA_EXPRESSIONS      = -36
     INVALID_DATABASE             = -37
     NAME_CASE_CONFLICT           = -38
+    PERMISSION_DENIED            = -39
 
 
 class StatusException(Exception):
