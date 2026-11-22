@@ -3,10 +3,12 @@
 #ifndef __SRC_LIBROOT_ROOT_H
 #define __SRC_LIBROOT_ROOT_H
 
+#include "acl.h"
 #include "exception.h"
 #include <futil/futil.h>
 #include <strutil/strutil.h>
 #include <hdr/kassert.h>
+#include <optional>
 
 namespace tsdb
 {
@@ -86,6 +88,11 @@ namespace tsdb
         // Verifies a username and password against the passwd file.
         bool verify_user(const std::string& username,
                          const std::string& password);
+
+        // Loads the access control list from the root's acl file.  Returns
+        // std::nullopt if there is no acl file, which means access control
+        // is off.  Throws invalid_acl_file_exception if it doesn't parse.
+        std::optional<acl> load_acl() const;
 
         // Creates a new database.
         void create_database(const futil::path& name);
