@@ -75,6 +75,78 @@ class tmock_test
         }
     }
 
+    TMOCK_TEST_EXPECT_FAILURE_SHOULD_PASS(test_series_bad_names)
+    {
+        // Each of these names either reaches outside its measurement, isn't a
+        // single path component, or contains whitespace, a backslash, a
+        // control character or a byte outside 7-bit ASCII.  None of them
+        // should be usable as a series name.
+        static const std::string bad_names[] = {
+            "../../db2/measurement1/series1",
+            "",
+            ".",
+            "..",
+            "series1/",
+            "/series1",
+            std::string("series1\0x",9),
+            "series 1",
+            "series\\1",
+            "series\t1",
+            "series\n1",
+            "series\x1b[1m",
+            "series\x7f",
+            "series\xc3\xa9",
+        };
+
+        tsdb::configuration c = {
+            .chunk_size = 2*1024*1024,
+            .wal_max_entries = 10240,
+            .write_throttle_ns = 1000000000,
+        };
+        tsdb::create_root(".",c);
+        tsdb::root root(".",true);
+        root.create_database("db1");
+        root.create_database("db2");
+        tsdb::database db1(root,"db1");
+        tsdb::database db2(root,"db2");
+        tsdb::create_measurement(db1,"measurement1",test_fields);
+        tsdb::create_measurement(db2,"measurement1",test_fields);
+        tsdb::measurement m1(db1,"measurement1");
+        tsdb::measurement m2(db2,"measurement1");
+        tsdb::open_or_create_and_lock_series(m1,"series1");
+        tsdb::open_or_create_and_lock_series(m2,"series1");
+
+        for (const auto& name : bad_names)
+        {
+            try
+            {
+                tsdb::series_read_lock read_lock(m1,name);
+                TABORT("Expected invalid series exception!");
+            }
+            catch (const tsdb::invalid_series_exception&)
+            {
+            }
+
+            try
+            {
+                tsdb::series_total_lock total_lock(m1,name);
+                TABORT("Expected invalid series exception!");
+            }
+            catch (const tsdb::invalid_series_exception&)
+            {
+            }
+
+            try
+            {
+                tsdb::open_or_create_and_lock_series(m1,name);
+                TABORT("Expected invalid series exception!");
+            }
+            catch (const tsdb::invalid_series_exception&)
+            {
+            }
+        }
+    }
+
     TMOCK_TEST(test_create_new_series)
     {
         {
