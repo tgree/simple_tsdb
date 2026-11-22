@@ -695,6 +695,66 @@ class tmock_test
         TASSERT(!futil::fd_open_was_exact(foo2.fd,"foo"));
         TASSERT(!futil::fd_open_was_exact(bar2.fd,"BAR"));
     }
+
+    TMOCK_TEST(test_open_exact_directory)
+    {
+        // open_exact_directory() opens a subdirectory only by its exact name,
+        // even when a case-insensitive file system matches another spelling.
+        fakefs_case_insensitive = true;
+        auto cwd = futil::directory(AT_FDCWD,".");
+        futil::mkdir(cwd,"Foo",0777);
+        dir_node* foo_dn = fs_root->subdirs.find("Foo")->second;
+        auto foo = futil::open_exact_directory(cwd,"Foo");
+        TASSERT(fd_table[foo.fd].directory == foo_dn);
+
+        for (const char* name : {"foo","FOO","bar"})
+        {
+            try
+            {
+                futil::open_exact_directory(cwd,name);
+                TABORT("Expected ENOENT!");
+            }
+            catch (const futil::errno_exception& e)
+            {
+                TASSERT_EQUIV(e.errnov,ENOENT);
+            }
+        }
+    }
+
+    TMOCK_TEST(test_dir_opens_as_other_case)
+    {
+        // dir_opens_as_other_case() is true only when the name opens a
+        // directory whose real name is spelled differently.
+        fakefs_case_insensitive = true;
+        auto cwd = futil::directory(AT_FDCWD,".");
+        futil::mkdir(cwd,"Foo",0777);
+        futil::close(futil::openat(AT_FDCWD,"Baz",O_CREAT | O_EXCL,0777));
+        TASSERT(futil::dir_opens_as_other_case(cwd,"foo"));
+        TASSERT(futil::dir_opens_as_other_case(cwd,"FOO"));
+        TASSERT(!futil::dir_opens_as_other_case(cwd,"Foo"));
+        TASSERT(!futil::dir_opens_as_other_case(cwd,"bar"));
+        TASSERT(!futil::dir_opens_as_other_case(cwd,"baz"));
+    }
+
+    TMOCK_TEST(test_exact_case_helpers_case_sensitive)
+    {
+        // On a case-sensitive file system, other spellings simply don't
+        // exist.
+        auto cwd = futil::directory(AT_FDCWD,".");
+        futil::mkdir(cwd,"Foo",0777);
+        futil::open_exact_directory(cwd,"Foo");
+        try
+        {
+            futil::open_exact_directory(cwd,"foo");
+            TABORT("Expected ENOENT!");
+        }
+        catch (const futil::errno_exception& e)
+        {
+            TASSERT_EQUIV(e.errnov,ENOENT);
+        }
+        TASSERT(!futil::dir_opens_as_other_case(cwd,"foo"));
+        TASSERT(!futil::dir_opens_as_other_case(cwd,"Foo"));
+    }
 };
 
 TMOCK_MAIN();
