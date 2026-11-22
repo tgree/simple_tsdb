@@ -102,6 +102,7 @@ class StatusCode:
     SHUNT_MISSING_OP_ARG         = -35
     SHUNT_EXTRA_EXPRESSIONS      = -36
     INVALID_DATABASE             = -37
+    NAME_CASE_CONFLICT           = -38
 
 
 class StatusException(Exception):
