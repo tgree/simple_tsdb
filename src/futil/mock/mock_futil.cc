@@ -76,3 +76,9 @@ futil::flock(int fd, int operation)
 {
     mock("futil::flock",fd,operation);
 }
+
+bool
+futil::fd_open_was_exact(int fd, const char* opened_name)
+{
+    return (bool)mock("futil::fd_open_was_exact",fd,opened_name);
+}

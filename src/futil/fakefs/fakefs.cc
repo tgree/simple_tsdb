@@ -900,6 +900,24 @@ futil::renameat_if_not_exists(int fromfd, const char* from, int tofd,
     return true;
 }
 
+bool
+futil::fd_open_was_exact(int fd, const char* opened_name)
+{
+    FW_PROBE(HI_FD_OPEN_WAS_EXACT,"fd_open_was_exact(%d,\"%s\")",
+             fd,opened_name);
+    if (fd >= (int)NELEMS(fd_table) || fd <= 0)
+        throw futil::errno_exception(EBADF);
+    switch (fd_table[fd].type)
+    {
+        case FDT_DIRECTORY:
+            return fd_table[fd].directory->name == opened_name;
+        case FDT_FILE:
+            return fd_table[fd].file->name == opened_name;
+        default:
+            throw futil::errno_exception(EBADF);
+    }
+}
+
 void
 delete_tree(dir_node* dn)
 {

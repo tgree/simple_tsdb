@@ -665,6 +665,36 @@ class tmock_test
         TASSERT_EQUIV(dirs[0],"Foo");
         TASSERT_EQUIV(dirs[1],"tmp");
     }
+
+    TMOCK_TEST(test_fd_open_was_exact)
+    {
+        // On a case-sensitive file system, opening a name can only find the
+        // entry with exactly that name.
+        auto cwd = futil::directory(AT_FDCWD,".");
+        futil::mkdir(cwd,"Foo",0777);
+        auto foo = futil::directory(cwd,"Foo");
+        auto bar = futil::file(cwd,"Bar",O_CREAT | O_EXCL | O_RDWR,0777);
+        TASSERT(futil::fd_open_was_exact(foo.fd,"Foo"));
+        TASSERT(futil::fd_open_was_exact(bar.fd,"Bar"));
+    }
+
+    TMOCK_TEST(test_fd_open_was_exact_case_insensitive)
+    {
+        // On a case-insensitive file system, opening another spelling finds
+        // the entry, and fd_open_was_exact() says that open wasn't exact.
+        fakefs_case_insensitive = true;
+        auto cwd = futil::directory(AT_FDCWD,".");
+        futil::mkdir(cwd,"Foo",0777);
+        futil::close(futil::openat(AT_FDCWD,"Bar",O_CREAT | O_EXCL,0777));
+        auto foo = futil::directory(cwd,"Foo");
+        auto bar = futil::file(cwd,"Bar",O_RDONLY);
+        auto foo2 = futil::directory(cwd,"foo");
+        auto bar2 = futil::file(cwd,"BAR",O_RDONLY);
+        TASSERT(futil::fd_open_was_exact(foo.fd,"Foo"));
+        TASSERT(futil::fd_open_was_exact(bar.fd,"Bar"));
+        TASSERT(!futil::fd_open_was_exact(foo2.fd,"foo"));
+        TASSERT(!futil::fd_open_was_exact(bar2.fd,"BAR"));
+    }
 };
 
 TMOCK_MAIN();

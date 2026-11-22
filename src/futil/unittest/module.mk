@@ -8,6 +8,7 @@ TESTS := \
 	 ssl_test
 
 ITESTS := \
+	 fd_name_test \
 	 tcp_test
 
 accept_test.OBJ := \
@@ -18,6 +19,9 @@ client_socket_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/client_socket_test.o \
 	$(PARENT_TBUILD_DIR)/mock/mock_futil.o \
 	$(PARENT_TBUILD_DIR)/mock/mock_net.o
+fd_name_test.OBJ := \
+	$(MODULE_ITBUILD_DIR)/fd_name_test.o \
+	$(BUILD_O_DIR)/floor/kassert.o
 futil_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/futil_test.o
 sockaddr_test.OBJ := \
