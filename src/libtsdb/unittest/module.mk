@@ -1,6 +1,7 @@
 # Copyright (c) 2025 by Terry Greeniaus.
 # All rights reserved.
 TESTS := \
+	 acl_test \
 	 bitmap_test \
 	 concurrency_test \
 	 count_test \
@@ -15,6 +16,13 @@ TESTS := \
 	 wal_test \
 	 write_test
 
+acl_test.DYLIB := crypto
+acl_test.OBJ := \
+	$(MODULE_TBUILD_DIR)/acl_test.o \
+	$(PARENT_TBUILD_DIR)/acl.o \
+	$(PARENT_TBUILD_DIR)/root.o \
+	$(BUILD_TO_DIR)/futil/fakefs/fakefs.o \
+	$(BUILD_O_DIR)/floor/kassert.o
 bitmap_test.OBJ := \
 	$(MODULE_TBUILD_DIR)/bitmap_test.o
 concurrency_test.LIB := libz-ng.a

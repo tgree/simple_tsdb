@@ -6,6 +6,7 @@
 #include <futil/tcp.h>
 #include <libtsdb/exception.h>
 #include <hdr/delegate.h>
+#include <hdr/unittest.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <vector>
@@ -137,7 +138,7 @@ parse_cmd(Conn& conn, const command_syntax<Conn&, Args...>& cs,
         uint32_t v = conn.s.template pop<uint32_t>();
         if (v != dt)
         {
-            printf("Expected 0x%08X got 0x%08X\n",dt,v);
+            prod_printf("Expected 0x%08X got 0x%08X\n",dt,v);
             throw futil::errno_exception(EINVAL);
         }
         debugf("Got token 0x%08X.\n",dt);
@@ -160,7 +161,7 @@ parse_cmd(Conn& conn, const command_syntax<Conn&, Args...>& cs,
                 pdt.len = conn.s.template pop<uint16_t>();
                 if (pdt.len >= 1024)
                 {
-                    printf("Data length %zu too long.\n",pdt.len);
+                    prod_printf("Data length %zu too long.\n",pdt.len);
                     throw futil::errno_exception(EINVAL);
                 }
                 pdt.data = (char*)malloc(pdt.len);
@@ -199,11 +200,16 @@ parse_and_exec(Conn& conn, const command_syntax<Conn&, Args...>& cs)
     uint32_t status[2] = {DT_STATUS_CODE, 0};
     try
     {
+        // The connection can refuse the command, for instance because its
+        // user may not use the database, by throwing a tsdb::exception.
+        // That is reported as a status like any other error, and the
+        // connection stays open for the next command.
+        conn.authorize(cs.cmd_token,tokens);
         cs.handler(conn,tokens);
     }
     catch (const tsdb::exception& e)
     {
-        printf("TSDB exception: [%d] %s\n",e.sc,e.what());
+        prod_printf("TSDB exception: [%d] %s\n",e.sc,e.what());
         status[1] = e.sc;
     }
     
@@ -244,18 +250,18 @@ process_stream(Conn& conn, const command_syntax<Args...> (&commands)[N]) try
 
         if (!found)
         {
-            printf("No such command 0x%08X.\n",ct);
+            prod_printf("No such command 0x%08X.\n",ct);
             return;
         }
     }
 }
 catch (const std::exception& e)
 {
-    printf("Error: %s\n",e.what());
+    prod_printf("Error: %s\n",e.what());
 }
 catch (...)
 {
-    printf("Random exception!\n");
+    prod_printf("Random exception!\n");
 }
 
 #endif /* __TSDBSERVER_TOKENS_H */

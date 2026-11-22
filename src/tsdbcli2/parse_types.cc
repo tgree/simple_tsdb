@@ -39,6 +39,25 @@ parse_type<fields_list>(
     return fields_list{std::move(fields)};
 }
 
+template<> permissions_list
+parse_type<permissions_list>(
+    std::vector<std::string>::iterator& begin,
+    std::vector<std::string>::iterator end)
+{
+    if (begin == end)
+        throw parse_exception("Expected <permissions>.");
+
+    uint32_t perms = tsdb::parse_permissions(*begin);
+    if (!perms)
+    {
+        throw parse_exception("Expected permissions read, write, delete or "
+                              "all, separated by commas.");
+    }
+
+    ++begin;
+    return permissions_list{perms};
+}
+
 template<> database_specifier
 parse_type<database_specifier>(
     std::vector<std::string>::iterator& begin,

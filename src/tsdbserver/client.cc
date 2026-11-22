@@ -87,6 +87,10 @@ check_status(tsdb::status_code sc)
             throw tsdb::invalid_database_exception();
         case tsdb::NAME_CASE_CONFLICT:
             throw tsdb::name_case_conflict_exception();
+        case tsdb::PERMISSION_DENIED:
+            throw tsdb::permission_denied_exception();
+        case tsdb::INVALID_ACL_FILE:
+            throw tsdb::invalid_acl_file_exception();
     }
 
     throw protocol_exception("Unknown status code");

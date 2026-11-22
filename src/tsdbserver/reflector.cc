@@ -40,6 +40,13 @@ struct connection
     {
         return tokens;
     }
+
+    // The reflector only listens on loopback, where there are no users, so
+    // every command is allowed.
+    void authorize(command_token ct,
+                   const std::vector<parsed_data_token>& tokens)
+    {
+    }
 };
 
 static void handle_get_schema(

@@ -19,14 +19,14 @@ measurements that are already stored in the database.
 
 Measurements are uniquely identified by the tuple (database, measurement,
 series, timestamp).  A single instance of simple_tsdb can have multiple logical
-databases that have different permissions.  Inside each database can be a
-different set of measurements, where perhaps each measurement corresponds to a
-different type of sensor.  Within the a given measurement are separate data
-series, each uniquely identified by a tag which could be something like a
-single sensor's serial number.  Finally, within each series the individual
-measurements are uniquely identified by a timestamp with nanosecond
-resolution.  Two measurements within the same series cannot have the same
-timestamp (which is implied by "append-only" being the write policy).
+databases that have different permissions (see ACLS.txt).  Inside each database
+can be a different set of measurements, where perhaps each measurement
+corresponds to a different type of sensor.  Within the a given measurement are
+separate data series, each uniquely identified by a tag which could be
+something like a single sensor's serial number.  Finally, within each series
+the individual measurements are uniquely identified by a timestamp with
+nanosecond resolution.  Two measurements within the same series cannot have the
+same timestamp (which is implied by "append-only" being the write policy).
 
 The hierarchy might look something like this:
 

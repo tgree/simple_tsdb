@@ -11,6 +11,12 @@ struct fields_list
     std::vector<std::string> fields;
 };
 
+struct permissions_list
+{
+    // <permission>[,<permission>...], each read, write, delete or all
+    uint32_t perms;
+};
+
 struct database_specifier
 {
     // <database>

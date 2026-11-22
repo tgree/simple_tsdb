@@ -104,6 +104,8 @@ const (
 	SHUNT_EXTRA_EXPRESSIONS      int  = -36
 	INVALID_DATABASE             int  = -37
 	NAME_CASE_CONFLICT           int  = -38
+	PERMISSION_DENIED            int  = -39
+	INVALID_ACL_FILE             int  = -40
 
 	FT_BOOL uint8 = 1
 	FT_U32 uint8  = 2
@@ -153,6 +155,8 @@ var ERR_MAP = map[int]string{
 	SHUNT_EXTRA_EXPRESSIONS:	"Extra expressions in equation.",
 	INVALID_DATABASE:		"Invalid database path.",
 	NAME_CASE_CONFLICT:		"Name differs only in case from an existing name.",
+	PERMISSION_DENIED:		"Permission denied.",
+	INVALID_ACL_FILE:		"Invalid ACL file.",
 }
 
 var FT_MAP = map[uint8]string{
