@@ -4,6 +4,7 @@
 #define __SRC_LIBTSDB_EXCEPTION_H
 
 #include <exception>
+#include <string>
 #include <string.h>
 #include <sys/types.h>
 #include <stdint.h>
@@ -51,6 +52,7 @@ namespace tsdb
         INVALID_DATABASE                = -37,
         NAME_CASE_CONFLICT              = -38,
         PERMISSION_DENIED               = -39,
+        INVALID_ACL_FILE                = -40,
     };
 
     struct exception : public std::exception
@@ -211,6 +213,28 @@ namespace tsdb
             corrupt_series_exception(INVALID_TIME_FIRST),
             tail_time_ns(tail_time_ns),
             index_time_ns(index_time_ns)
+        {
+        }
+    };
+
+    struct invalid_acl_file_exception : public exception
+    {
+        // The line of the acl file that couldn't be parsed, or 0 if unknown
+        // (for instance, when a client gets INVALID_ACL_FILE from a server).
+        const size_t line_num;
+        std::string msg;
+
+        virtual const char* what() const noexcept override
+        {
+            return msg.c_str();
+        }
+
+        invalid_acl_file_exception(size_t line_num = 0):
+            exception(INVALID_ACL_FILE),
+            line_num(line_num),
+            msg(line_num ? "Invalid ACL file at line " +
+                           std::to_string(line_num) + "." :
+                           "Invalid ACL file.")
         {
         }
     };
